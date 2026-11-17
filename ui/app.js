@@ -14,6 +14,7 @@ const ICON = {
   palette: '<svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 1 0 0 12c1 0 1.3-.8.9-1.6-.5-.9.1-1.9 1.1-1.9H12a2 2 0 0 0 2-2C14 4.7 11.3 2 8 2Z"/><circle cx="5" cy="7" r=".8"/><circle cx="8" cy="5" r=".8"/><circle cx="11" cy="7" r=".8"/></svg>',
   spark: '<svg viewBox="0 0 16 16"><path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z"/></svg>',
   lock: '<svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>',
+  key: '<svg viewBox="0 0 16 16"><circle cx="5" cy="5" r="2.6"/><path d="M6.8 6.8 13 13M9.5 9.5l1.3 1.3M11.3 7.7l1.3 1.3"/></svg>',
   keys: '<svg viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 9.5h6"/></svg>',
   info: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v3.6M8 5h.01"/></svg>',
   home: '<svg viewBox="0 0 16 16"><path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h8V6.5"/></svg>',
@@ -53,6 +54,8 @@ const state = {
   settingsSection: "general",
   shields: null,
   side: { conv: uid(), thread: [] },
+  vault: [],
+  vaultAdding: false,
 };
 const convHandlers = new Map();
 const savePrefs = () => store.set("prefs", state.prefs);
@@ -272,6 +275,7 @@ function renderOmni() {
   $("#star-btn").classList.toggle("hidden", !isWeb);
   $("#star-btn").classList.toggle("on", isWeb && state.bookmarks.some((b) => b.url === t.url));
   $("#shield-btn").classList.toggle("hidden", !isWeb);
+  $("#vault-btn").classList.toggle("hidden", !isWeb);
   for (const id of ["#back-btn", "#fwd-btn", "#reload-btn"]) $(id).disabled = !isWeb;
   renderShieldBadge();
 }
@@ -578,6 +582,11 @@ async function refreshShields() {
   const a = activeTab();
   if (a && a.kind === "settings" && state.settingsSection === "shields") renderSettings();
 }
+async function refreshVault() {
+  try { state.vault = await invoke("vault_list"); } catch { state.vault = []; }
+  const a = activeTab();
+  if (a && a.kind === "settings" && state.settingsSection === "passwords") renderSettings();
+}
 function renderShieldsPane() {
   const sh = state.shields;
   const t = activeTab();
@@ -642,7 +651,7 @@ async function connect() {
 // ---------------------------------------------------------------- settings page
 const SECTIONS = [
   ["general", "General", ICON.home], ["appearance", "Appearance", ICON.palette], ["shields", "Shields", ICON.shield],
-  ["ai", "Odysseus", ICON.spark], ["privacy", "Privacy", ICON.lock], ["shortcuts", "Shortcuts", ICON.keys], ["about", "About", ICON.info],
+  ["ai", "Odysseus", ICON.spark], ["passwords", "Passwords", ICON.key], ["privacy", "Privacy", ICON.lock], ["shortcuts", "Shortcuts", ICON.keys], ["about", "About", ICON.info],
 ];
 const row = (title, desc, control) => `<div class="row"><div class="txt"><b>${title}</b>${desc ? `<p>${desc}</p>` : ""}</div>${control}</div>`;
 const toggle = (key, on) => `<label class="switch"><input type="checkbox" data-pref="${key}" ${on ? "checked" : ""}/></label>`;
@@ -696,6 +705,25 @@ function settingsPanel(sec) {
         ${row("Endpoint ID", "Which model server Odysseus should use.", `<input type="text" id="cfg-endpoint" value="${escapeHtml(c.endpoint_id || "")}" spellcheck="false"/>`)}
         <div class="row"><button class="danger-btn" id="cfg-disconnect">Disconnect</button><span class="spacer"></span><button class="ghost-btn" id="cfg-test">Test connection</button><button class="primary-btn" id="cfg-save">Save</button></div>
       </div>`;
+    case "passwords": {
+      const entries = state.vault || [];
+      const rows = entries.length ? entries.map((e) => `
+        <div class="row pw-row">
+          <div class="txt"><b>${escapeHtml(e.origin)}</b><p>${e.username ? escapeHtml(e.username) : "No username saved"}</p></div>
+          <span class="pw-value" data-pw="${e.id}">••••••••</span>
+          <button class="ghost-btn" data-reveal="${e.id}">Show</button>
+          <button class="ghost-btn" data-copy="${e.id}">Copy</button>
+          <button class="danger-btn" data-del="${e.id}">Delete</button>
+        </div>`).join("") : row("No saved passwords yet", "Passwords you save are encrypted with Windows' own data protection, tied to your Windows login. Only you, signed in on this PC, can unlock them.", "");
+      return `<h2>Passwords</h2><p class="lead">Encrypted with Windows DPAPI, tied to your Windows account — there's no separate master password to remember or lose.</p>
+        <div class="group">${rows}</div>
+        <div class="group">${state.vaultAdding ? `
+          <div class="row"><input type="text" id="pw-origin" placeholder="Site, e.g. github.com" spellcheck="false"/></div>
+          <div class="row"><input type="text" id="pw-user" placeholder="Username or email" spellcheck="false"/></div>
+          <div class="row"><input type="password" id="pw-pass" placeholder="Password" spellcheck="false"/></div>
+          <div class="row"><button class="ghost-btn" id="pw-cancel">Cancel</button><span class="spacer"></span><button class="primary-btn" id="pw-save">Save password</button></div>
+        ` : `<div class="row"><div class="txt"><b>Add a password</b><p>Save a login so Odyssey can fill it in for you later.</p></div><button class="primary-btn" id="pw-add">Add password</button></div>`}</div>`;
+    }
     case "privacy": return `<h2>Privacy</h2><p class="lead">Everything Odyssey stores stays on this computer.</p>
       <div class="group">
         ${row("Browsing history", `${fmtNum(state.history.length)} pages.`, `<button class="danger-btn" id="pv-history">Clear history</button>`)}
@@ -732,7 +760,7 @@ function renderSettings() {
 }
 
 function wireSettings(page) {
-  $$("[data-sec]", page).forEach((b) => b.onclick = () => { state.settingsSection = b.dataset.sec; if (b.dataset.sec === "shields") refreshShields(); renderSettings(); });
+  $$("[data-sec]", page).forEach((b) => b.onclick = () => { state.settingsSection = b.dataset.sec; if (b.dataset.sec === "shields") refreshShields(); if (b.dataset.sec === "passwords") refreshVault(); renderSettings(); });
   $$("[data-pref]", page).forEach((i) => i.onchange = () => { state.prefs[i.dataset.pref] = i.checked; savePrefs(); applyPrefsToUi(); });
   $$("[data-radio]", page).forEach((b) => b.onclick = () => {
     let v = b.dataset.val; if (v === "true") v = true; if (v === "false") v = false;
@@ -766,6 +794,40 @@ function wireSettings(page) {
   on("pv-sitedata", async () => { try { await invoke("clear_site_data"); notify("Cookies and site data cleared."); } catch (e) { notify(String(e)); } });
   on("pv-asked", () => { state.asked = []; store.set("asked", []); notify("Recent questions cleared."); });
   on("pv-pins", () => { state.bookmarks = []; store.set("bookmarks", []); notify("Pinned sites removed."); renderSettings(); });
+  on("pw-add", () => { state.vaultAdding = true; renderSettings(); setTimeout(() => $("#pw-origin", page)?.focus(), 0); });
+  on("pw-cancel", () => { state.vaultAdding = false; renderSettings(); });
+  on("pw-save", async () => {
+    const origin = $("#pw-origin", page).value.trim();
+    const username = $("#pw-user", page).value.trim();
+    const password = $("#pw-pass", page).value;
+    if (!origin || !password) { notify("Enter at least a site and a password."); return; }
+    try {
+      await invoke("vault_add", { origin, username, password });
+      state.vaultAdding = false;
+      notify("Password saved.");
+      await refreshVault();
+    } catch (e) { notify(String(e)); }
+  });
+  $$("[data-reveal]", page).forEach((b) => b.onclick = async () => {
+    const id = b.dataset.reveal;
+    const span = $(`[data-pw="${id}"]`, page);
+    if (b.dataset.shown === "1") { span.textContent = "••••••••"; b.textContent = "Show"; b.dataset.shown = ""; return; }
+    try {
+      const pw = await invoke("vault_reveal", { id });
+      span.textContent = pw;
+      b.textContent = "Hide";
+      b.dataset.shown = "1";
+      setTimeout(() => { if (b.isConnected && b.dataset.shown === "1") { span.textContent = "••••••••"; b.textContent = "Show"; b.dataset.shown = ""; } }, 20000);
+    } catch (e) { notify(String(e)); }
+  });
+  $$("[data-copy]", page).forEach((b) => b.onclick = async () => {
+    try { const pw = await invoke("vault_reveal", { id: b.dataset.copy }); await navigator.clipboard.writeText(pw); notify("Password copied."); }
+    catch (e) { notify(String(e)); }
+  });
+  $$("[data-del]", page).forEach((b) => b.onclick = async () => {
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Confirm delete"; setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = "Delete"; } }, 4000); return; }
+    try { await invoke("vault_delete", { id: b.dataset.del }); notify("Password deleted."); await refreshVault(); } catch (e) { notify(String(e)); }
+  });
 }
 function applyPrefsToUi() {
   $("#answer-web").checked = !!state.prefs.answerWeb;
@@ -915,6 +977,19 @@ $("#shield-btn").addEventListener("click", () => openSide("shields"));
 $("#star-btn").addEventListener("click", toggleBookmark);
 $("#newtab-btn").addEventListener("click", () => newTab());
 $("#settings-btn").addEventListener("click", () => openPage("settings"));
+$("#vault-btn").addEventListener("click", async () => {
+  const t = activeTab();
+  if (!t || t.kind !== "web") return;
+  const origin = hostOf(t.url);
+  let entries = [];
+  try { entries = await invoke("vault_list_for_origin", { origin }); } catch {}
+  if (!entries.length) { notify(`No saved password for ${origin}. Add one in Settings \u2192 Passwords.`); return; }
+  const entry = entries[0];
+  try {
+    const result = await invoke("vault_autofill", { id: t.id, entryId: entry.id });
+    notify(result && result.filled ? "Filled your saved password." : "Couldn't find a password field on this page.");
+  } catch (e) { notify(String(e)); }
+});
 $("#history-btn").addEventListener("click", () => openPage("history"));
 $("#connect-btn").addEventListener("click", connect);
 const tabAction = (action) => { const t = activeTab(); if (t && t.kind === "web") invoke("tab_action", { id: t.id, action }).catch(() => {}); };

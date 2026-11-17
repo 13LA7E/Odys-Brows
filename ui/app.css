@@ -272,6 +272,10 @@ body:not(.maximized) { background: var(--deep); }
 .row .txt p { margin: 3px 0 0; color: var(--mist); font-size: 13px; line-height: 1.45; }
 .group-title { font-size: 13px; color: var(--mist); margin: 0 0 8px 4px; font-weight: 600; }
 .row select, .row input[type=text] { height: 34px; border-radius: 8px; border: 1px solid var(--rope); background: var(--hull-2); padding: 0 10px; outline: 0; min-width: 210px; }
+.row input[type=password] { height: 34px; border-radius: 8px; border: 1px solid var(--rope); background: var(--hull-2); padding: 0 10px; outline: 0; min-width: 210px; flex: 1; }
+.row input[type=password]:focus, .row input[type=text]:focus { border-color: var(--accent); }
+.pw-row { gap: 10px; }
+.pw-value { font-family: ui-monospace, Consolas, monospace; font-size: 13px; color: var(--mist); min-width: 90px; text-align: right; }
 .row select:focus, .row input[type=text]:focus { border-color: var(--accent); }
 .row .switch input { width: 36px; height: 20px; }
 .row .switch input::after { width: 16px; height: 16px; }

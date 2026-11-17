@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod shields;
+mod vault;
 
 use std::{collections::HashMap, path::PathBuf, sync::{atomic::Ordering, Mutex}, time::Duration};
 
@@ -15,6 +16,7 @@ use tauri::{
 use tokio::sync::oneshot;
 
 use shields::Shields;
+use vault::{vault_add, vault_delete, vault_list, vault_list_for_origin, vault_reveal, vault_update};
 
 const OFFSCREEN: f64 = -30000.0;
 const UI_LABEL: &str = "ui";
@@ -306,6 +308,43 @@ async fn run_in_tab(app: &AppHandle, state: &AppState, id: &str, body: &str) -> 
 #[tauri::command]
 async fn tab_extract(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Value, String> {
     run_in_tab(&app, &state, &id, EXTRACT_BODY).await
+}
+
+/// Fills the saved username/password for `entry_id` into the password
+/// field (and, if one is nearby, the username/email field) on the page
+/// currently open in tab `id`. The decrypted password only ever leaves
+/// Rust as part of this one script run -- it's not returned to the
+/// frontend and not logged.
+const AUTOFILL_BODY: &str = r#"(function () {
+  var user = __USER_JSON__;
+  var pass = __PASS_JSON__;
+  var pwd = document.querySelector('input[type="password"]');
+  if (!pwd) return { filled: false, reason: 'no password field on this page' };
+  function setVal(el, val) {
+    var proto = Object.getPrototypeOf(el);
+    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) { desc.set.call(el, val); } else { el.value = val; }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  setVal(pwd, pass);
+  var userField = null;
+  var scope = pwd.closest('form') || document;
+  var candidates = scope.querySelectorAll('input[type="text"], input[type="email"], input:not([type])');
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i].offsetParent !== null) { userField = candidates[i]; break; }
+  }
+  if (userField) setVal(userField, user);
+  return { filled: true, usedUsername: !!userField };
+})()"#;
+
+#[tauri::command]
+async fn vault_autofill(app: AppHandle, state: State<'_, AppState>, id: String, entry_id: String) -> Result<Value, String> {
+    let (username, password) = vault::get_entry_credentials(&app, &entry_id)?;
+    let user_json = serde_json::to_string(&username).map_err(|e| e.to_string())?;
+    let pass_json = serde_json::to_string(&password).map_err(|e| e.to_string())?;
+    let body = AUTOFILL_BODY.replace("__USER_JSON__", &user_json).replace("__PASS_JSON__", &pass_json);
+    run_in_tab(&app, &state, &id, &body).await
 }
 
 fn same_server(a: &Url, b: &Url) -> bool {
@@ -839,6 +878,13 @@ fn main() {
             tab_action,
             tab_close,
             tab_extract,
+            vault_list,
+            vault_list_for_origin,
+            vault_add,
+            vault_update,
+            vault_delete,
+            vault_reveal,
+            vault_autofill,
             config_get,
             config_set,
             pair_odysseus,
