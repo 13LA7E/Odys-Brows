@@ -107,9 +107,13 @@ function notify(msg) {
   }
   let el = $(".toast");
   if (!el) { el = document.createElement("div"); el.className = "toast"; document.body.appendChild(el); }
+  el.classList.remove("toast-out");
   el.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.remove(), 3000);
+  toastTimer = setTimeout(() => {
+    el.classList.add("toast-out");
+    setTimeout(() => el.remove(), 160);
+  }, 3000);
 }
 
 // Small, safe markdown renderer (escapes everything first).
@@ -237,9 +241,11 @@ function renderTabs() {
   box.innerHTML = "";
   const narrow = state.tabs.length > 9;
   for (const t of state.tabs) {
+    const entering = !!t._entering;
+    delete t._entering;
     const el = document.createElement("div");
     el.className = ["tab", t.id === state.activeId && "active", t.kind === "ai" && "ai",
-      (t.kind === "settings" || t.kind === "history") && "page", t.loading && "loading", narrow && "narrow"].filter(Boolean).join(" ");
+      (t.kind === "settings" || t.kind === "history") && "page", t.loading && "loading", narrow && "narrow", entering && "tab-enter"].filter(Boolean).join(" ");
     el.setAttribute("role", "tab");
     el.draggable = true;
     const label = tabLabel(t);
@@ -328,6 +334,7 @@ function renderHome() {
 // ---------------------------------------------------------------- tabs
 function newTab(kind = "home", extra = {}) {
   const t = { id: uid(), kind, title: "", url: "", loading: false, conv: null, thread: [], blocked: 0, created: false, ...extra };
+  t._entering = true;
   const at = state.tabs.findIndex((x) => x.id === state.activeId);
   state.tabs.splice(at >= 0 ? at + 1 : state.tabs.length, 0, t);
   state.activeId = t.id;
@@ -338,13 +345,19 @@ function newTab(kind = "home", extra = {}) {
 function activate(id) { state.activeId = id; render(); }
 
 async function closeTab(id) {
-  const idx = state.tabs.findIndex((t) => t.id === id);
-  if (idx < 0) return;
-  const t = state.tabs[idx];
+  const idx0 = state.tabs.findIndex((t) => t.id === id);
+  if (idx0 < 0) return;
+  const t = state.tabs[idx0];
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const el = $("#tabs").children[idx0];
+    if (el) { el.classList.add("tab-exit"); await new Promise((r) => setTimeout(r, 130)); }
+  }
   if (t.kind === "web" && t.created) await invoke("tab_close", { id }).catch(() => {});
   if (t.conv) invoke("ai_reset", { conv: t.conv }).catch(() => {});
   if (t.kind === "web" && t.url) state.closed.push({ kind: "web", url: t.url });
   if (t.kind === "ai" && t.thread.length) state.closed.push({ kind: "ai", title: t.title, thread: t.thread.map((x) => ({ ...x, done: true })) });
+  const idx = state.tabs.findIndex((x) => x.id === id);
+  if (idx < 0) return;
   state.tabs.splice(idx, 1);
   if (state.activeId === id) {
     const next = state.tabs[idx] || state.tabs[idx - 1];
