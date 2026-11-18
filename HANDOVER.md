@@ -108,6 +108,17 @@ Frameless window with integrated tabs and window controls · Odysseus app icon �
   - New tab animations — compass settle, tab unfurl/stow animations work
 - ✅ Committed and pushed to origin/main
 
+  **Phase 1 complete (2026-11-18):**
+  - ✅ **Theming engine**: 6 presets with crossfade transitions — Night Sea (default), Abyss, Chart Paper (light), Dawn, Fathom, Graphite — via `data-theme` on `<html>`
+  - ✅ **Custom theme editor** in Settings → Appearance: color pickers for all 12 tokens, live preview, save/rename/delete, import/export JSON (clipboard + file)
+  - ✅ **Settings architecture**: typed prefs schema (key, type, default, section, label, description), search inside Settings, per-section "Reset to default", export/import all settings
+  - ✅ **Appearance options** (all apply live): answer font (serif/sans/mono + size), answer width (640/760/920/1100), UI density (comfortable/compact), corner radius (sharp/default/round), tab style (classic/compact/pills), tab bar position (top/vertical sidebar), toolbar button visibility/order, sidebar side/width, UI scale, window opacity/blur, reduce motion + animation speed slider (0.5x–2x)
+  - ✅ **New tab page**: custom wallpaper (IndexedDB, dim/blur sliders), 5 built-in nautical wallpapers, clock 12h/24h, optional greeting, block toggles, pinned sites editor (rename/reorder/folders), search box style
+  - ✅ **Privacy toggle**: "Load site icons" with local-only fallback
+  - ✅ All changes respect `prefers-reduced-motion` and in-app Reduce motion toggle
+  - ✅ Build passes with zero warnings
+  - ✅ Committed and pushed to origin/main
+
 ## 7. Your tasks (in order)
 
 ### A. Answer page: fill the empty side margins (user's main request)
