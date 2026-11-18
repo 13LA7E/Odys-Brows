@@ -136,6 +136,7 @@ const DEFAULT_PREFS = {
   answerFont: "serif", // "serif" | "sans" | "mono"
   answerFontSize: 17,
   answerWidth: 760,
+  answerDecoration: "bearing-rails", // "bearing-rails" | "compass-watermark" | "both" | "off"
   // Appearance - UI
   uiDensity: "comfortable", // "comfortable" | "compact"
   cornerRadius: "default", // "sharp" | "default" | "round"
@@ -196,6 +197,12 @@ const state = {
   themeEditor: { editingId: null, editingTheme: null, previewTheme: null },
   // Pinned sites editor state
   pinnedEditor: { draggingId: null, editingId: null },
+  // Tab hover preview
+  tabPreview: { tabId: null, element: null, timeout: null },
+  // Tab search overlay
+  tabSearchOpen: false,
+  // Loading bar state
+  loadingTabs: new Set(),
 };
 const convHandlers = new Map();
 const savePrefs = () => store.set("prefs", state.prefs);
@@ -699,6 +706,28 @@ function reportLayout() {
 new ResizeObserver(reportLayout).observe($("#content"));
 window.addEventListener("resize", reportLayout);
 
+// Loading bar
+function updateLoadingBar() {
+  const bar = $("#loading-bar");
+  if (!bar) return;
+  
+  const loadingCount = state.loadingTabs.size;
+  if (loadingCount > 0) {
+    bar.classList.add("loading");
+    bar.classList.remove("finishing", "done");
+  } else {
+    bar.classList.remove("loading");
+    bar.classList.add("finishing");
+    // Trigger done state after fill animation
+    setTimeout(() => {
+      if (state.loadingTabs.size === 0) {
+        bar.classList.add("done");
+        setTimeout(() => bar.classList.remove("finishing", "done"), 300);
+      }
+    }, 300);
+  }
+}
+
 async function syncNative() {
   const t = activeTab();
   if (t && t.kind === "web" && !t.created && t.url) {
@@ -727,8 +756,44 @@ function tabIcon(t) {
   return ICON.home;
 }
 let dragTabId = null;
+let tabFlipRects = new Map();
+
+function captureTabRects() {
+  tabFlipRects.clear();
+  $$(".tab", $("#tabs")).forEach((el) => {
+    const id = el.dataset.tabId;
+    if (id) tabFlipRects.set(id, el.getBoundingClientRect());
+  });
+}
+
+function applyTabFlip() {
+  $$(".tab", $("#tabs")).forEach((el) => {
+    const id = el.dataset.tabId;
+    const first = tabFlipRects.get(id);
+    if (!first) return;
+    const last = el.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    const dw = first.width / last.width;
+    const dh = first.height / last.height;
+    if (dx !== 0 || dy !== 0 || dw !== 1 || dh !== 1) {
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(${dw}, ${dh})`;
+      el.classList.add("flip-animating");
+      // Force reflow
+      el.offsetHeight;
+      // Play
+      el.style.transform = "";
+      el.addEventListener("transitionend", () => el.classList.remove("flip-animating"), { once: true });
+    }
+  });
+  tabFlipRects.clear();
+}
+
 function renderTabs() {
   const box = $("#tabs");
+  // Capture FLIP first rects before DOM changes
+  captureTabRects();
+  
   box.innerHTML = "";
   const narrow = state.tabs.length > 9;
   for (const t of state.tabs) {
@@ -738,6 +803,7 @@ function renderTabs() {
     el.className = ["tab", t.id === state.activeId && "active", t.kind === "ai" && "ai",
       (t.kind === "settings" || t.kind === "history") && "page", t.loading && "loading", narrow && "narrow", entering && "tab-enter"].filter(Boolean).join(" ");
     el.setAttribute("role", "tab");
+    el.dataset.tabId = t.id;
     el.draggable = true;
     const label = tabLabel(t);
     el.innerHTML = `<span class="fav">${tabIcon(t)}</span><span class="title"></span><button class="close" title="Close tab (Ctrl+W)" aria-label="Close tab">${ICON.close}</button>`;
@@ -757,9 +823,189 @@ function renderTabs() {
       state.tabs.splice(state.tabs.findIndex((x) => x.id === t.id), 0, moved);
       saveSession(); renderTabs();
     });
+    
+    // Tab hover preview
+    el.addEventListener("mouseenter", () => showTabPreview(t, el));
+    el.addEventListener("mouseleave", () => hideTabPreview());
+    
     box.appendChild(el);
   }
+  
+  // Apply FLIP animation after DOM update
+  requestAnimationFrame(applyTabFlip);
 }
+
+// Tab hover preview card
+function showTabPreview(tab, tabEl) {
+  if (state.tabPreview.timeout) {
+    clearTimeout(state.tabPreview.timeout);
+    state.tabPreview.timeout = null;
+  }
+  
+  // Only show for web tabs
+  if (tab.kind !== "web") return;
+  
+  state.tabPreview.timeout = setTimeout(() => {
+    if (state.tabPreview.element) return; // Already showing
+    
+    const preview = document.createElement("div");
+    preview.className = "tab-preview";
+    preview.innerHTML = `
+      <div class="preview-fav">${tabIcon(tab)}</div>
+      <div class="preview-title">${escapeHtml(tabLabel(tab))}</div>
+      <div class="preview-url">${escapeHtml(tab.url || "")}</div>
+      ${tab.screenshot ? `<div class="preview-thumb"><img src="${tab.screenshot}" alt="Page preview"></div>` : ""}
+    `;
+    
+    document.body.appendChild(preview);
+    state.tabPreview.element = preview;
+    state.tabPreview.tabId = tab.id;
+    
+    // Position near tab
+    const tabRect = tabEl.getBoundingClientRect();
+    const previewRect = preview.getBoundingClientRect();
+    let left = tabRect.left + tabRect.width / 2 - previewRect.width / 2;
+    let top = tabRect.bottom + 8;
+    
+    // Keep on screen
+    if (left < 8) left = 8;
+    if (left + previewRect.width > window.innerWidth - 8) left = window.innerWidth - previewRect.width - 8;
+    if (top + previewRect.height > window.innerHeight - 8) top = tabRect.top - previewRect.height - 8;
+    
+    preview.style.left = `${left}px`;
+    preview.style.top = `${top}px`;
+  }, 300);
+}
+
+function hideTabPreview() {
+  if (state.tabPreview.timeout) {
+    clearTimeout(state.tabPreview.timeout);
+    state.tabPreview.timeout = null;
+  }
+  if (state.tabPreview.element) {
+    state.tabPreview.element.remove();
+    state.tabPreview.element = null;
+    state.tabPreview.tabId = null;
+  }
+}
+
+// Tab search overlay (Ctrl+Shift+A)
+function openTabSearch() {
+  if (state.tabSearchOpen) return;
+  state.tabSearchOpen = true;
+  
+  const overlay = document.createElement("div");
+  overlay.id = "tab-search-overlay";
+  overlay.innerHTML = `
+    <div class="search-box">
+      <input type="text" placeholder="Search tabs…" aria-label="Search tabs" spellcheck="false">
+    </div>
+    <div class="results" id="tab-search-results"></div>
+  `;
+  
+  document.body.appendChild(overlay);
+  
+  // Focus input
+  const input = overlay.querySelector("input");
+  requestAnimationFrame(() => {
+    overlay.classList.add("open");
+    input.focus();
+  });
+  
+  // Filter tabs
+  const filterTabs = (query) => {
+    const q = query.toLowerCase();
+    return state.tabs.filter(t => 
+      (t.title || "").toLowerCase().includes(q) ||
+      (t.url || "").toLowerCase().includes(q) ||
+      (tabLabel(t)).toLowerCase().includes(q)
+    );
+  };
+  
+  const renderResults = (query) => {
+    const results = filterTabs(query);
+    const container = $("#tab-search-results");
+    container.innerHTML = results.map((t, i) => `
+      <div class="result-item" data-tab-id="${t.id}" data-index="${i}">
+        <div class="result-fav">${tabIcon(t)}</div>
+        <div class="result-info">
+          <div class="result-title">${escapeHtml(tabLabel(t))}</div>
+          <div class="result-url">${escapeHtml(t.url || "")}</div>
+        </div>
+        <span class="result-kind">${t.kind === "web" ? "Web" : t.kind === "ai" ? "AI" : t.kind}</span>
+      </div>
+    `).join("");
+    
+    // Highlight first
+    const first = container.querySelector(".result-item");
+    if (first) first.classList.add("selected");
+  };
+  
+  renderResults("");
+  
+  input.addEventListener("input", () => renderResults(input.value));
+  
+  // Keyboard navigation
+  input.addEventListener("keydown", (e) => {
+    const items = $$(".result-item", overlay);
+    const selected = overlay.querySelector(".result-item.selected");
+    const idx = selected ? +selected.dataset.index : -1;
+    
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = items[(idx + 1) % items.length];
+      if (selected) selected.classList.remove("selected");
+      next.classList.add("selected");
+      next.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev = items[(idx - 1 + items.length) % items.length];
+      if (selected) selected.classList.remove("selected");
+      prev.classList.add("selected");
+      prev.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (selected) {
+        activate(selected.dataset.tabId);
+        closeTabSearch();
+      }
+    } else if (e.key === "Escape") {
+      closeTabSearch();
+    }
+  });
+  
+  // Click to activate
+  overlay.addEventListener("click", (e) => {
+    const item = e.target.closest(".result-item");
+    if (item) {
+      activate(item.dataset.tabId);
+      closeTabSearch();
+    }
+  });
+  
+  // Close on outside click
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeTabSearch();
+  });
+}
+
+function closeTabSearch() {
+  if (!state.tabSearchOpen) return;
+  state.tabSearchOpen = false;
+  const overlay = $("#tab-search-overlay");
+  if (overlay) {
+    overlay.classList.remove("open");
+    setTimeout(() => overlay.remove(), 200);
+  }
+}
+
+// Add tab search shortcut
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "a") {
+    e.preventDefault();
+    openTabSearch();
+  }
+});
 
 function renderOmni() {
   const t = activeTab();
@@ -775,6 +1021,16 @@ function renderOmni() {
   $("#vault-btn").classList.toggle("hidden", !isWeb);
   for (const id of ["#back-btn", "#fwd-btn", "#reload-btn"]) $(id).disabled = !isWeb;
   renderShieldBadge();
+  
+  // Add loading bar to toolbar if not present
+  if (!$("#loading-bar")) {
+    const toolbar = $("#toolbar");
+    if (toolbar) {
+      const bar = document.createElement("div");
+      bar.id = "loading-bar";
+      toolbar.appendChild(bar);
+    }
+  }
 }
 
 function renderShieldBadge() {
@@ -789,15 +1045,43 @@ function renderShieldBadge() {
   btn.title = off ? "Shields are down for this site" : `Shields blocked ${n} ads and trackers on this page`;
 }
 
+// View Transitions API helper
+function withViewTransition(callback) {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.reduceMotion === "true";
+  if (!reduceMotion && document.startViewTransition) {
+    document.startViewTransition(callback);
+  } else {
+    // Fallback: add transition class to views
+    const views = $$(".view");
+    views.forEach(v => v.classList.add("view-transition-fallback"));
+    callback();
+    // Remove fallback class after animation
+    setTimeout(() => views.forEach(v => v.classList.remove("view-transition-fallback")), 150);
+  }
+}
+
 function render() {
   const t = activeTab();
-  for (const v of ["#home", "#answer", "#webview-bg", "#page"]) $(v).classList.add("hidden");
-  if (!t || t.kind === "home") { $("#home").classList.remove("hidden"); renderHome(); }
-  else if (t.kind === "ai") { $("#answer").classList.remove("hidden"); renderThread($("#thread"), t.thread, false); }
-  else if (t.kind === "settings") { $("#page").classList.remove("hidden"); renderSettings(); }
-  else if (t.kind === "history") { $("#page").classList.remove("hidden"); renderHistoryPage(); }
-  else $("#webview-bg").classList.remove("hidden");
-  renderTabs();
+  
+  withViewTransition(() => {
+    for (const v of ["#home", "#answer", "#webview-bg", "#page"]) $(v).classList.add("hidden");
+    if (!t || t.kind === "home") { $("#home").classList.remove("hidden"); renderHome(); }
+    else if (t.kind === "ai") { $("#answer").classList.remove("hidden"); renderThread($("#thread"), t.thread, false); renderAnswerOrnaments(t); }
+    else if (t.kind === "settings") { $("#page").classList.remove("hidden"); renderSettings(); }
+    else if (t.kind === "history") { $("#page").classList.remove("hidden"); renderHistoryPage(); }
+    else $("#webview-bg").classList.remove("hidden");
+    renderTabs();
+  });
+  
+  renderOmni();
+  renderSide();
+  renderConnection();
+  $("#assist-btn").classList.toggle("on", state.sidebarOpen && state.sidePane === "assistant");
+  $("#sidebar").classList.toggle("hidden", !state.sidebarOpen);
+  syncNative();
+  saveSession();
+  updateLoadingBar();
+}
   renderOmni();
   renderSide();
   renderConnection();
@@ -858,7 +1142,142 @@ function newTab(kind = "home", extra = {}) {
 }
 function activate(id) { state.activeId = id; render(); }
 
-async function closeTab(id) {
+// Answer page margin ornaments
+function renderAnswerOrnaments(tab) {
+  const answerEl = $("#answer");
+  if (!answerEl) return;
+  
+  // Remove existing ornaments
+  const existing = answerEl.querySelector(".answer-ornaments");
+  if (existing) existing.remove();
+  
+  const decoration = state.prefs.answerDecoration || "bearing-rails";
+  if (decoration === "off") return;
+  
+  // Check if margins are wide enough (need ~120px on each side)
+  const threadEl = $("#thread");
+  if (!threadEl) return;
+  const threadRect = threadEl.getBoundingClientRect();
+  const answerRect = answerEl.getBoundingClientRect();
+  const leftMargin = threadRect.left - answerRect.left;
+  const rightMargin = answerRect.right - threadRect.right;
+  
+  if (leftMargin < 120 || rightMargin < 120) return;
+  
+  const ornaments = document.createElement("div");
+  ornaments.className = "answer-ornaments";
+  ornaments.setAttribute("aria-hidden", "true");
+  
+  if (decoration === "bearing-rails" || decoration === "both") {
+    // Left bearing rail
+    const leftRail = createBearingRail("left", leftMargin);
+    ornaments.appendChild(leftRail);
+    
+    // Right bearing rail
+    const rightRail = createBearingRail("right", rightMargin);
+    ornaments.appendChild(rightRail);
+  }
+  
+  if (decoration === "compass-watermark" || decoration === "both") {
+    // Compass watermark
+    const watermark = createCompassWatermark(rightMargin);
+    ornaments.appendChild(watermark);
+  }
+  
+  answerEl.appendChild(ornaments);
+  
+  // Update needle position based on scroll
+  updateBearingNeedle(tab);
+  
+  // Listen for scroll to update needle
+  threadEl.addEventListener("scroll", () => updateBearingNeedle(tab), { passive: true });
+}
+
+function createBearingRail(side, marginWidth) {
+  const rail = document.createElement("div");
+  rail.className = `bearing-rail ${side}`;
+  rail.style.width = "2px";
+  rail.style[side === "left" ? "left" : "right"] = "0";
+  
+  // Create ticks every 24px
+  const tickCount = Math.floor(window.innerHeight / 24) + 2;
+  for (let i = 0; i < tickCount; i++) {
+    const tick = document.createElement("div");
+    tick.className = "tick" + (i % 10 === 0 ? " major" : "");
+    tick.style.top = `${i * 24}px`;
+    rail.appendChild(tick);
+    
+    // Add degree labels every 10 ticks (240px)
+    if (i % 10 === 0) {
+      const label = document.createElement("div");
+      label.className = "tick-label";
+      const degrees = (i * 3) % 360; // 3 degrees per tick = 72 degrees per 24px
+      label.textContent = `${String(degrees).padStart(3, "0")}°`;
+      label.style.top = `${i * 24}px`;
+      rail.appendChild(label);
+    }
+  }
+  
+  // Needle marker
+  const needle = document.createElement("div");
+  needle.className = "needle";
+  needle.style.top = "0px";
+  rail.appendChild(needle);
+  
+  return rail;
+}
+
+function createCompassWatermark(marginWidth) {
+  const watermark = document.createElement("div");
+  watermark.className = "compass-watermark";
+  watermark.style.right = "40px";
+  watermark.innerHTML = `
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="45" stroke-width="1"/>
+      <circle cx="50" cy="50" r="30" stroke-width="0.5"/>
+      <circle cx="50" cy="50" r="15" stroke-width="0.5"/>
+      <path d="M50 5 L50 15 M50 85 L50 95 M5 50 L15 50 M85 50 L95 50" stroke-width="1.5"/>
+      <path d="M50 5 L55 25 50 30 M70 50 L85 35 90 30 M50 95 L45 75 50 70 M30 50 L15 65 10 70" stroke-width="1"/>
+      <text x="50" y="15" text-anchor="middle" font-size="8" font-family="var(--ui)">N</text>
+      <text x="50" y="92" text-anchor="middle" font-size="8" font-family="var(--ui)">S</text>
+      <text x="92" y="54" text-anchor="middle" font-size="8" font-family="var(--ui)">E</text>
+      <text x="8" y="54" text-anchor="middle" font-size="8" font-family="var(--ui)">W</text>
+    </svg>
+  `;
+  return watermark;
+}
+
+function updateBearingNeedle(tab) {
+  const threadEl = $("#thread");
+  const ornaments = $("#answer .answer-ornaments");
+  if (!threadEl || !ornaments) return;
+  
+  const scrollTop = threadEl.scrollTop;
+  const scrollHeight = threadEl.scrollHeight - threadEl.clientHeight;
+  const progress = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+  
+  // Update needle position
+  const needles = ornaments.querySelectorAll(".needle");
+  const railHeight = threadEl.clientHeight;
+  needles.forEach(needle => {
+    needle.style.top = `${progress * railHeight}px`;
+  });
+  
+  // Update compass watermark rotation (1° per 40px scroll)
+  const watermark = ornaments.querySelector(".compass-watermark");
+  if (watermark) {
+    const rotation = scrollTop / 40;
+    watermark.style.transform = `translateY(-50%) rotate(${rotation}deg)`;
+  }
+  
+  // Handle streaming state
+  const isStreaming = tab.thread.some(item => !item.done && !item.err);
+  needles.forEach(needle => {
+    needle.classList.toggle("streaming", isStreaming);
+  });
+}
+
+async async function closeTab(id) {
   const idx0 = state.tabs.findIndex((t) => t.id === id);
   if (idx0 < 0) return;
   const t = state.tabs[idx0];
@@ -870,6 +1289,10 @@ async function closeTab(id) {
   if (t.conv) invoke("ai_reset", { conv: t.conv }).catch(() => {});
   if (t.kind === "web" && t.url) state.closed.push({ kind: "web", url: t.url });
   if (t.kind === "ai" && t.thread.length) state.closed.push({ kind: "ai", title: t.title, thread: t.thread.map((x) => ({ ...x, done: true })) });
+  
+  // Remove from loading tabs
+  state.loadingTabs.delete(id);
+  
   const idx = state.tabs.findIndex((x) => x.id === id);
   if (idx < 0) return;
   state.tabs.splice(idx, 1);
@@ -1099,6 +1522,17 @@ function openSide(pane) {
   else { state.sidebarOpen = true; state.sidePane = pane; }
   if (pane === "shields") refreshShields();
   render();
+  
+  // Call reportLayout after sidebar transition completes
+  const sidebar = $("#sidebar");
+  if (state.sidebarOpen) {
+    // Wait for CSS transition to complete
+    sidebar.addEventListener("transitionend", () => reportLayout(), { once: true });
+  } else {
+    // For closing, report after a short delay to allow transition
+    setTimeout(reportLayout, 220);
+  }
+  
   if (state.sidebarOpen && pane === "assistant") setTimeout(() => $("#side-input").focus(), 30);
 }
 async function refreshShields() {
@@ -1348,6 +1782,7 @@ function renderAppearanceSettings() {
     ${row("Font family", "Typeface for AI answers.", select("answerFont", p.answerFont, [["serif", "Serif (Cambria/Georgia)"], ["sans", "Sans-serif (System UI)"], ["mono", "Monospace (Cascadia Code)"]]))}
     ${row("Font size", "Size of answer text in pixels.", range("answerFontSize", p.answerFontSize, 13, 24, 1))}
     ${row("Answer width", "Maximum width of the answer column.", select("answerWidth", p.answerWidth, [[640, "Narrow (640px)"], [760, "Default (760px)"], [920, "Wide (920px)"], [1100, "Extra wide (1100px)"]]))}
+    ${row("Page decoration", "Margin ornaments on answer pages.", radios("answerDecoration", p.answerDecoration, [["bearing-rails", "Bearing rails (default)"], ["compass-watermark", "Compass watermark"], ["both", "Both"], ["off", "Off"]]))}
   </div>
   
   <p class="group-title">UI density & spacing</p>
@@ -2115,7 +2550,18 @@ listen("tab-load", (e) => {
   const t = state.tabs.find((x) => x.id === id);
   if (!t) return;
   t.url = url; t.loading = loading;
-  if (!loading) { if (!t.title) t.title = hostOf(url); recordVisit(url, t.title); saveSession(); }
+  
+  // Track loading tabs for loading bar
+  if (loading) {
+    state.loadingTabs.add(id);
+  } else {
+    state.loadingTabs.delete(id);
+    if (!t.title) t.title = hostOf(url);
+    recordVisit(url, t.title);
+    saveSession();
+  }
+  
+  updateLoadingBar();
   renderTabs();
   if (id === state.activeId) { renderOmni(); renderSide(); }
 });
@@ -2131,9 +2577,18 @@ listen("open-tab", (e) => openUrl(e.payload.url, true));
 listen("shield-count", (e) => {
   const t = state.tabs.find((x) => x.id === e.payload.id);
   if (!t) return;
+  const oldCount = t.blocked;
   t.blocked = e.payload.count;
   if (t.id === state.activeId) {
     renderShieldBadge();
+    // Trigger tick-up animation if count increased
+    if (e.payload.count > oldCount) {
+      const countEl = $("#shield-count");
+      if (countEl) {
+        countEl.classList.add("tick-up");
+        setTimeout(() => countEl.classList.remove("tick-up"), 300);
+      }
+    }
     if (state.sidebarOpen && state.sidePane === "shields") { const el = $(".big-count"); if (el) el.textContent = fmtNum(t.blocked); }
   }
 });
@@ -2276,4 +2731,36 @@ document.addEventListener("click", (e) => {
   render();
   renderThread($("#side-thread"), [], true);
   reportLayout();
+  
+  // Initialize loading bar
+  updateLoadingBar();
 })();
+
+// Smooth scroll polyfill for older browsers
+if (!("scrollBehavior" in document.documentElement.style)) {
+  const smoothScrollPolyfill = () => {
+    // Basic smooth scroll polyfill
+    const originalScroll = Element.prototype.scroll;
+    Element.prototype.scroll = function(options) {
+      if (typeof options === "object" && options.behavior === "smooth") {
+        // Simple animation
+        const start = this.scrollTop;
+        const target = options.top;
+        const duration = 300;
+        const startTime = performance.now();
+        
+        const animate = (now) => {
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+          this.scrollTop = start + (target - start) * eased;
+          if (progress < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+      } else {
+        originalScroll.apply(this, arguments);
+      }
+    };
+  };
+  smoothScrollPolyfill();
+}
