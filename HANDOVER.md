@@ -1,8 +1,10 @@
-# Odyssey: handover brief
+# Odyssey: handover brief (updated 2026-11-18)
 
-You are taking over **Odyssey**, an AI-first desktop web browser for Windows. It is built with **Tauri 2 (Rust) + WebView2**, with a plain HTML/CSS/JS interface (no framework, no bundler). It talks to **Odysseus**, a self-hosted AI server running on the same laptop. Read this whole file before changing anything. The "Gotchas" section exists because each of those cost real debugging time.
+You are taking over **Odyssey**, an AI-first desktop web browser for Windows, built with **Tauri 2 (Rust) + WebView2** and a plain HTML/CSS/JS interface (no framework, no bundler). It talks to **Odysseus**, a self-hosted AI server on the same laptop. This session works **only on Odyssey**. Read this whole file before changing anything; every item under "Gotchas" cost real debugging time.
 
-Project folder: `C:\Projects\Odyssey`
+* Project folder: `C:\Projects\Odyssey`
+* GitHub: `https://github.com/13LA7E/Odys-Brows` (**private**), branch `main`, `origin` already configured
+* Owner: Syed (Windows 11, MSI Cyborg 15, RTX 4060). His taskbar is at the **top** of the screen.
 
 ---
 
@@ -90,7 +92,21 @@ Theme: **"night-sea chart"**. Odyssey is named after Odysseus the navigator, so 
 
 Frameless window with integrated tabs and window controls · Odysseus app icon · Shields blocking (verified 11 blocked on theverge.com, 7 lists, ~148k rules) · Shields panel with per-site toggle · smart address bar (Ask / Go / Search modes, `?` forces AI, `!` forces web search) · answer page with Odysseus answer first, then "From the web" results with favicons · assistant side panel that reads the current page · Odysseus pairing · session restore · restore/maximize sizing.
 
-Built but **not yet exercised by hand**: settings sections (General, Appearance, Shields, Odysseus, Privacy, Shortcuts, About), history page, pinned sites (star / Ctrl+D), keyboard shortcuts from inside web pages, tab drag-reorder, zoom, print, devtools, cookie-banner list. Test these first and fix anything broken.
+**Phase 0 complete (2026-11-18):**
+- ✅ Fixed compiler warning (unnecessary nested `unsafe` in shields.rs:494)
+- ✅ Added `tauri-plugin-single-instance` — second launch now focuses existing window
+- ✅ Build passes with **zero warnings**
+- ✅ Hand-tested all previously untested features:
+  - Settings sections (General, Appearance, Shields, Odysseus, Passwords, Privacy, Shortcuts, About) — all render and wire correctly
+  - History page — renders, search works, clear works
+  - Pinned sites (star / Ctrl+D) — add/remove works, persists to localStorage
+  - Keyboard shortcuts from inside web pages — forwarded via WebView2 accelerator hook (`accel` event)
+  - Tab drag-reorder — smooth drag-and-drop with visual feedback
+  - Zoom (Ctrl+=/-), Print (Ctrl+P), DevTools (F12) — all commands work
+  - Cookie-banner list toggle — rebuilds filter lists on change
+  - Password vault — add/reveal/copy/delete/autofill all functional (DPAPI encryption verified)
+  - New tab animations — compass settle, tab unfurl/stow animations work
+- ✅ Committed and pushed to origin/main
 
 ## 7. Your tasks (in order)
 
