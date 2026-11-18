@@ -13,6 +13,7 @@ use tauri::{
     webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, WebviewUrl,
 };
+use tauri_plugin_single_instance::init as single_instance_init;
 use tokio::sync::oneshot;
 
 use shields::Shields;
@@ -826,6 +827,9 @@ async fn web_search(state: State<'_, AppState>, query: String) -> Result<Vec<Val
 
 fn main() {
     tauri::Builder::default()
+        .plugin(single_instance_init(|app, _args, _cwd| {
+            let _ = app.emit_to("ui", "single-instance", ());
+        }))
         .manage(Shields::default())
         .manage(AppState {
             http: reqwest::Client::builder()

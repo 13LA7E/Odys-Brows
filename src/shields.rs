@@ -491,7 +491,7 @@ pub mod win {
                             std::thread::sleep(Duration::from_millis(2500));
                             if let Some(wv) = app4.get_webview(&label) {
                                 let app5 = app4.clone();
-                                let _ = wv.with_webview(move |pw| unsafe {
+                                let _ = wv.with_webview(move |pw| {
                                     if let Ok(core) = pw.controller().CoreWebView2() {
                                         cosmetic_pass(&app5, &core, false);
                                     }
