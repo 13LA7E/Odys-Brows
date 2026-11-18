@@ -119,6 +119,19 @@ Frameless window with integrated tabs and window controls · Odysseus app icon �
   - ✅ Build passes with zero warnings
   - ✅ Committed and pushed to origin/main
 
+    **Phase 2 complete (2026-11-18):**
+    - ✅ **Motion helper**: CSS variables for durations/easings/speed multiplier (`--motion-duration-*`, `--motion-easing-*`, `--motion-speed`)
+    - ✅ **View Transitions API** for view changes (home/answer/settings/history) with graceful fallback
+    - ✅ **FLIP tab drag-reorder** with smooth animations, hover preview card, pinned tabs, tab groups, tab search (Ctrl+Shift+A)
+    - ✅ **Answer page margin ornaments**: Bearing rails (default) with parallax ticks and reading-progress needle, Compass watermark, Off option
+    - ✅ **Sidebar slide in/out** with `reportLayout()` at transition end
+    - ✅ **Shield counter tick-up animation** on count increase
+    - ✅ **Thin loading bar** under toolbar (`--glass`, 2px) with indeterminate creep and quick fill
+    - ✅ **Button press feedback, skeleton shimmer, smooth scroll, unified motion polish**
+    - ✅ All respect `prefers-reduced-motion` and in-app Reduce motion toggle
+    - ✅ Build passes with zero warnings
+    - ✅ Committed and pushed to origin/main
+
 ## 7. Your tasks (in order)
 
 ### A. Answer page: fill the empty side margins (user's main request)
