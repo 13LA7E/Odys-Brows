@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{
-    webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
+    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder},
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, WebviewUrl,
 };
 use tauri_plugin_single_instance::init as single_instance_init;
@@ -48,9 +48,93 @@ const RUN_TEMPLATE: &str = r#"
 /// Reads the visible text of a page.
 const EXTRACT_BODY: &str = r#"(function () {
   var text = (document.body ? document.body.innerText : '') || '';
-  text = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').slice(0, 6500);
+  text = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').slice(0, 12000);
   var m = document.querySelector('meta[name="description"]');
   return { u: location.href, t: document.title, d: m ? (m.getAttribute('content') || '') : '', x: text };
+})()"#;
+
+/// Find in page. Uses the CSS Custom Highlight API so every match is painted, with the current one stronger.
+const FIND_BODY: &str = r#"(function () {
+  var q = __Q__, fwd = __FWD__, restart = __RESTART__;
+  var st = window.__odyFind;
+  if (!q) { if (window.CSS && CSS.highlights) { CSS.highlights.delete('ody-find'); CSS.highlights.delete('ody-find-cur'); } window.__odyFind = null; return { count: 0, cur: 0 }; }
+  if (!window.CSS || !CSS.highlights || typeof Highlight === 'undefined') {
+    var n = 0, text = (document.body ? document.body.innerText : '').toLowerCase(), i0 = 0, lq = q.toLowerCase();
+    while ((i0 = text.indexOf(lq, i0)) !== -1) { n++; i0 += lq.length; }
+    if (n) window.find(q, false, !fwd, true);
+    return { count: n, cur: 0 };
+  }
+  if (!st || st.q !== q || restart) {
+    var ranges = [], lq2 = q.toLowerCase();
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function (nd) {
+      var p = nd.parentElement;
+      if (!p || /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(p.tagName) || !p.getClientRects().length) return NodeFilter.FILTER_SKIP;
+      return NodeFilter.FILTER_ACCEPT;
+    } });
+    var node;
+    while ((node = w.nextNode()) && ranges.length < 3000) {
+      var low = node.nodeValue.toLowerCase(), at = 0;
+      while ((at = low.indexOf(lq2, at)) !== -1) {
+        var r = document.createRange(); r.setStart(node, at); r.setEnd(node, at + q.length);
+        ranges.push(r); at += q.length;
+      }
+    }
+    st = window.__odyFind = { q: q, ranges: ranges, i: -1 };
+    restart = true;
+  }
+  var rs = st.ranges;
+  if (!document.getElementById('ody-find-style')) {
+    var s = document.createElement('style'); s.id = 'ody-find-style';
+    s.textContent = '::highlight(ody-find){background-color:#f6d365;color:#111}::highlight(ody-find-cur){background-color:#ff8a3d;color:#111}';
+    document.documentElement.appendChild(s);
+  }
+  if (!rs.length) { CSS.highlights.delete('ody-find'); CSS.highlights.delete('ody-find-cur'); return { count: 0, cur: 0 }; }
+  st.i = restart ? 0 : (st.i + (fwd ? 1 : -1) + rs.length) % rs.length;
+  CSS.highlights.set('ody-find', new Highlight(...rs));
+  CSS.highlights.set('ody-find-cur', new Highlight(rs[st.i]));
+  var el = rs[st.i].startContainer.parentElement;
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'nearest' });
+  return { count: rs.length, cur: st.i + 1 };
+})()"#;
+
+const FIND_CLEAR: &str = r#"(function () { if (window.CSS && CSS.highlights) { CSS.highlights.delete('ody-find'); CSS.highlights.delete('ody-find-cur'); } window.__odyFind = null; })()"#;
+
+/// Pulls the main readable content out of a page for Reader mode.
+const READER_BODY: &str = r#"(function () {
+  var root = document.querySelector('article') || document.querySelector('main') || document.querySelector('[role="main"]');
+  if (!root) {
+    var best = null, bestLen = 0;
+    document.querySelectorAll('div,section').forEach(function (d) {
+      var len = 0;
+      d.querySelectorAll(':scope > p').forEach(function (p) { len += (p.innerText || '').length; });
+      if (len > bestLen) { bestLen = len; best = d; }
+    });
+    root = best || document.body;
+  }
+  var blocks = [], total = 0;
+  root.querySelectorAll('h1,h2,h3,h4,p,li,blockquote,pre').forEach(function (el) {
+    if (total > 80000 || el.closest('nav,aside,footer,header,form,script,style,noscript')) return;
+    var t = (el.innerText || '').replace(/\s+/g, ' ').trim();
+    var k = el.tagName.toLowerCase();
+    if (t.length < 2 || (k === 'p' && t.length < 20)) return;
+    blocks.push({ k: k, t: t });
+    total += t.length;
+  });
+  var h1 = document.querySelector('h1');
+  return { u: location.href, title: (h1 && h1.innerText.trim()) || document.title, site: location.hostname, blocks: blocks.slice(0, 500) };
+})()"#;
+
+/// Asks the page's biggest playing (or first) video to enter picture-in-picture.
+const PIP_BODY: &str = r#"(async function () {
+  var vids = Array.prototype.slice.call(document.querySelectorAll('video'));
+  if (!vids.length) return { ok: false, error: 'No video on this page.' };
+  vids.sort(function (a, b) { return (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight); });
+  var v = vids.filter(function (x) { return !x.paused; })[0] || vids[0];
+  try {
+    if (document.pictureInPictureElement) { await document.exitPictureInPicture(); return { ok: true, closed: true }; }
+    await v.requestPictureInPicture();
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 })()"#;
 
 /// Asks the signed-in Odysseus page to mint a chat-only token for Odyssey.
@@ -196,6 +280,130 @@ fn handle_chunk(app: &AppHandle, id: &str, rest: &str) {
 
 // ---------------------------------------------------------------- tabs
 
+/// Hosts whose sign-in popups must stay real popups (they talk to window.opener).
+fn is_oauth_host(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or("");
+    let path = url.path();
+    host == "accounts.google.com"
+        || host == "login.microsoftonline.com"
+        || host == "login.live.com"
+        || host == "appleid.apple.com"
+        || (host == "github.com" && path.starts_with("/login"))
+}
+
+/// `dir/name`, or `dir/name (2).ext` etc. when the file already exists.
+fn unique_path(dir: &std::path::Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let p = std::path::Path::new(name);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "download".into());
+    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    for i in 2..1000 {
+        let c = dir.join(format!("{stem} ({i}){ext}"));
+        if !c.exists() {
+            return c;
+        }
+    }
+    first
+}
+
+/// Reveal a downloaded file in File Explorer.
+#[tauri::command]
+async fn show_in_folder(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let p = PathBuf::from(&path);
+        if !p.exists() {
+            return Err("That file is gone.".into());
+        }
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", p.display()))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("Only available on Windows.".into())
+    }
+}
+
+/// Open a downloaded file with its default app.
+#[tauri::command]
+async fn open_download(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let p = PathBuf::from(&path);
+        if !p.exists() {
+            return Err("That file is gone.".into());
+        }
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("Only available on Windows.".into())
+    }
+}
+
+/// Give keyboard focus back to Odyssey's own chrome (find bar, address bar, palette).
+#[tauri::command]
+async fn focus_ui(app: AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview(UI_LABEL) {
+        wv.set_focus().map_err(|e| e.to_string())?;
+        shields::win::focus(&wv);
+    }
+    Ok(())
+}
+
+/// Mute or unmute the media elements on a page. Covers <video>/<audio>, not Web Audio.
+#[tauri::command]
+async fn tab_mute(app: AppHandle, id: String, muted: bool) -> Result<(), String> {
+    let wv = app.get_webview(&tab_label(&id)).ok_or("tab not found")?;
+    let js = format!(
+        "(function(){{ window.__odyMuted = {muted}; document.querySelectorAll('video,audio').forEach(function(m){{ m.muted = {muted}; }}); \
+         if (!window.__odyMuteHook) {{ window.__odyMuteHook = true; document.addEventListener('play', function(e){{ if (window.__odyMuted && e.target && e.target.muted === false) e.target.muted = true; }}, true); }} }})()"
+    );
+    wv.eval(js).map_err(|e| e.to_string())
+}
+
+/// Picture-in-picture for the page's main video.
+#[tauri::command]
+async fn tab_pip(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    run_in_tab(&app, &state, &id, PIP_BODY).await
+}
+
+/// Reader mode: the readable blocks (headings, paragraphs, lists) of the page.
+#[tauri::command]
+async fn tab_reader(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    run_in_tab(&app, &state, &id, READER_BODY).await
+}
+
+/// Find in page: highlight every match, mark the current one, scroll to it, report the counts.
+#[tauri::command]
+async fn tab_find(app: AppHandle, state: State<'_, AppState>, id: String, query: String, forward: bool, restart: bool) -> Result<Value, String> {
+    let q = serde_json::to_string(&query).map_err(|e| e.to_string())?;
+    let body = FIND_BODY
+        .replace("__Q__", &q)
+        .replace("__FWD__", if forward { "true" } else { "false" })
+        .replace("__RESTART__", if restart { "true" } else { "false" });
+    run_in_tab(&app, &state, &id, &body).await
+}
+
+/// Clear the find highlight.
+#[tauri::command]
+async fn tab_find_clear(app: AppHandle, id: String) -> Result<(), String> {
+    let wv = app.get_webview(&tab_label(&id)).ok_or("tab not found")?;
+    wv.eval(FIND_CLEAR).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn set_layout(app: AppHandle, state: State<'_, AppState>, rect: Rect) -> Result<(), String> {
     *state.rect.lock().unwrap() = rect;
@@ -227,8 +435,43 @@ async fn tab_create(app: AppHandle, state: State<'_, AppState>, id: String, url:
             }
         })
         .on_new_window(move |url, _features| {
+            // Sign-in popups need a real window so window.opener keeps working.
+            if is_oauth_host(&url) {
+                return NewWindowResponse::Allow;
+            }
             let _ = app_for_popups.emit_to(UI_LABEL, "open-tab", json!({ "url": url.to_string() }));
             NewWindowResponse::Deny
+        })
+        .on_download(move |wv, event| {
+            let app = wv.app_handle().clone();
+            match event {
+                DownloadEvent::Requested { url, destination } => {
+                    let dir = app.path().download_dir().unwrap_or_else(|_| std::env::temp_dir());
+                    let name = destination
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .filter(|n| !n.is_empty())
+                        .unwrap_or_else(|| "download".to_string());
+                    let target = unique_path(&dir, &name);
+                    *destination = target.clone();
+                    let _ = app.emit_to(
+                        UI_LABEL,
+                        "download-started",
+                        json!({
+                            "id": target.to_string_lossy(),
+                            "url": url.to_string(),
+                            "name": target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(name),
+                            "path": target.to_string_lossy(),
+                        }),
+                    );
+                }
+                DownloadEvent::Finished { path, success, .. } => {
+                    let p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                    let _ = app.emit_to(UI_LABEL, "download-finished", json!({ "id": p, "path": p, "success": success }));
+                }
+                _ => {}
+            }
+            true
         });
     let r = *state.rect.lock().unwrap();
     let webview = window
@@ -875,6 +1118,14 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            focus_ui,
+            tab_mute,
+            tab_pip,
+            tab_reader,
+            show_in_folder,
+            open_download,
+            tab_find,
+            tab_find_clear,
             set_layout,
             tab_create,
             tab_activate,

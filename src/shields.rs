@@ -297,7 +297,14 @@ pub mod win {
                     v if ctrl && (0x41..=0x5A).contains(&v) => {
                         let c = (v as u8 as char).to_ascii_lowercase();
                         match c {
-                            't' | 'w' | 'l' | 'j' | 'r' | 'd' | 'h' | 'p' | 'k' => {
+                            't' | 'w' | 'l' | 'j' | 'r' | 'd' | 'h' | 'p' | 'k' | 'f' => {
+                                return {
+                                    let _ = app.emit_to("ui", "accel", json!({ "key": c.to_string(), "ctrl": ctrl, "shift": shift, "alt": alt }));
+                                    args.SetHandled(true)
+                                };
+                            }
+                            // Ctrl+Shift+A (tab search) and Ctrl+Shift+O (bookmarks); plain Ctrl+A stays "select all".
+                            'a' | 'o' if shift => {
                                 return {
                                     let _ = app.emit_to("ui", "accel", json!({ "key": c.to_string(), "ctrl": ctrl, "shift": shift, "alt": alt }));
                                     args.SetHandled(true)
@@ -376,6 +383,13 @@ pub mod win {
             Ok(())
         }));
         let _ = core.ExecuteScript(&HSTRING::from(COLLECT_JS), &handler);
+    }
+
+    /// Move keyboard focus into this webview (WebView2 keeps it with whichever view had it last).
+    pub fn focus(webview: &tauri::Webview) {
+        let _ = webview.with_webview(|pw| unsafe {
+            let _ = pw.controller().MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        });
     }
 
     /// Attach Shields to one tab's WebView2.
@@ -511,4 +525,5 @@ pub mod win {
 pub mod win {
     use super::*;
     pub fn attach(_webview: &tauri::Webview, _app: AppHandle, _tab: String) {}
+    pub fn focus(_webview: &tauri::Webview) {}
 }

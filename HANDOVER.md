@@ -178,6 +178,27 @@ On wide screens the answer column is ~760px with bare space either side. Add nau
 * Pop-up sign-ins ("Sign in with Google") open as normal tabs via `on_new_window` → `Deny` + new tab, so `window.opener` flows break. Allow real popups for known OAuth hosts (accounts.google.com, login.microsoftonline.com, appleid.apple.com, github.com/login) by returning `NewWindowResponse::Allow`.
 * Web-search answers from the local 9B model take ~60 s; the results list loads in ~2 s. Consider showing a "Quick answer" first (useWeb=false) and offering "Search deeper".
 
+## 7b. Phase 3 (browser polish): what landed
+
+Built and checked on the laptop (clean build, zero warnings): find in page (Ctrl+F, "N of M" with highlights), tab right-click menu (Reload, Duplicate, Mute, Reader view, Reading list, Pin, Close, Close others, Close to the right, Reopen closed). Everything else below passed headless mock tests only and still needs a real-app click-through.
+
+* **Omnibox suggestions** (history, pinned sites, open tabs, "ask Odysseus"), arrow keys plus Enter.
+* **Find in page**: `tab_find` / `tab_find_clear` run `FIND_BODY` (TreeWalker + Range + `CSS.highlights` 'ody-find' / 'ody-find-cur') through `run_in_tab`.
+* **Tab menu and pinned tabs**: pinned tabs use class `is-pinned` (NOT `.pinned`, which collides with the new-tab page rule).
+* **Downloads**: `on_download` emits `download-started` / `download-finished`; sidebar "Downloads" pane; `show_in_folder`, `open_download`. Tauri 2 only reports Requested/Finished, so there is no progress, pause or cancel.
+* **Per-site zoom**, **command palette** (Ctrl+K or Ctrl+Shift+P), **reader view** (tab kind "reader", not saved in the session), **bookmarks page** with import/export and a reading list, **mute tab** (only affects media elements), **picture-in-picture**.
+* **Clear on exit** options in Settings → Privacy (history, asked questions, downloads, site data).
+* **OAuth pop-ups**: `on_new_window` allows known OAuth hosts and opens everything else as a tab.
+* Shortcuts: Ctrl+F, Ctrl+K, Ctrl+Shift+P, Ctrl+Shift+A, Ctrl+Shift+J, Ctrl+Shift+O. The page-focused ones are forwarded from `shields.rs::hook_shortcuts` (a whitelist: add new letters there).
+
+Gotchas learned:
+* Native webviews paint over HTML dropdowns. `setOverlay()` parks the page (`tab_activate null`) while any overlay is open.
+* After a shortcut pressed inside a page, OS focus stays in the page webview. Call `invoke("focus_ui")` (Tauri `set_focus` plus WebView2 `MoveFocus`) before focusing a UI input.
+* The Phase 2 UI was actually broken at its commit; Phase 3 fixed it.
+* When copying files to the laptop, verify with `md5sum` afterwards; a sync once reported success but left the old file.
+
+Not done: shortcut editor, split view, page screenshot, multiple/private windows, a real "playing audio" indicator, download progress/pause/cancel, per-site permissions and default search engine, vault polish, shields polish (resources.json unverified, cookie banners still off by default), installer.
+
 ## 8. Working rules
 * Keep `cargo build` warning-free and test every change by rebuilding with `build.bat` and looking at the app.
 * Don't give web tabs IPC. Don't send the Odysseus token to the UI. Don't block requests to `127.0.0.1`/`localhost`/`*.localhost` (Tauri's own protocols use them).

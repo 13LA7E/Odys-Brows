@@ -9,6 +9,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const ICON = {
   close: '<svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
   gear: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
+  book: '<svg viewBox="0 0 16 16"><path d="M3 3.2c1.8-.6 3.6-.4 5 .8 1.4-1.2 3.2-1.4 5-.8v9c-1.8-.6-3.6-.4-5 .8-1.4-1.2-3.2-1.4-5-.8z"/><path d="M8 4v9"/></svg>',
   clock: '<svg viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.8h2.8M8 5v3.2l2.2 1.4"/></svg>',
   shield: '<svg viewBox="0 0 16 16"><path d="M8 1.8 13 3.6v3.9c0 3.2-2.1 5.6-5 6.7-2.9-1.1-5-3.5-5-6.7V3.6z"/></svg>',
   palette: '<svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 1 0 0 12c1 0 1.3-.8.9-1.6-.5-.9.1-1.9 1.1-1.9H12a2 2 0 0 0 2-2C14 4.7 11.3 2 8 2Z"/><circle cx="5" cy="7" r=".8"/><circle cx="8" cy="5" r=".8"/><circle cx="11" cy="7" r=".8"/></svg>',
@@ -118,6 +119,10 @@ const DEFAULT_PREFS = {
   showPinned: true,
   showSuggestions: true,
   showRecentQuestions: true,
+  clearHistoryOnExit: false,
+  clearAskedOnExit: false,
+  clearDownloadsOnExit: false,
+  clearSiteDataOnExit: false,
   searchBoxStyle: "centered", // "centered" | "minimal" | "hero"
   // Wallpaper
   customWallpaper: null, // base64 data URL
@@ -728,6 +733,16 @@ function updateLoadingBar() {
   }
 }
 
+// While a dropdown or menu is open it would be hidden behind the native page, so the page is parked.
+const overlays = new Set();
+function setOverlay(key, open) {
+  const had = overlays.size;
+  if (open) overlays.add(key); else overlays.delete(key);
+  if (!!had === !!overlays.size) return;
+  document.body.classList.toggle("overlay-open", overlays.size > 0);
+  syncNative();
+}
+
 async function syncNative() {
   const t = activeTab();
   if (t && t.kind === "web" && !t.created && t.url) {
@@ -736,7 +751,7 @@ async function syncNative() {
     try { await invoke("tab_create", { id: t.id, url: t.url }); }
     catch (e) { t.created = false; notify("Couldn't open that page: " + e); }
   }
-  const showWeb = t && t.kind === "web";
+  const showWeb = t && t.kind === "web" && overlays.size === 0;
   invoke("tab_activate", { id: showWeb ? t.id : null }).catch(() => {});
 }
 
@@ -746,6 +761,8 @@ function tabLabel(t) {
   if (t.kind === "ai") return t.title || "Answer";
   if (t.kind === "settings") return "Settings";
   if (t.kind === "history") return "History";
+  if (t.kind === "bookmarks") return "Bookmarks";
+  if (t.kind === "reader") return (t.reader && t.reader.title) || "Reader";
   return "New tab";
 }
 function tabIcon(t) {
@@ -753,6 +770,7 @@ function tabIcon(t) {
   if (t.kind === "web") return favicon(t.url);
   if (t.kind === "settings") return ICON.gear;
   if (t.kind === "history") return ICON.clock;
+  if (t.kind === "bookmarks" || t.kind === "reader") return ICON.book;
   return ICON.home;
 }
 let dragTabId = null;
@@ -801,7 +819,7 @@ function renderTabs() {
     delete t._entering;
     const el = document.createElement("div");
     el.className = ["tab", t.id === state.activeId && "active", t.kind === "ai" && "ai",
-      (t.kind === "settings" || t.kind === "history") && "page", t.loading && "loading", narrow && "narrow", entering && "tab-enter"].filter(Boolean).join(" ");
+      (t.kind === "settings" || t.kind === "history" || t.kind === "bookmarks" || t.kind === "reader") && "page", t.loading && "loading", narrow && "narrow", t.pinned && "is-pinned", entering && "tab-enter"].filter(Boolean).join(" ");
     el.setAttribute("role", "tab");
     el.dataset.tabId = t.id;
     el.draggable = true;
@@ -810,6 +828,7 @@ function renderTabs() {
     el.querySelector(".title").textContent = label;
     el.title = label;
     el.addEventListener("mousedown", (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } });
+    el.addEventListener("contextmenu", (e) => { e.preventDefault(); showTabMenu(t, e.clientX, e.clientY); });
     el.addEventListener("click", (e) => { if (e.target.closest(".close")) closeTab(t.id); else activate(t.id); });
     el.addEventListener("dragstart", (e) => { dragTabId = t.id; el.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
     el.addEventListener("dragend", () => { dragTabId = null; renderTabs(); });
@@ -893,6 +912,7 @@ function hideTabPreview() {
 function openTabSearch() {
   if (state.tabSearchOpen) return;
   state.tabSearchOpen = true;
+  setOverlay("tabsearch", true);
   
   const overlay = document.createElement("div");
   overlay.id = "tab-search-overlay";
@@ -992,6 +1012,7 @@ function openTabSearch() {
 function closeTabSearch() {
   if (!state.tabSearchOpen) return;
   state.tabSearchOpen = false;
+  setOverlay("tabsearch", false);
   const overlay = $("#tab-search-overlay");
   if (overlay) {
     overlay.classList.remove("open");
@@ -1049,7 +1070,11 @@ function renderShieldBadge() {
 function withViewTransition(callback) {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.reduceMotion === "true";
   if (!reduceMotion && document.startViewTransition) {
-    document.startViewTransition(callback);
+    try {
+      const vt = document.startViewTransition(callback);
+      // A newer transition aborts the older one; those rejections are expected.
+      for (const k of ["ready", "finished", "updateCallbackDone"]) vt[k] && vt[k].catch(() => {});
+    } catch (e) { callback(); }
   } else {
     // Fallback: add transition class to views
     const views = $$(".view");
@@ -1062,6 +1087,7 @@ function withViewTransition(callback) {
 
 function render() {
   const t = activeTab();
+  if (typeof find !== "undefined" && find.open && state.activeId !== find.tabId) closeFind();
   
   withViewTransition(() => {
     for (const v of ["#home", "#answer", "#webview-bg", "#page"]) $(v).classList.add("hidden");
@@ -1069,6 +1095,8 @@ function render() {
     else if (t.kind === "ai") { $("#answer").classList.remove("hidden"); renderThread($("#thread"), t.thread, false); renderAnswerOrnaments(t); }
     else if (t.kind === "settings") { $("#page").classList.remove("hidden"); renderSettings(); }
     else if (t.kind === "history") { $("#page").classList.remove("hidden"); renderHistoryPage(); }
+    else if (t.kind === "bookmarks") { $("#page").classList.remove("hidden"); renderBookmarksPage(); }
+    else if (t.kind === "reader") { $("#page").classList.remove("hidden"); renderReader(t); }
     else $("#webview-bg").classList.remove("hidden");
     renderTabs();
   });
@@ -1081,14 +1109,6 @@ function render() {
   syncNative();
   saveSession();
   updateLoadingBar();
-}
-  renderOmni();
-  renderSide();
-  renderConnection();
-  $("#assist-btn").classList.toggle("on", state.sidebarOpen && state.sidePane === "assistant");
-  $("#sidebar").classList.toggle("hidden", !state.sidebarOpen);
-  syncNative();
-  saveSession();
 }
 
 // ---------------------------------------------------------------- home
@@ -1116,7 +1136,7 @@ function renderHome() {
   if (showSuggestions) {
     suggestHtml = (recent.length ? recent : defaults).map((q) => `<button data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join("");
   }
-  if (showRecentQuestions && recent.length) {
+  if (showRecentQuestions && recent.length && !showSuggestions) {
     suggestHtml += recent.slice(0, 3).map((q) => `<button data-q="${escapeHtml(q)}" class="recent-q">${escapeHtml(q)}</button>`).join("");
   }
   $("#suggest").innerHTML = suggestHtml;
@@ -1277,7 +1297,7 @@ function updateBearingNeedle(tab) {
   });
 }
 
-async async function closeTab(id) {
+async function closeTab(id) {
   const idx0 = state.tabs.findIndex((t) => t.id === id);
   if (idx0 < 0) return;
   const t = state.tabs[idx0];
@@ -1344,8 +1364,8 @@ function go(raw) {
 let saveTimer;
 function snapshot() {
   const tabs = state.tabs
-    .filter((t) => t.kind !== "home" || state.tabs.length === 1)
-    .map((t) => t.kind === "web" ? { kind: "web", url: t.url, title: t.title }
+    .filter((t) => t.kind !== "reader" && (t.kind !== "home" || state.tabs.length === 1))
+    .map((t) => t.kind === "web" ? { kind: "web", url: t.url, title: t.title, pinned: !!t.pinned }
       : t.kind === "ai" ? { kind: "ai", title: t.title, thread: t.thread.filter((x) => x.done).slice(-6).map(({ q, a, web, results, err }) => ({ q, a, web, err, results: (results || []).slice(0, 8), done: true })) }
       : { kind: t.kind });
   store.set("session", { tabs, active: state.tabs.findIndex((t) => t.id === state.activeId) });
@@ -1355,7 +1375,7 @@ function restoreSession() {
   const s = store.get("session", null);
   if (!state.prefs.restoreTabs || !s || !s.tabs || !s.tabs.length) return false;
   for (const x of s.tabs) {
-    state.tabs.push({ id: uid(), kind: x.kind, title: x.title || "", url: x.url || "", loading: false, conv: null, thread: x.thread || [], blocked: 0, created: false });
+    state.tabs.push({ id: uid(), kind: x.kind, title: x.title || "", url: x.url || "", loading: false, conv: null, thread: x.thread || [], blocked: 0, created: false, pinned: !!x.pinned });
   }
   const a = state.tabs[Math.min(Math.max(s.active, 0), state.tabs.length - 1)];
   state.activeId = (a || state.tabs[0]).id;
@@ -1510,6 +1530,8 @@ function renderSide() {
   $$(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.pane === state.sidePane));
   $("#pane-assistant").classList.toggle("hidden", state.sidePane !== "assistant");
   $("#pane-shields").classList.toggle("hidden", state.sidePane !== "shields");
+  $("#pane-downloads").classList.toggle("hidden", state.sidePane !== "downloads");
+  if (state.sidePane === "downloads" && state.sidebarOpen) renderDownloads();
   $("#side-new").classList.toggle("hidden", state.sidePane !== "assistant");
   const t = activeTab();
   $("#side-context").innerHTML = t && t.kind === "web"
@@ -1892,6 +1914,14 @@ function renderPrivacySettings() {
     ${row("Pinned sites", `${state.bookmarks.length} pinned.`, `<button class="danger-btn" id="pv-pins">Remove all</button>`)}
   </div>
   
+  <p class="group-title">Clear when Odyssey closes</p>
+  <div class="group">
+    ${row("Browsing history", "Applies when you close Odyssey with its own close button.", toggle("clearHistoryOnExit", p.clearHistoryOnExit))}
+    ${row("Recent questions", "", toggle("clearAskedOnExit", p.clearAskedOnExit))}
+    ${row("Downloads list", "Only the list. Downloaded files stay on your disk.", toggle("clearDownloadsOnExit", p.clearDownloadsOnExit))}
+    ${row("Cookies and site data", "Signs you out of websites every time.", toggle("clearSiteDataOnExit", p.clearSiteDataOnExit))}
+  </div>
+
   <p class="group-title">Network privacy</p>
   <div class="group">
     ${row("Load site icons", "Fetches favicons from icons.duckduckgo.com (reveals visited sites to DuckDuckGo). Disable for local-only fallback.", toggle("loadSiteIcons", p.loadSiteIcons))}
@@ -2558,6 +2588,8 @@ listen("tab-load", (e) => {
     state.loadingTabs.delete(id);
     if (!t.title) t.title = hostOf(url);
     recordVisit(url, t.title);
+    applySiteZoom(t);
+    if (t.muted) invoke("tab_mute", { id: t.id, muted: true }).catch(() => {});
     saveSession();
   }
   
@@ -2608,7 +2640,12 @@ function setMaximized(m) {
 }
 $("#win-min").onclick = () => invoke("win_minimize");
 $("#win-max").onclick = async () => setMaximized(await invoke("win_toggle_maximize"));
-$("#win-close").onclick = () => { clearTimeout(saveTimer); snapshot(); invoke("win_close"); };
+$("#win-close").onclick = async () => {
+  clearTimeout(saveTimer);
+  try { await clearOnExit(); } catch {}
+  snapshot();
+  invoke("win_close");
+};
 $$("[data-drag]").forEach((el) => {
   el.addEventListener("mousedown", (e) => { if (e.button === 0 && e.detail === 1) invoke("win_drag"); });
   el.addEventListener("dblclick", async () => setMaximized(await invoke("win_toggle_maximize")));
@@ -2617,24 +2654,506 @@ $("#tabs").addEventListener("mousedown", (e) => { if (e.button === 0 && e.target
 $$("#edges [data-edge]").forEach((el) => el.addEventListener("mousedown", (e) => { if (e.button === 0) invoke("win_resize", { edge: el.dataset.edge }); }));
 window.addEventListener("beforeunload", snapshot);
 
+
+// ---------------------------------------------------------------- omnibox suggestions
+const suggest = { items: [], sel: -1 };
+function buildSuggestions(raw) {
+  const q = raw.trim().toLowerCase();
+  if (!q || q.startsWith("!")) return [];
+  const asking = q.startsWith("?");
+  const needle = asking ? q.slice(1).trim() : q;
+  if (!needle) return [];
+  const out = [];
+  const seen = new Set();
+  const hit = (...fields) => fields.some((f) => (f || "").toLowerCase().includes(needle));
+  const add = (it) => { const k = it.kind + "|" + it.value; if (!seen.has(k) && out.length < 8) { seen.add(k); out.push(it); } };
+  if (!asking) {
+    const pins = [...(state.prefs.pinnedSites || []), ...state.bookmarks];
+    for (const b of pins) if (b.url && hit(b.name, b.title, b.url)) add({ kind: "pin", value: b.url, title: b.name || b.title || hostOf(b.url), sub: hostOf(b.url) });
+    let h = 0;
+    for (const v of state.history) { if (h >= 5) break; if (hit(v.title, v.url)) { const n = out.length; add({ kind: "history", value: v.url, title: v.title || hostOf(v.url), sub: hostOf(v.url) }); if (out.length > n) h++; } }
+  }
+  if (!asking) for (const t of state.tabs) if (t.kind === "web" && t.id !== state.activeId && hit(t.title, t.url)) add({ kind: "tab", value: t.id, title: t.title || hostOf(t.url), sub: "Switch to tab" });
+  for (const a of state.asked) if (hit(a)) add({ kind: "ask", value: a, title: a, sub: "Ask Odysseus" });
+  return out;
+}
+function closeSuggest() {
+  suggest.items = []; suggest.sel = -1;
+  const box = $("#omni-suggest");
+  if (box) { box.classList.add("hidden"); box.innerHTML = ""; }
+  setOverlay("suggest", false);
+}
+function renderSuggest() {
+  const box = $("#omni-suggest");
+  if (!suggest.items.length) return closeSuggest();
+  const r = $("#omni-form").getBoundingClientRect();
+  box.style.left = r.left + "px"; box.style.top = (r.bottom + 4) + "px"; box.style.width = r.width + "px";
+  box.innerHTML = suggest.items.map((it, i) => `
+    <div class="sg-item${i === suggest.sel ? " on" : ""}" data-i="${i}" role="option">
+      <span class="sg-ic">${it.kind === "ask" ? ICON.spark : it.kind === "tab" ? ICON.book : it.kind === "pin" ? '<svg viewBox="0 0 16 16"><path d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5z"/></svg>' : ICON.clock}</span>
+      <span class="sg-t">${escapeHtml(it.title)}</span><span class="sg-s">${escapeHtml(it.sub)}</span>
+    </div>`).join("");
+  box.classList.remove("hidden");
+  setOverlay("suggest", true);
+}
+function chooseSuggestion(i) {
+  const it = suggest.items[i];
+  if (!it) return;
+  closeSuggest();
+  $("#omni").blur();
+  if (it.kind === "ask") ask(it.value);
+  else if (it.kind === "tab") activate(it.value);
+  else openUrl(it.value);
+}
+$("#omni").addEventListener("input", () => { suggest.items = buildSuggestions($("#omni").value); suggest.sel = -1; renderSuggest(); });
+$("#omni").addEventListener("keydown", (e) => {
+  if (!suggest.items.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const n = suggest.items.length;
+    suggest.sel = e.key === "ArrowDown" ? (suggest.sel + 1) % n : (suggest.sel - 1 + n) % n;
+    renderSuggest();
+  } else if (e.key === "Enter" && suggest.sel >= 0) { e.preventDefault(); chooseSuggestion(suggest.sel); }
+  else if (e.key === "Escape") { e.preventDefault(); closeSuggest(); }
+});
+$("#omni").addEventListener("blur", () => setTimeout(closeSuggest, 0));
+$("#omni-form").addEventListener("submit", closeSuggest);
+$("#omni-suggest").addEventListener("mousedown", (e) => {
+  e.preventDefault(); // keep focus in the address bar so blur doesn't close it first
+  const row = e.target.closest(".sg-item");
+  if (row) chooseSuggestion(+row.dataset.i);
+});
+
+// ---------------------------------------------------------------- find in page
+const find = { open: false, tabId: null, busy: false, again: null, timer: null };
+function openFind() {
+  const t = activeTab();
+  if (!t || t.kind !== "web" || !t.created) { notify("Find works on web pages."); return; }
+  find.open = true; find.tabId = t.id;
+  $("#findbar").classList.remove("hidden");
+  const i = $("#find-input");
+  // The page's native view owns keyboard focus; hand it back to the chrome first.
+  invoke("focus_ui").catch(() => {}).finally(() => { i.focus(); i.select(); });
+  if (i.value) runFind(true, true);
+}
+function closeFind() {
+  if (!find.open) return;
+  find.open = false;
+  $("#findbar").classList.add("hidden");
+  $("#find-count").textContent = "";
+  const t = state.tabs.find((x) => x.id === find.tabId);
+  if (t && t.created) invoke("tab_find_clear", { id: t.id }).catch(() => {});
+  if (t && t.id === state.activeId) invoke("tab_activate", { id: t.id }).catch(() => {});
+}
+async function runFind(forward, restart) {
+  const t = state.tabs.find((x) => x.id === find.tabId);
+  if (!t || !find.open) return;
+  if (find.busy) { find.again = [forward, restart]; return; }
+  find.busy = true;
+  const q = $("#find-input").value;
+  try {
+    const r = await invoke("tab_find", { id: t.id, query: q, forward, restart });
+    $("#find-count").textContent = !q ? "" : r && r.count ? (r.cur ? `${r.cur} of ${r.count}` : `${r.count} ${r.count === 1 ? "match" : "matches"}`) : "No matches";
+    $("#findbar").classList.toggle("none", !!q && !(r && r.count));
+  } catch (e) { $("#find-count").textContent = "Can't search this page"; }
+  find.busy = false;
+  if (find.again) { const a = find.again; find.again = null; runFind(a[0], a[1]); }
+}
+$("#find-input").addEventListener("input", () => { clearTimeout(find.timer); find.timer = setTimeout(() => runFind(true, true), 160); });
+$("#find-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runFind(!e.shiftKey, false); }
+  else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+});
+$("#find-next").addEventListener("click", () => runFind(true, false));
+$("#find-prev").addEventListener("click", () => runFind(false, false));
+$("#find-close").addEventListener("click", closeFind);
+
+// ---------------------------------------------------------------- tab menu and pinned tabs
+function pinTab(t) {
+  t.pinned = !t.pinned;
+  state.tabs.splice(state.tabs.indexOf(t), 1);
+  const n = state.tabs.filter((x) => x.pinned).length;
+  state.tabs.splice(n, 0, t);
+  render();
+}
+async function closeOthers(keep, side) {
+  const idx = state.tabs.indexOf(keep);
+  const doomed = state.tabs.filter((x, i) => x !== keep && !x.pinned && (side === "right" ? i > idx : true));
+  if (state.activeId !== keep.id) activate(keep.id);
+  for (const x of doomed) await closeTab(x.id);
+}
+function closeTabMenu() {
+  const m = $("#tab-menu");
+  if (m) m.remove();
+  setOverlay("tabmenu", false);
+}
+function showTabMenu(t, x, y) {
+  closeTabMenu();
+  const web = t.kind === "web";
+  const rows = [
+    web && ["Reload", () => invoke("tab_action", { id: t.id, action: "reload" }).catch(() => {})],
+    web && ["Duplicate", () => openUrl(t.url, true)],
+    web && [t.muted ? "Unmute tab" : "Mute tab", () => toggleMute(t)],
+    web && ["Reader view", () => openReader(t)],
+    web && ["Add to reading list", () => addReading(t)],
+    ["sep"],
+    [t.pinned ? "Unpin tab" : "Pin tab", () => pinTab(t)],
+    ["sep"],
+    ["Close tab", () => closeTab(t.id)],
+    ["Close other tabs", () => closeOthers(t, "all"), state.tabs.length < 2],
+    ["Close tabs to the right", () => closeOthers(t, "right"), state.tabs.indexOf(t) >= state.tabs.length - 1],
+    ["sep"],
+    ["Reopen closed tab", () => reopenClosed(), !state.closed.length],
+  ].filter(Boolean);
+  const m = document.createElement("div");
+  m.id = "tab-menu"; m.className = "ctx-menu"; m.setAttribute("role", "menu");
+  rows.forEach((r) => {
+    if (r[0] === "sep") { const s = document.createElement("div"); s.className = "ctx-sep"; m.appendChild(s); return; }
+    const b = document.createElement("button");
+    b.type = "button"; b.setAttribute("role", "menuitem"); b.textContent = r[0]; b.disabled = !!r[2];
+    b.addEventListener("click", () => { closeTabMenu(); r[1](); });
+    m.appendChild(b);
+  });
+  document.body.appendChild(m);
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + "px";
+  m.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 4)) + "px";
+  setOverlay("tabmenu", true);
+}
+document.addEventListener("mousedown", (e) => { if (!e.target.closest("#tab-menu")) closeTabMenu(); }, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTabMenu(); });
+window.addEventListener("blur", closeTabMenu);
+
+// ---------------------------------------------------------------- downloads
+let downloads = store.get("downloads", []);
+function saveDownloads() { store.set("downloads", downloads.slice(0, 100)); }
+function renderDownloads() {
+  const pane = $("#pane-downloads");
+  if (!pane) return;
+  const rows = downloads.map((d, i) => `
+    <div class="dl-row ${d.status}">
+      <div class="dl-main">
+        <div class="dl-name" title="${escapeHtml(d.path)}">${escapeHtml(d.name)}</div>
+        <div class="dl-sub">${d.status === "downloading" ? "Downloading…" : d.status === "failed" ? "Failed" : "Done"} · ${escapeHtml(hostOf(d.url))}</div>
+      </div>
+      <div class="dl-actions">
+        ${d.status === "done" ? `<button class="ghost-btn" data-dl-open="${i}">Open</button><button class="ghost-btn" data-dl-show="${i}">Show in folder</button>` : ""}
+        ${d.status !== "downloading" ? `<button class="icon-btn small" data-dl-remove="${i}" title="Remove from list" aria-label="Remove from list">${ICON.close}</button>` : ""}
+      </div>
+    </div>`).join("");
+  pane.innerHTML = `<div class="dl-head"><span>Downloads</span>${downloads.some((d) => d.status !== "downloading") ? `<button class="ghost-btn" id="dl-clear">Clear list</button>` : ""}</div>
+    <div class="dl-list">${rows || '<p class="dl-empty">Files you download appear here. They are saved to your Downloads folder.</p>'}</div>`;
+}
+listen("download-started", (e) => {
+  const d = e.payload;
+  downloads.unshift({ id: d.id, name: d.name, path: d.path, url: d.url, status: "downloading", at: Date.now() });
+  saveDownloads(); renderDownloads();
+  notify(`Downloading ${d.name}`);
+});
+listen("download-finished", (e) => {
+  const d = e.payload;
+  const row = downloads.find((x) => x.status === "downloading" && (x.id === d.id || x.path === d.path)) || downloads.find((x) => x.status === "downloading");
+  if (row) { row.status = d.success ? "done" : "failed"; if (d.path) row.path = d.path; }
+  saveDownloads(); renderDownloads();
+  notify(d.success ? `Downloaded ${row ? row.name : "file"}` : "A download failed");
+});
+document.addEventListener("click", (e) => {
+  const o = e.target.closest("[data-dl-open]"), s = e.target.closest("[data-dl-show]"), r = e.target.closest("[data-dl-remove]");
+  if (o) invoke("open_download", { path: downloads[+o.dataset.dlOpen].path }).catch((err) => notify(String(err)));
+  else if (s) invoke("show_in_folder", { path: downloads[+s.dataset.dlShow].path }).catch((err) => notify(String(err)));
+  else if (r) { downloads.splice(+r.dataset.dlRemove, 1); saveDownloads(); renderDownloads(); }
+  else if (e.target.closest("#dl-clear")) { downloads = downloads.filter((d) => d.status === "downloading"); saveDownloads(); renderDownloads(); }
+});
+
+
+// ---------------------------------------------------------------- mute, picture-in-picture
+async function toggleMute(t) {
+  if (!t || t.kind !== "web" || !t.created) return;
+  t.muted = !t.muted;
+  try { await invoke("tab_mute", { id: t.id, muted: t.muted }); notify(t.muted ? "Muted this tab's media." : "Unmuted."); }
+  catch (e) { t.muted = !t.muted; notify(String(e)); }
+}
+async function pipTab() {
+  const t = activeTab();
+  if (!t || t.kind !== "web") return;
+  try {
+    const r = await invoke("tab_pip", { id: t.id });
+    if (!r || !r.ok) notify((r && r.error) || "Couldn't start picture-in-picture.");
+  } catch (e) { notify(String(e)); }
+}
+
+// ---------------------------------------------------------------- reader mode
+async function openReader(t) {
+  t = t || activeTab();
+  if (!t || t.kind !== "web" || !t.created) { notify("Reader view works on web pages."); return; }
+  let r;
+  try { r = await invoke("tab_reader", { id: t.id }); } catch (e) { notify(String(e)); return; }
+  if (!r || r.error || !r.blocks || r.blocks.length < 2) { notify("This page has no readable article."); return; }
+  newTab("reader", { reader: r, title: r.title });
+}
+function renderReader(t) {
+  const r = t.reader || { blocks: [] };
+  let list = "";
+  let html = "";
+  for (const b of r.blocks) {
+    if (b.k === "li") { if (!list) { list = "<ul>"; } list += `<li>${escapeHtml(b.t)}</li>`; continue; }
+    if (list) { html += list + "</ul>"; list = ""; }
+    if (b.k === "pre") html += `<pre>${escapeHtml(b.t)}</pre>`;
+    else html += `<${b.k}>${escapeHtml(b.t)}</${b.k}>`;
+  }
+  if (list) html += list + "</ul>";
+  $("#page").innerHTML = `<article class="reader">
+    <div class="reader-meta"><a href="#" data-open="${escapeHtml(r.u || "")}">${escapeHtml(r.site || "")}</a></div>
+    <h1>${escapeHtml(r.title || "")}</h1>${html}</article>`;
+}
+
+// ---------------------------------------------------------------- bookmarks manager + reading list
+let readingList = store.get("readingList", []);
+let bookmarkFilter = "";
+let bookmarkEditing = null;
+const saveBookmarks = () => store.set("bookmarks", state.bookmarks);
+function addReading(t) {
+  if (!t || t.kind !== "web" || !t.url) return;
+  if (readingList.some((x) => x.url === t.url)) { notify("Already in your reading list."); return; }
+  readingList.unshift({ url: t.url, title: t.title || hostOf(t.url), at: Date.now() });
+  store.set("readingList", readingList);
+  notify("Added to your reading list.");
+  if (activeTab() && activeTab().kind === "bookmarks") renderBookmarksPage();
+}
+function exportBookmarksHtml() {
+  const byFolder = new Map();
+  for (const b of state.bookmarks) { const f = b.folder || ""; if (!byFolder.has(f)) byFolder.set(f, []); byFolder.get(f).push(b); }
+  const link = (b) => `<DT><A HREF="${escapeHtml(b.url)}" ADD_DATE="${Math.floor((b.at || Date.now()) / 1000)}"${b.tags && b.tags.length ? ` TAGS="${escapeHtml(b.tags.join(","))}"` : ""}>${escapeHtml(b.name || b.title || b.url)}</A>`;
+  let out = `<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n`;
+  for (const [f, items] of byFolder) {
+    if (f) out += `<DT><H3>${escapeHtml(f)}</H3>\n<DL><p>\n${items.map(link).join("\n")}\n</DL><p>\n`;
+    else out += items.map(link).join("\n") + "\n";
+  }
+  out += `</DL><p>\n`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([out], { type: "text/html" }));
+  a.download = "odyssey-bookmarks.html";
+  document.body.appendChild(a); a.click(); a.remove();
+  notify("Exporting bookmarks…");
+}
+function parseBookmarkFile(text, name) {
+  const found = [];
+  const add = (url, title, folder, tags) => { if (/^https?:/i.test(url || "")) found.push({ url, title: title || "", name: (title || hostOf(url)).slice(0, 40), folder: folder || "", tags: tags || [] }); };
+  if (/\.json$/i.test(name) || /^\s*[\[{]/.test(text)) {
+    const walk = (node, folder) => {
+      if (Array.isArray(node)) return node.forEach((n) => walk(n, folder));
+      if (!node || typeof node !== "object") return;
+      const url = typeof node.url === "string" ? node.url : typeof node.uri === "string" ? node.uri : "";
+      if (url) add(url, node.name || node.title, folder, Array.isArray(node.tags) ? node.tags : []);
+      const kids = node.children || node.bookmarks || node.roots;
+      const label = node.name || node.title || "";
+      if (kids) walk(Array.isArray(kids) ? kids : Object.values(kids), url ? folder : (folder && label ? folder + " / " + label : label || folder));
+      else if (!url) Object.values(node).forEach((v) => { if (v && typeof v === "object") walk(v, folder); });
+    };
+    walk(JSON.parse(text), "");
+  } else {
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    doc.querySelectorAll("a[href]").forEach((a) => {
+      const names = [];
+      let dl = a.closest("dl");
+      while (dl) {
+        const h = (dl.previousElementSibling && dl.previousElementSibling.tagName === "H3") ? dl.previousElementSibling : (dl.parentElement && dl.parentElement.querySelector(":scope > h3"));
+        if (h) names.unshift(h.textContent.trim());
+        dl = dl.parentElement ? dl.parentElement.closest("dl") : null;
+      }
+      const tags = (a.getAttribute("tags") || "").split(",").map((x) => x.trim()).filter(Boolean);
+      add(a.getAttribute("href"), a.textContent.trim(), names.join(" / "), tags);
+    });
+  }
+  return found;
+}
+async function importBookmarks(file) {
+  try {
+    const found = parseBookmarkFile(await file.text(), file.name);
+    const have = new Set(state.bookmarks.map((b) => b.url));
+    let n = 0;
+    for (const b of found) if (!have.has(b.url)) { have.add(b.url); state.bookmarks.push({ ...b, at: Date.now() }); n++; }
+    saveBookmarks();
+    notify(n ? `Imported ${n} bookmark${n === 1 ? "" : "s"}.` : "No new bookmarks found in that file.");
+    renderBookmarksPage();
+  } catch (e) { notify("Couldn't read that file: " + e); }
+}
+function renderBookmarksPage() {
+  const page = $("#page");
+  const q = bookmarkFilter.toLowerCase();
+  const match = (b) => !q || [b.name, b.title, b.url, b.folder, (b.tags || []).join(" ")].some((f) => (f || "").toLowerCase().includes(q));
+  const groups = new Map();
+  state.bookmarks.forEach((b, i) => { if (!match(b)) return; const f = b.folder || "Unsorted"; if (!groups.has(f)) groups.set(f, []); groups.get(f).push([b, i]); });
+  const hadFocus = document.activeElement && document.activeElement.id === "bm-search";
+  const row = ([b, i]) => bookmarkEditing === i ? `
+    <div class="h-row bm-edit" data-bm="${i}">
+      <input class="bm-in" data-f="name" value="${escapeHtml(b.name || b.title || "")}" placeholder="Name" aria-label="Name"/>
+      <input class="bm-in" data-f="folder" value="${escapeHtml(b.folder || "")}" placeholder="Folder" aria-label="Folder"/>
+      <input class="bm-in" data-f="tags" value="${escapeHtml((b.tags || []).join(", "))}" placeholder="Tags, separated by commas" aria-label="Tags"/>
+      <button class="ghost-btn" data-bm-save="${i}">Save</button><button class="ghost-btn" data-bm-cancel>Cancel</button>
+    </div>` : `
+    <div class="h-row" data-open="${escapeHtml(b.url)}"><span class="h-fav">${favicon(b.url, 16)}</span><span class="h-title">${escapeHtml(b.name || b.title || b.url)}</span>
+      ${(b.tags || []).map((t) => `<span class="bm-tag">${escapeHtml(t)}</span>`).join("")}<span class="h-host">${escapeHtml(hostOf(b.url))}</span>
+      <button class="icon-btn small" data-bm-edit="${i}" title="Edit" aria-label="Edit">${ICON.gear}</button>
+      <button class="icon-btn small" data-bm-del="${i}" title="Remove" aria-label="Remove">${ICON.close}</button></div>`;
+  const rl = readingList.map((r, i) => `
+    <div class="h-row" data-open="${escapeHtml(r.url)}"><span class="h-fav">${favicon(r.url, 16)}</span><span class="h-title">${escapeHtml(r.title)}</span><span class="h-host">${escapeHtml(hostOf(r.url))}</span>
+      <button class="icon-btn small" data-rl-del="${i}" title="Done reading" aria-label="Remove from reading list">${ICON.close}</button></div>`).join("");
+  page.innerHTML = `<div class="history bookmarks">
+    <div class="history-head"><h2>Bookmarks</h2><input id="bm-search" placeholder="Search bookmarks" value="${escapeHtml(bookmarkFilter)}" spellcheck="false"/>
+      <button class="ghost-btn" id="bm-import">Import…</button><button class="ghost-btn" id="bm-export">Export HTML</button>
+      <input type="file" id="bm-file" accept=".html,.htm,.json" style="display:none"/></div>
+    ${groups.size ? [...groups].map(([f, rows]) => `<div class="day">${escapeHtml(f)}</div>${rows.map(row).join("")}`).join("") : `<p class="empty">${q ? "Nothing matches that search." : "Star a page (Ctrl+D) or import a bookmarks file to fill this page."}</p>`}
+    <div class="day">Reading list</div>${rl || `<p class="empty">Right-click a tab and choose “Add to reading list” to save a page for later.</p>`}
+  </div>`;
+  const s = $("#bm-search", page);
+  s.oninput = () => { bookmarkFilter = s.value; renderBookmarksPage(); };
+  if (hadFocus) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+  $("#bm-import", page).onclick = () => $("#bm-file", page).click();
+  $("#bm-file", page).onchange = (e) => { if (e.target.files[0]) importBookmarks(e.target.files[0]); };
+  $("#bm-export", page).onclick = exportBookmarksHtml;
+}
+document.addEventListener("click", (e) => {
+  const del = e.target.closest("[data-bm-del]"), ed = e.target.closest("[data-bm-edit]"), sv = e.target.closest("[data-bm-save]"), cx = e.target.closest("[data-bm-cancel]"), rl = e.target.closest("[data-rl-del]");
+  if (!(del || ed || sv || cx || rl)) return;
+  e.stopPropagation();
+  if (del) { state.bookmarks.splice(+del.dataset.bmDel, 1); saveBookmarks(); }
+  else if (ed) bookmarkEditing = +ed.dataset.bmEdit;
+  else if (cx) bookmarkEditing = null;
+  else if (sv) {
+    const i = +sv.dataset.bmSave, box = sv.closest(".bm-edit"), b = state.bookmarks[i];
+    if (b) {
+      b.name = box.querySelector('[data-f="name"]').value.trim() || b.name;
+      b.folder = box.querySelector('[data-f="folder"]').value.trim();
+      b.tags = box.querySelector('[data-f="tags"]').value.split(",").map((x) => x.trim()).filter(Boolean);
+      saveBookmarks();
+    }
+    bookmarkEditing = null;
+  } else if (rl) { readingList.splice(+rl.dataset.rlDel, 1); store.set("readingList", readingList); }
+  renderBookmarksPage();
+}, true);
+
+// ---------------------------------------------------------------- clear on exit
+async function clearOnExit() {
+  const p = state.prefs;
+  if (p.clearHistoryOnExit) { state.history = []; store.set("history", []); }
+  if (p.clearAskedOnExit) { state.asked = []; store.set("asked", []); }
+  if (p.clearDownloadsOnExit) { downloads = []; saveDownloads(); }
+  if (p.clearSiteDataOnExit) await invoke("clear_site_data").catch(() => {});
+}
+
+// ---------------------------------------------------------------- command palette
+function fuzzy(q, text) {
+  q = q.toLowerCase(); text = text.toLowerCase();
+  if (!q) return 1;
+  const at = text.indexOf(q);
+  if (at >= 0) return 1000 - at;
+  let i = 0, score = 0;
+  for (const ch of text) { if (ch === q[i]) { i++; score += 2; } }
+  return i === q.length ? score : 0;
+}
+function paletteActions() {
+  const t = activeTab();
+  const web = !!(t && t.kind === "web");
+  const act = [
+    ["New tab", "Ctrl+T", () => newTab()],
+    ["Close tab", "Ctrl+W", () => state.activeId && closeTab(state.activeId)],
+    ["Reopen closed tab", "Ctrl+Shift+T", () => reopenClosed()],
+    ["Search tabs", "Ctrl+Shift+A", () => openTabSearch()],
+    ["Find in page", "Ctrl+F", () => openFind(), web],
+    ["Reload", "F5", () => tabAction("reload"), web],
+    ["Go back", "Alt+Left", () => tabAction("back"), web],
+    ["Go forward", "Alt+Right", () => tabAction("forward"), web],
+    ["Zoom in", "Ctrl+=", () => zoomTab(0.1), web],
+    ["Zoom out", "Ctrl+-", () => zoomTab(-0.1), web],
+    ["Reset zoom", "Ctrl+0", () => zoomTab(0), web],
+    ["Bookmark this page", "Ctrl+D", () => toggleBookmark(), web],
+    ["Add to reading list", "", () => addReading(t), web],
+    ["Reader view", "", () => openReader(t), web],
+    [t && t.muted ? "Unmute tab" : "Mute tab", "", () => toggleMute(t), web],
+    ["Picture-in-picture", "", () => pipTab(), web],
+    ["Print", "Ctrl+P", () => invoke("tab_print", { id: t.id }), web],
+    ["Developer tools", "F12", () => invoke("tab_devtools", { id: t.id }), web],
+    [t && t.pinned ? "Unpin tab" : "Pin tab", "", () => pinTab(t), !!t],
+    ["Open Bookmarks", "", () => openPage("bookmarks")],
+    ["Open History", "Ctrl+H", () => openPage("history")],
+    ["Open Downloads", "Ctrl+Shift+J", () => openSide("downloads")],
+    ["Open Assistant", "Ctrl+J", () => openSide("assistant")],
+    ["Open Shields panel", "", () => openSide("shields")],
+    ["Open Settings", "Ctrl+,", () => openPage("settings")],
+    ["Clear browsing history", "", () => { state.history = []; store.set("history", []); notify("History cleared."); }],
+    ["Clear cookies and site data", "", () => invoke("clear_site_data").then(() => notify("Site data cleared.")).catch((e) => notify(String(e)))],
+  ];
+  for (const [k, n] of SECTIONS) act.push([`Settings: ${n}`, "", () => { state.settingsSection = k; if (k === "shields") refreshShields(); if (k === "passwords") refreshVault(); openPage("settings"); renderSettings(); }]);
+  return act.filter((a) => a[3] === undefined || a[3]).map((a) => ({ label: a[0], hint: a[1], run: a[2] }));
+}
+const palette = { open: false, items: [], sel: 0 };
+function openPalette() {
+  if (palette.open) return closePalette();
+  palette.open = true;
+  setOverlay("palette", true);
+  const ov = document.createElement("div");
+  ov.id = "palette";
+  ov.innerHTML = `<div class="pal-box"><input type="text" placeholder="Type a command or setting…" aria-label="Command palette" spellcheck="false"/><div class="pal-list" role="listbox"></div></div>`;
+  document.body.appendChild(ov);
+  const input = ov.querySelector("input"), list = ov.querySelector(".pal-list");
+  const all = paletteActions();
+  const draw = () => {
+    palette.items = all.map((a) => ({ a, s: fuzzy(input.value.trim(), a.label) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 12).map((x) => x.a);
+    palette.sel = Math.min(palette.sel, Math.max(0, palette.items.length - 1));
+    list.innerHTML = palette.items.map((a, i) => `<div class="pal-item${i === palette.sel ? " on" : ""}" data-i="${i}" role="option"><span>${escapeHtml(a.label)}</span>${a.hint ? `<kbd>${escapeHtml(a.hint)}</kbd>` : ""}</div>`).join("") || `<div class="pal-empty">No matching command.</div>`;
+    const on = list.querySelector(".on"); if (on) on.scrollIntoView({ block: "nearest" });
+  };
+  const run = (i) => { const a = palette.items[i]; closePalette(); if (a) setTimeout(a.run, 30); };
+  input.addEventListener("input", () => { palette.sel = 0; draw(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); palette.sel = (palette.sel + 1) % Math.max(1, palette.items.length); draw(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); palette.sel = (palette.sel - 1 + palette.items.length) % Math.max(1, palette.items.length); draw(); }
+    else if (e.key === "Enter") { e.preventDefault(); run(palette.sel); }
+    else if (e.key === "Escape") { e.preventDefault(); closePalette(); }
+  });
+  list.addEventListener("mousedown", (e) => { e.preventDefault(); const it = e.target.closest(".pal-item"); if (it) run(+it.dataset.i); });
+  ov.addEventListener("mousedown", (e) => { if (e.target === ov) closePalette(); });
+  draw();
+  invoke("focus_ui").catch(() => {}).finally(() => input.focus());
+}
+function closePalette() {
+  if (!palette.open) return;
+  palette.open = false;
+  const ov = $("#palette"); if (ov) ov.remove();
+  setOverlay("palette", false);
+}
+
 // ---------------------------------------------------------------- shortcuts
-const zoom = new Map();
+const siteZoom = store.get("siteZoom", {});
 function zoomTab(delta) {
   const t = activeTab();
   if (!t || t.kind !== "web") return;
-  const z = delta === 0 ? 1 : Math.min(3, Math.max(0.3, Math.round(((zoom.get(t.id) || 1) + delta) * 10) / 10));
-  zoom.set(t.id, z);
-  invoke("tab_zoom", { id: t.id, factor: z });
-  notify(`Zoom ${Math.round(z * 100)}%`);
+  const key = hostOf(t.url);
+  const cur = siteZoom[key] || 1;
+  const z = delta === 0 ? 1 : Math.min(3, Math.max(0.3, Math.round((cur + delta) * 10) / 10));
+  if (z === 1) delete siteZoom[key]; else siteZoom[key] = z;
+  store.set("siteZoom", siteZoom);
+  for (const x of state.tabs) if (x.kind === "web" && x.created && hostOf(x.url) === key) invoke("tab_zoom", { id: x.id, factor: z }).catch(() => {});
+  notify(`Zoom ${Math.round(z * 100)}% on ${key}`);
+}
+function applySiteZoom(t) {
+  const z = siteZoom[hostOf(t.url)];
+  if (z && t.created) invoke("tab_zoom", { id: t.id, factor: z }).catch(() => {});
 }
 function handleShortcut({ key, ctrl, shift, alt }) {
   const t = activeTab();
   const k = key.length === 1 ? key.toLowerCase() : key;
   const web = !!(t && t.kind === "web");
   if (ctrl && shift && k === "t") { reopenClosed(); return true; }
+  if (ctrl && shift && k === "a") { openTabSearch(); return true; }
+  if (ctrl && shift && k === "o") { openPage("bookmarks"); return true; }
+  if (ctrl && shift && k === "j") { openSide("downloads"); return true; }
+  if (ctrl && k === "f") { openFind(); return true; }
   if (ctrl && k === "t") { newTab(); return true; }
   if (ctrl && k === "w") { if (state.activeId) closeTab(state.activeId); return true; }
-  if (ctrl && k === "l") { $("#omni").focus(); return true; }
+  if (ctrl && k === "l") { invoke("focus_ui").catch(() => {}).finally(() => $("#omni").focus()); return true; }
+  if (ctrl && (k === "k" || (shift && k === "p"))) { openPalette(); return true; }
   if (ctrl && k === "j") { openSide("assistant"); return true; }
   if (ctrl && k === "d") { toggleBookmark(); return true; }
   if (ctrl && k === "h") { openPage("history"); return true; }
@@ -2692,7 +3211,7 @@ $("#vault-btn").addEventListener("click", async () => {
 });
 $("#history-btn").addEventListener("click", () => openPage("history"));
 $("#connect-btn").addEventListener("click", connect);
-const tabAction = (action) => { const t = activeTab(); if (t && t.kind === "web") invoke("tab_action", { id: t.id, action }).catch(() => {}); };
+var tabAction = (action) => { const t = activeTab(); if (t && t.kind === "web") invoke("tab_action", { id: t.id, action }).catch(() => {}); };
 $("#back-btn").addEventListener("click", () => tabAction("back"));
 $("#fwd-btn").addEventListener("click", () => tabAction("forward"));
 $("#reload-btn").addEventListener("click", () => tabAction("reload"));
@@ -2701,7 +3220,7 @@ document.addEventListener("click", (e) => {
   const unpin = e.target.closest("[data-unpin]");
   if (unpin) { e.stopPropagation(); state.bookmarks.splice(+unpin.dataset.unpin, 1); store.set("bookmarks", state.bookmarks); renderHome(); return; }
   const open = e.target.closest("[data-open]");
-  if (open) { openUrl(open.dataset.open, !!(activeTab() && activeTab().kind === "history")); return; }
+  if (open) { openUrl(open.dataset.open, !!(activeTab() && ["history", "bookmarks", "reader"].includes(activeTab().kind))); return; }
   const a = e.target.closest("[data-href]");
   if (a) { e.preventDefault(); openUrl(a.dataset.href, state.prefs.linkTarget !== "same"); return; }
   const s = e.target.closest("[data-search]");
