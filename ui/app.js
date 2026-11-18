@@ -18,6 +18,27 @@ const ICON = {
   keys: '<svg viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 9.5h6"/></svg>',
   info: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v3.6M8 5h.01"/></svg>',
   home: '<svg viewBox="0 0 16 16"><path d="M2.5 7.5 8 3l5.5 4.5M4 6.5V13h8V6.5"/></svg>',
+  plus: '<svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>',
+  trash: '<svg viewBox="0 0 16 16"><path d="M3 5h10M5 5v8M7 5v8M9 5v8"/></svg>',
+  edit: '<svg viewBox="0 0 16 16"><path d="M12 3l3 3-8 8-4 1 1-4z"/></svg>',
+  grip: '<svg viewBox="0 0 16 16"><circle cx="4" cy="4" r="1"/><circle cx="4" cy="8" r="1"/><circle cx="4" cy="12" r="1"/></svg>',
+  folder: '<svg viewBox="0 0 16 16"><path d="M3 5h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>',
+  download: '<svg viewBox="0 0 16 16"><path d="M8 3v10M4 7l4 4 4-4"/></svg>',
+  upload: '<svg viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4"/></svg>',
+  eye: '<svg viewBox="0 0 16 16"><path d="M2 8a6 6 0 0 1 12 0"/><circle cx="8" cy="8" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 16 16"><path d="M2 8a6 6 0 0 1 12 0"/><path d="M9.5 9.5 13.5 13.5M2.5 2.5l3 3"/></svg>',
+  sun: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
+  moon: '<svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 0 0 0 12c1 0 1.3-.8.9-1.6-.5-.9.1-1.9 1.1-1.9H12a2 2 0 0 0 2-2C14 4.7 11.3 2 8 2Z"/></svg>',
+  image: '<svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2"/><circle cx="7" cy="7" r="2"/><path d="M14 2L2 14"/></svg>',
+  sliders: '<svg viewBox="0 0 16 16"><path d="M4 4h8M4 8h8M4 12h8"/></svg>',
+  search: '<svg viewBox="0 0 16 16"><circle cx="11" cy="11" r="7"/><path d="M16 16l-4-4"/></svg>',
+  chevronDown: '<svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>',
+  chevronUp: '<svg viewBox="0 0 16 16"><path d="M4 10l4-4 4 4"/></svg>',
+  chevronLeft: '<svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>',
+  chevronRight: '<svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg>',
+  refresh: '<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3"/></svg>',
+  star: '<svg viewBox="0 0 16 16"><path d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5z"/></svg>',
+  link: '<svg viewBox="0 0 16 16"><path d="M8 3l3 3-3 3M11 6l3-3-3-3"/></svg>',
 };
 
 // ---------------------------------------------------------------- persistence
@@ -25,10 +46,115 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem("odyssey." + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem("odyssey." + k, JSON.stringify(v)); } catch {} },
 };
-const DEFAULT_PREFS = {
-  accent: "#cfa75e", background: "compass", showClock: true, showPinned: true, restoreTabs: true,
-  answerWeb: true, assistantPage: true, linkTarget: "new", searchEngine: "duckduckgo",
+
+// Theme presets - all 6 themes with complete color tokens
+const THEME_PRESETS = {
+  "night-sea": {
+    name: "Night Sea",
+    description: "The default nautical chart theme",
+    deep: "#0a1620", sea: "#0e1c27", hull: "#142633", "hull-2": "#1a3040",
+    rope: "#24404f", "rope-soft": "#1c3341", foam: "#e3ebee", mist: "#8ea4af",
+    accent: "#cfa75e", "accent-ink": "#0a1620", glass: "#6bbfb0", coral: "#ef8a7a",
+    colorScheme: "dark"
+  },
+  "abyss": {
+    name: "Abyss",
+    description: "Near-black blue depths",
+    deep: "#04080c", sea: "#060d14", hull: "#0a141e", "hull-2": "#0e1c2a",
+    rope: "#142838", "rope-soft": "#0f1f2e", foam: "#c8d4db", mist: "#6b8a96",
+    accent: "#cfa75e", "accent-ink": "#04080c", glass: "#5aa89c", coral: "#e07a6a",
+    colorScheme: "dark"
+  },
+  "chart-paper": {
+    name: "Chart Paper",
+    description: "Warm off-white paper with ink-blue text",
+    deep: "#f5f0e8", sea: "#faf7f0", hull: "#efe8dc", "hull-2": "#e6ddd0",
+    rope: "#d4c8b0", "rope-soft": "#ddd4c4", foam: "#1a2a3a", mist: "#4a5a6a",
+    accent: "#b8954a", "accent-ink": "#faf7f0", glass: "#4a9b8e", coral: "#d46b5a",
+    colorScheme: "light"
+  },
+  "dawn": {
+    name: "Dawn",
+    description: "Warm horizon tones",
+    deep: "#1a1210", sea: "#241814", hull: "#33241e", "hull-2": "#402d24",
+    rope: "#5c4436", "rope-soft": "#4a382c", foam: "#fdf6f0", mist: "#c9b8a8",
+    accent: "#d4a574", "accent-ink": "#1a1210", glass: "#c8967a", coral: "#e88d6a",
+    colorScheme: "dark"
+  },
+  "fathom": {
+    name: "Fathom",
+    description: "Deep teal waters",
+    deep: "#061416", sea: "#081c1f", hull: "#0c2a2e", "hull-2": "#10383d",
+    rope: "#1a5056", "rope-soft": "#144045", foam: "#d0efe8", mist: "#7ac8b8",
+    accent: "#4fd1c5", "accent-ink": "#061416", glass: "#2dd4bf", coral: "#f08a7a",
+    colorScheme: "dark"
+  },
+  "graphite": {
+    name: "Graphite",
+    description: "Neutral grayscale with brass accent",
+    deep: "#0d0d0d", sea: "#141414", hull: "#1e1e1e", "hull-2": "#282828",
+    rope: "#3a3a3a", "rope-soft": "#2e2e2e", foam: "#e8e8e8", mist: "#9e9e9e",
+    accent: "#cfa75e", "accent-ink": "#0d0d0d", glass: "#888888", coral: "#b88888",
+    colorScheme: "dark"
+  }
 };
+
+// Theme token keys in order
+const THEME_TOKENS = ["deep", "sea", "hull", "hull-2", "rope", "rope-soft", "foam", "mist", "accent", "accent-ink", "glass", "coral"];
+
+// Default preferences with all new appearance options
+const DEFAULT_PREFS = {
+  // Theme
+  theme: "night-sea",
+  customThemes: {},
+  // Accent (legacy, kept for compatibility)
+  accent: "#cfa75e",
+  // Home page
+  background: "compass",
+  showClock: true,
+  clockFormat: "24h", // "12h" | "24h"
+  showGreeting: false,
+  greetingName: "",
+  showPinned: true,
+  showSuggestions: true,
+  showRecentQuestions: true,
+  searchBoxStyle: "centered", // "centered" | "minimal" | "hero"
+  // Wallpaper
+  customWallpaper: null, // base64 data URL
+  wallpaperDim: 0.4,
+  wallpaperBlur: 0,
+  // Pinned sites
+  pinnedSites: [], // array of {id, name, url, folderId}
+  pinnedFolders: [], // array of {id, name, order}
+  // General
+  restoreTabs: true,
+  answerWeb: true,
+  assistantPage: true,
+  linkTarget: "new",
+  searchEngine: "duckduckgo",
+  // Appearance - Answer
+  answerFont: "serif", // "serif" | "sans" | "mono"
+  answerFontSize: 17,
+  answerWidth: 760,
+  // Appearance - UI
+  uiDensity: "comfortable", // "comfortable" | "compact"
+  cornerRadius: "default", // "sharp" | "default" | "round"
+  tabStyle: "classic", // "classic" | "compact" | "pills"
+  tabBarPosition: "top", // "top" | "sidebar"
+  toolbarButtons: ["back", "forward", "reload", "omni", "star", "shield", "vault", "connect", "assist", "history", "settings"],
+  toolbarOrder: ["back", "forward", "reload", "omni", "star", "shield", "vault", "connect", "assist", "history", "settings"],
+  sidebarSide: "left", // "left" | "right"
+  sidebarWidth: 400,
+  uiScale: 1,
+  windowOpacity: 1,
+  windowBlur: 0,
+  // Motion
+  reduceMotion: false,
+  animationSpeed: 1,
+  // Privacy
+  loadSiteIcons: true,
+};
+
 const SEARCH_ENGINES = {
   duckduckgo: { name: "DuckDuckGo", url: "https://duckduckgo.com/?q=" },
   google: { name: "Google", url: "https://www.google.com/search?q=" },
@@ -38,6 +164,15 @@ const SEARCH_ENGINES = {
   ecosia: { name: "Ecosia", url: "https://www.ecosia.org/search?q=" },
 };
 const ACCENTS = [["#cfa75e", "Brass"], ["#6bbfb0", "Sea glass"], ["#e46f78", "Odysseus coral"], ["#a99cf0", "Lavender"], ["#86bff2", "Ice"]];
+
+// Built-in nautical wallpapers (SVG data URLs)
+const BUILTIN_WALLPAPERS = [
+  { id: "compass", name: "Compass Chart", preview: "compass", type: "builtin" },
+  { id: "stars", name: "Night Sky", preview: "stars", type: "builtin" },
+  { id: "waves", name: "Ocean Waves", preview: "waves", type: "builtin" },
+  { id: "chart-lines", name: "Chart Lines", preview: "chart-lines", type: "builtin" },
+  { id: "nautical-map", name: "Nautical Map", preview: "nautical-map", type: "builtin" },
+];
 
 const state = {
   tabs: [],
@@ -52,10 +187,15 @@ const state = {
   closed: [],
   maximized: true,
   settingsSection: "general",
+  settingsSearch: "",
   shields: null,
   side: { conv: uid(), thread: [] },
   vault: [],
   vaultAdding: false,
+  // Theme editor state
+  themeEditor: { editingId: null, editingTheme: null, previewTheme: null },
+  // Pinned sites editor state
+  pinnedEditor: { draggingId: null, editingId: null },
 };
 const convHandlers = new Map();
 const savePrefs = () => store.set("prefs", state.prefs);
@@ -91,7 +231,7 @@ function escapeHtml(s) {
 function favicon(url, size = 16, withLetter = true) {
   const h = hostOf(url);
   const letter = withLetter ? `<span>${escapeHtml((h[0] || "•").toUpperCase())}</span>` : "";
-  if (isLocal(url)) return letter;
+  if (isLocal(url) || !state.prefs.loadSiteIcons) return letter;
   return `${letter}<img src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(h)}.ico" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.remove()">`;
 }
 const fmtNum = (n) => Number(n || 0).toLocaleString();
@@ -151,9 +291,276 @@ function setMode(el, mode) {
   el.querySelector("span").textContent = mode === "go" ? "Go" : mode === "search" ? "Search" : "Ask";
 }
 
+// ---------------------------------------------------------------- Theme System
+function applyTheme(themeId, customTheme = null) {
+  const root = document.documentElement;
+  let theme;
+  
+  if (themeId === "custom" && customTheme) {
+    theme = customTheme;
+    root.dataset.theme = "custom";
+  } else if (THEME_PRESETS[themeId]) {
+    theme = THEME_PRESETS[themeId];
+    root.dataset.theme = themeId;
+  } else {
+    theme = THEME_PRESETS["night-sea"];
+    root.dataset.theme = "night-sea";
+  }
+  
+  // Apply all theme tokens as CSS custom properties for crossfade transition
+  for (const token of THEME_TOKENS) {
+    root.style.setProperty(`--theme-${themeId}-${token}`, theme[token]);
+    root.style.setProperty(`--${token}`, theme[token]);
+  }
+  // Accent-dim is computed
+  root.style.setProperty("--accent-dim", `color-mix(in srgb, ${theme.accent} 18%, transparent)`);
+  root.style.setProperty("--accent-ink", theme["accent-ink"]);
+  root.style.setProperty("--custom-color-scheme", theme.colorScheme);
+  root.style.colorScheme = theme.colorScheme;
+  
+  // Update accent in prefs for compatibility
+  state.prefs.accent = theme.accent;
+  
+  // Re-render home background if on home
+  renderHomeBackground();
+  render();
+}
+
+function getCurrentTheme() {
+  const themeId = state.prefs.theme;
+  if (themeId === "custom") {
+    return state.prefs.customThemes[state.prefs.customThemeId] || THEME_PRESETS["night-sea"];
+  }
+  return THEME_PRESETS[themeId] || THEME_PRESETS["night-sea"];
+}
+
+function initTheme() {
+  applyTheme(state.prefs.theme, state.prefs.customThemes[state.prefs.customThemeId]);
+  // Apply all appearance CSS variables
+  applyAppearanceVariables();
+}
+
+function applyAppearanceVariables() {
+  const root = document.documentElement;
+  const p = state.prefs;
+  
+  // Answer font
+  const fontMap = { serif: "var(--read)", sans: "var(--ui)", mono: "var(--mono)" };
+  root.style.setProperty("--answer-font", fontMap[p.answerFont] || "var(--read)");
+  root.style.setProperty("--answer-font-size", `${p.answerFontSize}px`);
+  root.style.setProperty("--answer-width", `${p.answerWidth}px`);
+  
+  // UI density
+  root.style.setProperty("--ui-density", p.uiDensity);
+  
+  // Corner radius
+  root.style.setProperty("--corner-radius", p.cornerRadius);
+  
+  // Tab style
+  root.style.setProperty("--tab-style", p.tabStyle);
+  root.dataset.tabStyle = p.tabStyle;
+  
+  // Tab bar position
+  root.dataset.tabBarPosition = p.tabBarPosition;
+  
+  // Toolbar buttons visibility
+  updateToolbarVisibility();
+  
+  // Sidebar
+  root.dataset.sidebarSide = p.sidebarSide;
+  root.style.setProperty("--sidebar-width", `${p.sidebarWidth}px`);
+  
+  // UI scale
+  root.style.setProperty("--ui-scale", p.uiScale);
+  
+  // Window opacity/blur
+  root.style.setProperty("--window-opacity", p.windowOpacity);
+  root.style.setProperty("--window-blur", `${p.windowBlur}px`);
+  if (p.windowBlur > 0 || p.windowOpacity < 1) {
+    root.dataset.windowBlur = "true";
+  } else {
+    root.dataset.windowBlur = "false";
+  }
+  
+  // Motion
+  root.style.setProperty("--animation-speed", p.animationSpeed);
+  root.dataset.reduceMotion = p.reduceMotion ? "true" : "false";
+  
+  // Home page clock format
+  tickClock();
+}
+
+function updateToolbarVisibility() {
+  const buttons = ["back", "forward", "reload", "omni", "star", "shield", "vault", "connect", "assist", "history", "settings"];
+  for (const btn of buttons) {
+    const el = $(`#${btn}-btn`) || $(`#${btn}-form`) || $(`.${btn}-btn`);
+    if (el) {
+      if (state.prefs.toolbarButtons.includes(btn)) {
+        el.classList.remove("hidden-btn");
+      } else {
+        el.classList.add("hidden-btn");
+      }
+    }
+  }
+  // Re-order toolbar buttons
+  const toolbar = $("#toolbar");
+  if (toolbar) {
+    const order = state.prefs.toolbarOrder;
+    for (let i = 0; i < order.length; i++) {
+      const btn = order[i];
+      const el = $(`#${btn}-btn`) || $(`#${btn}-form`) || $(`.${btn}-btn`);
+      if (el && el.parentNode === toolbar) {
+        el.style.order = i;
+      }
+    }
+  }
+}
+
+// Theme Editor Functions
+function openThemeEditor(themeId = null) {
+  state.settingsSection = "appearance";
+  state.themeEditor.editingId = themeId;
+  
+  if (themeId && themeId !== "new") {
+    if (THEME_PRESETS[themeId]) {
+      state.themeEditor.editingTheme = { ...THEME_PRESETS[themeId], id: themeId, isPreset: true };
+    } else if (state.prefs.customThemes[themeId]) {
+      state.themeEditor.editingTheme = { ...state.prefs.customThemes[themeId], id: themeId, isPreset: false };
+    }
+  } else {
+    // New custom theme based on current
+    const current = getCurrentTheme();
+    state.themeEditor.editingTheme = {
+      ...current,
+      id: uid(),
+      name: "New Theme",
+      description: "",
+      isPreset: false
+    };
+    state.themeEditor.editingId = "new";
+  }
+  
+  state.themeEditor.previewTheme = { ...state.themeEditor.editingTheme };
+  renderSettings();
+}
+
+function closeThemeEditor() {
+  state.themeEditor.editingId = null;
+  state.themeEditor.editingTheme = null;
+  state.themeEditor.previewTheme = null;
+  renderSettings();
+}
+
+function updateThemeEditorPreview(token, value) {
+  if (!state.themeEditor.previewTheme) return;
+  state.themeEditor.previewTheme[token] = value;
+  state.themeEditor.previewTheme["accent-dim"] = `color-mix(in srgb, ${value} 18%, transparent)`;
+  
+  // Apply to preview immediately
+  const root = document.documentElement;
+  root.style.setProperty(`--${token}`, value);
+  if (token === "accent") {
+    root.style.setProperty("--accent-dim", `color-mix(in srgb, ${value} 18%, transparent)`);
+  }
+}
+
+function saveThemeEditorTheme() {
+  const theme = state.themeEditor.previewTheme;
+  if (!theme) return;
+  
+  if (state.themeEditor.editingId === "new" || !theme.isPreset) {
+    // Save as custom theme
+    const customThemes = { ...state.prefs.customThemes };
+    customThemes[theme.id] = theme;
+    state.prefs.customThemes = customThemes;
+    state.prefs.customThemeId = theme.id;
+    state.prefs.theme = "custom";
+    savePrefs();
+    applyTheme("custom", theme);
+  } else {
+    // Can't save over presets, create new custom instead
+    const newId = uid();
+    const customThemes = { ...state.prefs.customThemes };
+    customThemes[newId] = { ...theme, id: newId, isPreset: false };
+    state.prefs.customThemes = customThemes;
+    state.prefs.customThemeId = newId;
+    state.prefs.theme = "custom";
+    savePrefs();
+    applyTheme("custom", customThemes[newId]);
+  }
+  
+  closeThemeEditor();
+  notify(`Theme "${theme.name}" saved`);
+}
+
+function deleteCustomTheme(themeId) {
+  if (THEME_PRESETS[themeId]) return; // Can't delete presets
+  const customThemes = { ...state.prefs.customThemes };
+  delete customThemes[themeId];
+  state.prefs.customThemes = customThemes;
+  if (state.prefs.customThemeId === themeId) {
+    state.prefs.theme = "night-sea";
+    state.prefs.customThemeId = null;
+    applyTheme("night-sea");
+  }
+  savePrefs();
+  renderSettings();
+  notify("Theme deleted");
+}
+
+function exportTheme(themeId) {
+  let theme;
+  if (THEME_PRESETS[themeId]) {
+    theme = { ...THEME_PRESETS[themeId], id: themeId, exportedAt: Date.now() };
+  } else if (state.prefs.customThemes[themeId]) {
+    theme = { ...state.prefs.customThemes[themeId], exportedAt: Date.now() };
+  } else return;
+  
+  const json = JSON.stringify(theme, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    notify("Theme exported to clipboard");
+  }).catch(() => {
+    // Fallback: download as file
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `odyssey-theme-${theme.name.toLowerCase().replace(/\s+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify("Theme downloaded as file");
+  });
+}
+
+function importThemeFromJson(json) {
+  try {
+    const theme = JSON.parse(json);
+    if (!theme.id || !theme.name || !theme.deep) throw new Error("Invalid theme format");
+    
+    const newId = uid();
+    const customThemes = { ...state.prefs.customThemes };
+    customThemes[newId] = { ...theme, id: newId, isPreset: false };
+    state.prefs.customThemes = customThemes;
+    state.prefs.customThemeId = newId;
+    state.prefs.theme = "custom";
+    savePrefs();
+    applyTheme("custom", customThemes[newId]);
+    renderSettings();
+    notify(`Theme "${theme.name}" imported`);
+  } catch (e) {
+    notify("Failed to import theme: " + e.message);
+  }
+}
+
+function importThemeFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => importThemeFromJson(e.target.result);
+  reader.readAsText(file);
+}
+
 // ---------------------------------------------------------------- appearance
 function applyAppearance() {
-  document.documentElement.style.setProperty("--accent", state.prefs.accent);
+  applyAppearanceVariables();
   renderHomeBackground();
 }
 function compassSvg(animate = true) {
@@ -183,20 +590,104 @@ function starsSvg() {
   const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
   const dots = [];
   for (let i = 0; i < 260; i++) dots.push(`<circle cx="${(rnd() * 1600).toFixed(1)}" cy="${(rnd() * 900).toFixed(1)}" r="${(rnd() * 1.3 + 0.3).toFixed(2)}" opacity="${(rnd() * 0.6 + 0.15).toFixed(2)}"/>`);
-  // The Plough, drawn in the accent colour: sailors' oldest way to find north.
   const p = [[1150, 150], [1230, 180], [1300, 230], [1380, 260], [1395, 340], [1500, 350], [1510, 270]];
   const lines = p.slice(1).map((q, i) => `<line x1="${p[i][0]}" y1="${p[i][1]}" x2="${q[0]}" y2="${q[1]}"/>`).join("") + `<line x1="${p[3][0]}" y1="${p[3][1]}" x2="${p[6][0]}" y2="${p[6][1]}"/>`;
   const big = p.map(([x, y]) => `<circle class="bright" cx="${x}" cy="${y}" r="2.6"/>`).join("");
   return `<svg class="stars" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%;left:0;top:0;transform:none">${dots.join("")}${lines}${big}</svg>`;
 }
+function wavesSvg() {
+  return `<svg viewBox="0 0 800 400" preserveAspectRatio="none" style="width:100%;height:100%;">
+    <defs>
+      <linearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--sea)"/>
+        <stop offset="100%" stop-color="var(--deep)"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="400" fill="url(#waveGrad)"/>
+    <path d="M0,200 Q200,150 400,200 T800,200 L800,400 L0,400 Z" fill="var(--hull)" opacity="0.6"/>
+    <path d="M0,250 Q200,300 400,250 T800,250 L800,400 L0,400 Z" fill="var(--hull-2)" opacity="0.4"/>
+    <path d="M0,300 Q200,250 400,300 T800,300 L800,400 L0,400 Z" fill="var(--rope)" opacity="0.3"/>
+  </svg>`;
+}
+function chartLinesSvg() {
+  return `<svg viewBox="0 0 800 800" style="width:100%;height:100%;">
+    <rect width="800" height="800" fill="var(--sea)"/>
+    <g stroke="var(--rope)" stroke-width="0.5" fill="none">
+      ${Array.from({length: 40}, (_, i) => `<line x1="${i * 20}" y1="0" x2="${i * 20}" y2="800"/>`).join("")}
+      ${Array.from({length: 40}, (_, i) => `<line x1="0" y1="${i * 20}" x2="800" y2="${i * 20}"/>`).join("")}
+    </g>
+    <g stroke="var(--accent)" stroke-width="1" fill="none" opacity="0.3">
+      <path d="M0,400 Q200,200 400,400 T800,400"/>
+      <path d="M0,500 Q200,600 400,500 T800,500"/>
+      <path d="M0,300 Q200,400 400,300 T800,300"/>
+    </g>
+  </svg>`;
+}
+function nauticalMapSvg() {
+  return `<svg viewBox="0 0 800 800" style="width:100%;height:100%;">
+    <rect width="800" height="800" fill="var(--sea)"/>
+    <g fill="var(--hull)" opacity="0.15">
+      ${Array.from({length: 20}, () => {
+        const x = Math.random() * 800;
+        const y = Math.random() * 800;
+        const r = 20 + Math.random() * 100;
+        const pts = Array.from({length: 8}, (_, i) => {
+          const a = (i / 8) * Math.PI * 2;
+          return `${x + Math.cos(a) * r},${y + Math.sin(a) * r * 0.6}`;
+        }).join(" ");
+        return `<polygon points="${pts}"/>`;
+      }).join("")}
+    </g>
+    <g stroke="var(--rope)" stroke-width="0.5" fill="none" opacity="0.3">
+      ${Array.from({length: 10}, (_, i) => {
+        const cx = 400 + (Math.random() - 0.5) * 400;
+        const cy = 400 + (Math.random() - 0.5) * 400;
+        const r = 50 + Math.random() * 150;
+        return `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
+      }).join("")}
+    </g>
+  </svg>`;
+}
 function renderHomeBackground() {
-  $("#home-bg").innerHTML = state.prefs.background === "compass" ? compassSvg(true) : state.prefs.background === "stars" ? starsSvg() : "";
+  const bg = $("#home-bg");
+  const p = state.prefs;
+  
+  // Custom wallpaper
+  if (p.customWallpaper) {
+    bg.className = "home-bg custom-wallpaper";
+    bg.style.backgroundImage = `url(${p.customWallpaper})`;
+    bg.style.setProperty("--wallpaper-dim", p.wallpaperDim);
+    bg.style.setProperty("--wallpaper-blur", `${p.wallpaperBlur}px`);
+    if (p.wallpaperBlur > 0) bg.classList.add("blur");
+    else bg.classList.remove("blur");
+    return;
+  }
+  
+  bg.className = "home-bg";
+  bg.style.backgroundImage = "";
+  bg.classList.remove("blur");
+  
+  // Built-in backgrounds
+  switch (p.background) {
+    case "compass": bg.innerHTML = compassSvg(true); break;
+    case "stars": bg.innerHTML = starsSvg(); break;
+    case "waves": bg.innerHTML = wavesSvg(); break;
+    case "chart-lines": bg.innerHTML = chartLinesSvg(); break;
+    case "nautical-map": bg.innerHTML = nauticalMapSvg(); break;
+    default: bg.innerHTML = "";
+  }
 }
 function tickClock() {
   const el = $("#clock");
   if (!state.prefs.showClock) { el.innerHTML = ""; return; }
   const d = new Date();
-  el.innerHTML = `<b>${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</b>${d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}`;
+  const timeStr = state.prefs.clockFormat === "12h" 
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const greeting = state.prefs.showGreeting && state.prefs.greetingName 
+    ? `<div class="greeting">Good ${d.getHours() < 12 ? "morning" : d.getHours() < 18 ? "afternoon" : "evening"}, ${escapeHtml(state.prefs.greetingName)}</div>`
+    : "";
+  el.innerHTML = `${greeting}<b>${timeStr}</b>${d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}`;
 }
 setInterval(tickClock, 15000);
 
@@ -319,16 +810,39 @@ function render() {
 // ---------------------------------------------------------------- home
 function renderHome() {
   tickClock();
-  const pins = state.prefs.showPinned ? state.bookmarks.slice(0, 8) : [];
-  $("#pinned").innerHTML = pins.map((b, i) => `
-    <div class="pin" data-open="${escapeHtml(b.url)}" title="${escapeHtml(b.title || b.url)}">
-      <div class="pin-ic">${escapeHtml(((b.name || hostOf(b.url))[0] || "•").toUpperCase())}${isLocal(b.url) ? "" : `<img src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(hostOf(b.url))}.ico" alt="" onerror="this.remove()">`}</div>
+  
+  // Use new pinned sites system if available, fall back to bookmarks
+  const pinnedSites = state.prefs.pinnedSites && state.prefs.pinnedSites.length > 0 
+    ? state.prefs.pinnedSites.filter(s => !s.folderId).slice(0, 8)
+    : state.bookmarks.slice(0, 8);
+  
+  $("#pinned").innerHTML = state.prefs.showPinned ? pinnedSites.map((b, i) => `
+    <div class="pin" data-open="${escapeHtml(b.url)}" title="${escapeHtml(b.name || b.url)}">
+      <div class="pin-ic">${escapeHtml(((b.name || hostOf(b.url))[0] || "•").toUpperCase())}${isLocal(b.url) || !state.prefs.loadSiteIcons ? "" : `<img src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(hostOf(b.url))}.ico" alt="" onerror="this.remove()">`}</div>
       <span>${escapeHtml(b.name || hostOf(b.url))}</span>
       <button class="unpin" data-unpin="${i}" title="Remove from pinned" aria-label="Remove">${ICON.close}</button>
-    </div>`).join("");
+    </div>`).join("") : "";
+  
   const recent = state.asked.slice(0, 3);
   const defaults = ["Explain how a jet engine works", "What's new in tech this week?", "Plan a 3-day trip to Amsterdam"];
-  $("#suggest").innerHTML = (recent.length ? recent : defaults).map((q) => `<button data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join("");
+  const showSuggestions = state.prefs.showSuggestions !== false;
+  const showRecentQuestions = state.prefs.showRecentQuestions !== false;
+  
+  let suggestHtml = "";
+  if (showSuggestions) {
+    suggestHtml = (recent.length ? recent : defaults).map((q) => `<button data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join("");
+  }
+  if (showRecentQuestions && recent.length) {
+    suggestHtml += recent.slice(0, 3).map((q) => `<button data-q="${escapeHtml(q)}" class="recent-q">${escapeHtml(q)}</button>`).join("");
+  }
+  $("#suggest").innerHTML = suggestHtml;
+  
+  // Apply search box style
+  const homeForm = $("#home-form");
+  if (homeForm) {
+    homeForm.classList.remove("style-centered", "style-minimal", "style-hero");
+    homeForm.classList.add(`style-${state.prefs.searchBoxStyle || "centered"}`);
+  }
 }
 
 // ---------------------------------------------------------------- tabs
@@ -663,15 +1177,30 @@ async function connect() {
 
 // ---------------------------------------------------------------- settings page
 const SECTIONS = [
-  ["general", "General", ICON.home], ["appearance", "Appearance", ICON.palette], ["shields", "Shields", ICON.shield],
-  ["ai", "Odysseus", ICON.spark], ["passwords", "Passwords", ICON.key], ["privacy", "Privacy", ICON.lock], ["shortcuts", "Shortcuts", ICON.keys], ["about", "About", ICON.info],
+  ["general", "General", ICON.home], ["appearance", "Appearance", ICON.palette], ["newtab", "New Tab", ICON.home],
+  ["shields", "Shields", ICON.shield], ["ai", "Odysseus", ICON.spark], ["passwords", "Passwords", ICON.key],
+  ["privacy", "Privacy", ICON.lock], ["shortcuts", "Shortcuts", ICON.keys], ["about", "About", ICON.info],
 ];
 const row = (title, desc, control) => `<div class="row"><div class="txt"><b>${title}</b>${desc ? `<p>${desc}</p>` : ""}</div>${control}</div>`;
 const toggle = (key, on) => `<label class="switch"><input type="checkbox" data-pref="${key}" ${on ? "checked" : ""}/></label>`;
 const radios = (key, current, options) => `<div class="radio-set">${options.map(([v, l]) => `<button data-radio="${key}" data-val="${v}" class="${current === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
+const select = (key, current, options) => `<select data-select="${key}">${options.map(([v, l]) => `<option value="${v}" ${current === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+const input = (key, current, type = "text", placeholder = "") => `<input type="${type}" data-pref="${key}" value="${escapeHtml(current)}" placeholder="${escapeHtml(placeholder)}" spellcheck="false"/>`;
+const range = (key, current, min, max, step) => `<input type="range" data-pref="${key}" value="${current}" min="${min}" max="${max}" step="${step}"/><span class="range-value">${current}</span>`;
 
 function settingsPanel(sec) {
   const p = state.prefs, sh = state.shields || {}, c = state.config || {};
+  
+  // Theme editor mode
+  if (sec === "appearance" && state.themeEditor.editingId) {
+    return renderThemeEditor();
+  }
+  
+  // Pinned sites editor mode
+  if (sec === "newtab" && state.pinnedEditor.editingId) {
+    return renderPinnedEditor();
+  }
+  
   switch (sec) {
     case "general": return `<h2>General</h2><p class="lead">How Odyssey starts, searches and opens links.</p>
       <div class="group">
@@ -680,17 +1209,11 @@ function settingsPanel(sec) {
           `<select data-select="searchEngine">${Object.entries(SEARCH_ENGINES).map(([k, v]) => `<option value="${k}" ${p.searchEngine === k ? "selected" : ""}>${v.name}</option>`).join("")}</select>`)}
         ${row("Open links from answers", "Where a web result or source opens when you click it.", radios("linkTarget", p.linkTarget, [["new", "New tab"], ["same", "Same tab"]]))}
       </div>`;
-    case "appearance": return `<h2>Appearance</h2><p class="lead">Make Odyssey yours.</p>
-      <p class="group-title">Accent colour</p>
-      <div class="group">${row(escapeHtml(ACCENTS.find(([v]) => v === p.accent)?.[1] || "Custom"), "Used for the AI, buttons and highlights.",
-        `<div class="swatches">${ACCENTS.map(([v, n]) => `<button class="swatch ${p.accent === v ? "on" : ""}" data-accent="${v}" title="${n}" aria-label="${n}" style="background:${v}"></button>`).join("")}</div>`)}</div>
-      <p class="group-title">New tab page</p>
-      <div class="group">
-        <div class="bg-cards">${[["compass", "Compass chart", compassSvg(false)], ["stars", "Night sky", starsSvg()], ["plain", "Plain", ""]]
-          .map(([v, n, svg]) => `<button class="bg-card ${p.background === v ? "on" : ""}" data-bg="${v}"><div class="bg-prev">${svg}</div><span>${n}</span></button>`).join("")}</div>
-        ${row("Show the clock", "", toggle("showClock", p.showClock))}
-        ${row("Show pinned sites", "Pin any page with the star in the address bar.", toggle("showPinned", p.showPinned))}
-      </div>`;
+      
+    case "appearance": return renderAppearanceSettings();
+      
+    case "newtab": return renderNewTabSettings();
+      
     case "shields": return `<h2>Shields</h2><p class="lead">Ad and tracker blocking powered by Brave's adblock engine, using EasyList, EasyPrivacy, uBlock Origin's lists and Peter Lowe's list.</p>
       <div class="group">
         ${row("Block ads and trackers", sh.enabled === false ? "Off everywhere." : escapeHtml(sh.status || ""), `<label class="switch"><input type="checkbox" id="sh-enabled" ${sh.enabled !== false ? "checked" : ""}/></label>`)}
@@ -701,6 +1224,7 @@ function settingsPanel(sec) {
       <p class="group-title">Sites with Shields down</p>
       <div class="group">${(sh.allowed_sites || []).length ? `<div class="allow-list">${sh.allowed_sites.map((h) => `<div class="allow-item"><span>${escapeHtml(h)}</span><button class="ghost-btn" data-unallow="${escapeHtml(h)}">Turn Shields back on</button></div>`).join("")}</div>`
         : row("None", "Shields are up on every site.", "")}</div>`;
+      
     case "ai": return `<h2>Odysseus</h2><p class="lead">Odyssey's answers and assistant come from your own Odysseus server.</p>
       <div class="group">
         ${row("Connection", c.connected ? "Odyssey has its own chat-only key, stored on this computer." : "Not connected yet.", `<span class="conn ${c.connected ? "on" : ""}">${c.connected ? "Connected" : "Not connected"}</span>`)}
@@ -718,6 +1242,7 @@ function settingsPanel(sec) {
         ${row("Endpoint ID", "Which model server Odysseus should use.", `<input type="text" id="cfg-endpoint" value="${escapeHtml(c.endpoint_id || "")}" spellcheck="false"/>`)}
         <div class="row"><button class="danger-btn" id="cfg-disconnect">Disconnect</button><span class="spacer"></span><button class="ghost-btn" id="cfg-test">Test connection</button><button class="primary-btn" id="cfg-save">Save</button></div>
       </div>`;
+      
     case "passwords": {
       const entries = state.vault || [];
       const rows = entries.length ? entries.map((e) => `
@@ -737,19 +1262,16 @@ function settingsPanel(sec) {
           <div class="row"><button class="ghost-btn" id="pw-cancel">Cancel</button><span class="spacer"></span><button class="primary-btn" id="pw-save">Save password</button></div>
         ` : `<div class="row"><div class="txt"><b>Add a password</b><p>Save a login so Odyssey can fill it in for you later.</p></div><button class="primary-btn" id="pw-add">Add password</button></div>`}</div>`;
     }
-    case "privacy": return `<h2>Privacy</h2><p class="lead">Everything Odyssey stores stays on this computer.</p>
-      <div class="group">
-        ${row("Browsing history", `${fmtNum(state.history.length)} pages.`, `<button class="danger-btn" id="pv-history">Clear history</button>`)}
-        ${row("Cookies and site data", "Signs you out of websites and clears their caches.", `<button class="danger-btn" id="pv-sitedata">Clear site data</button>`)}
-        ${row("Recent questions", "The suggestions under the new tab search box.", `<button class="danger-btn" id="pv-asked">Clear</button>`)}
-        ${row("Pinned sites", `${state.bookmarks.length} pinned.`, `<button class="danger-btn" id="pv-pins">Remove all</button>`)}
-      </div>`;
+      
+    case "privacy": return renderPrivacySettings();
+      
     case "shortcuts": return `<h2>Shortcuts</h2><p class="lead">These work everywhere in Odyssey, including inside web pages.</p>
       <div class="group"><table class="keys">${[
         ["New tab", ["Ctrl+T"]], ["Close tab", ["Ctrl+W"]], ["Reopen closed tab", ["Ctrl+Shift+T"]], ["Next or previous tab", ["Ctrl+Tab", "Ctrl+Shift+Tab"]],
         ["Focus the address bar", ["Ctrl+L"]], ["Assistant", ["Ctrl+J"]], ["Pin page", ["Ctrl+D"]], ["History", ["Ctrl+H"]], ["Settings", ["Ctrl+,"]],
         ["Reload", ["F5", "Ctrl+R"]], ["Back or forward", ["Alt+Left", "Alt+Right"]], ["Zoom in, out, reset", ["Ctrl+=", "Ctrl+-", "Ctrl+0"]], ["Print", ["Ctrl+P"]], ["Developer tools", ["F12"]],
       ].map(([a, ks]) => `<tr><td>${a}</td><td>${ks.map((k) => `<kbd>${k}</kbd>`).join(" ")}</td></tr>`).join("")}</table></div>`;
+      
     case "about": return `<h2>About</h2>
       <div class="about-mark"><svg viewBox="0 0 24 24" class="sail" style="width:56px;height:56px"><path class="s1" d="M11.4 3 5.2 15h6.2z"/><path class="s2" d="M12.2 6.2V15h5.4z"/><path class="wave" d="M3.5 18.2c2.4-1.6 4.6-1.6 7 0s4.6 1.6 7 0c.9-.6 1.8-1 2.7-1.1"/></svg>
         <div><b style="font-size:20px">Odyssey 0.2</b><p class="lead" style="margin:4px 0 0">An AI-first browser for your own Odysseus.</p></div></div>
@@ -760,6 +1282,329 @@ function settingsPanel(sec) {
       </div>`;
   }
   return "";
+}
+
+function renderAppearanceSettings() {
+  const p = state.prefs;
+  const theme = getCurrentTheme();
+  const isCustom = p.theme === "custom";
+  
+  return `<h2>Appearance</h2><p class="lead">Make Odyssey yours.</p>
+  
+  <!-- Theme Selector -->
+  <p class="group-title">Theme</p>
+  <div class="group">
+    <div class="theme-grid">
+      ${Object.entries(THEME_PRESETS).map(([id, t]) => `
+        <button class="theme-card ${p.theme === id ? "on" : ""}" data-theme="${id}" title="${t.description}">
+          <div class="theme-preview" style="
+            --deep: ${t.deep}; --sea: ${t.sea}; --hull: ${t.hull}; --hull-2: ${t["hull-2"]};
+            --rope: ${t.rope}; --foam: ${t.foam}; --accent: ${t.accent}; --glass: ${t.glass}; --coral: ${t.coral};
+          "></div>
+          <span class="theme-name">${t.name}</span>
+          <span class="theme-desc">${t.description}</span>
+        </button>
+      `).join("")}
+      ${Object.entries(p.customThemes).map(([id, t]) => `
+        <button class="theme-card ${p.theme === "custom" && p.customThemeId === id ? "on" : ""}" data-theme="custom" data-custom-id="${id}" title="${t.description || "Custom theme"}">
+          <div class="theme-preview custom" style="
+            --deep: ${t.deep}; --sea: ${t.sea}; --hull: ${t.hull}; --hull-2: ${t["hull-2"]};
+            --rope: ${t.rope}; --foam: ${t.foam}; --accent: ${t.accent}; --glass: ${t.glass}; --coral: ${t.coral};
+          "></div>
+          <span class="theme-name">${t.name}</span>
+          <span class="theme-desc">${t.description || "Custom theme"}</span>
+          <div class="theme-actions">
+            <button class="icon-btn small" data-edit-theme="${id}" title="Edit">${ICON.edit}</button>
+            <button class="icon-btn small" data-delete-theme="${id}" title="Delete">${ICON.trash}</button>
+            <button class="icon-btn small" data-export-theme="${id}" title="Export">${ICON.download}</button>
+          </div>
+        </button>
+      `).join("")}
+      <button class="theme-card add-theme" data-new-theme="true" title="Create new theme">
+        ${ICON.plus}
+        <span>New theme</span>
+      </button>
+    </div>
+    ${isCustom ? `
+      <div class="theme-editor-actions">
+        <button class="primary-btn" id="theme-save-btn">Save changes</button>
+        <button class="ghost-btn" id="theme-cancel-btn">Cancel</button>
+        <button class="ghost-btn" id="theme-import-btn">Import JSON</button>
+        <input type="file" id="theme-import-file" accept=".json" style="display:none"/>
+      </div>
+    ` : ""}
+  </div>
+  
+  <!-- Accent Colour (for non-custom themes) -->
+  ${!isCustom ? `
+  <p class="group-title">Accent colour</p>
+  <div class="group">${row(escapeHtml(ACCENTS.find(([v]) => v === p.accent)?.[1] || "Custom"), "Used for the AI, buttons and highlights.",
+    `<div class="swatches">${ACCENTS.map(([v, n]) => `<button class="swatch ${p.accent === v ? "on" : ""}" data-accent="${v}" title="${n}" aria-label="${n}" style="background:${v}"></button>`).join("")}</div>`)}</div>
+  ` : ""}
+  
+  <!-- UI Customization -->
+  <p class="group-title">Answer text</p>
+  <div class="group">
+    ${row("Font family", "Typeface for AI answers.", select("answerFont", p.answerFont, [["serif", "Serif (Cambria/Georgia)"], ["sans", "Sans-serif (System UI)"], ["mono", "Monospace (Cascadia Code)"]]))}
+    ${row("Font size", "Size of answer text in pixels.", range("answerFontSize", p.answerFontSize, 13, 24, 1))}
+    ${row("Answer width", "Maximum width of the answer column.", select("answerWidth", p.answerWidth, [[640, "Narrow (640px)"], [760, "Default (760px)"], [920, "Wide (920px)"], [1100, "Extra wide (1100px)"]]))}
+  </div>
+  
+  <p class="group-title">UI density & spacing</p>
+  <div class="group">
+    ${row("Density", "Compact reduces padding and heights throughout.", radios("uiDensity", p.uiDensity, [["comfortable", "Comfortable"], ["compact", "Compact"]]))}
+    ${row("Corner radius", "Rounded corners on cards, buttons, inputs.", radios("cornerRadius", p.cornerRadius, [["sharp", "Sharp (0px)"], ["default", "Default (8px)"], ["round", "Round (16px)"]]))}
+  </div>
+  
+  <p class="group-title">Tabs</p>
+  <div class="group">
+    ${row("Tab style", "Visual style of tabs in the tab bar.", radios("tabStyle", p.tabStyle, [["classic", "Classic"], ["compact", "Compact (icon-first)"], ["pills", "Pills"]]))}
+    ${row("Tab bar position", "Top bar or vertical sidebar tabs.", radios("tabBarPosition", p.tabBarPosition, [["top", "Top (horizontal)"], ["sidebar", "Sidebar (vertical, collapsible)"]]))}
+  </div>
+  
+  <p class="group-title">Toolbar</p>
+  <div class="group">
+    ${row("Button visibility", "Choose which buttons appear in the toolbar.", `<button class="ghost-btn" id="toolbar-editor-btn">Customize toolbar…</button>`)}
+    ${row("Button order", "Drag to reorder (applies after save).", `<button class="ghost-btn" id="toolbar-order-btn">Reorder…</button>`)}
+  </div>
+  
+  <p class="group-title">Sidebar</p>
+  <div class="group">
+    ${row("Sidebar side", "Which side the assistant/shields panel appears on.", radios("sidebarSide", p.sidebarSide, [["left", "Left"], ["right", "Right"]]))}
+    ${row("Sidebar width", "Width of the sidebar panel in pixels.", range("sidebarWidth", p.sidebarWidth, 280, 600, 20))}
+  </div>
+  
+  <p class="group-title">Scaling & window</p>
+  <div class="group">
+    ${row("UI scale", "Scale the entire interface.", range("uiScale", p.uiScale, 0.8, 1.5, 0.05))}
+    ${row("Window opacity", "Requires WebView2 backdrop-filter support.", range("windowOpacity", p.windowOpacity, 0.3, 1, 0.05))}
+    ${row("Window blur", "Background blur behind chrome and sidebar.", range("windowBlur", p.windowBlur, 0, 50, 1))}
+  </div>
+  
+  <p class="group-title">Motion</p>
+  <div class="group">
+    ${row("Reduce motion", "Disables most animations (respects system preference).", toggle("reduceMotion", p.reduceMotion))}
+    ${row("Animation speed", "Multiplier for all transition/animation durations.", range("animationSpeed", p.animationSpeed, 0.5, 2, 0.1))}
+  </div>`;
+}
+
+function renderNewTabSettings() {
+  const p = state.prefs;
+  
+  return `<h2>New Tab Page</h2><p class="lead">Customize your start page.</p>
+  
+  <p class="group-title">Background</p>
+  <div class="group">
+    <div class="bg-cards">
+      ${[["compass", "Compass Chart", compassSvg(false)], ["stars", "Night Sky", starsSvg()], ["waves", "Ocean Waves", wavesSvg()], ["chart-lines", "Chart Lines", chartLinesSvg()], ["nautical-map", "Nautical Map", nauticalMapSvg()]]
+        .map(([v, n, svg]) => `<button class="bg-card ${p.background === v ? "on" : ""}" data-bg="${v}"><div class="bg-prev">${svg}</div><span>${n}</span></button>`).join("")}
+      ${p.customWallpaper ? `
+        <button class="bg-card ${p.background === "custom" ? "on" : ""}" data-bg="custom">
+          <div class="bg-prev" style="background-image:url(${p.customWallpaper});background-size:cover;background-position:center;"></div>
+          <span>Custom wallpaper</span>
+        </button>
+      ` : ""}
+      <button class="bg-card add-wallpaper" data-add-wallpaper="true" title="Add custom wallpaper">
+        ${ICON.plus}
+        <span>Add image</span>
+      </button>
+    </div>
+    ${p.customWallpaper || p.background === "custom" ? `
+      <div class="wallpaper-controls">
+        ${row("Dim overlay", "Darkens the wallpaper for readability.", range("wallpaperDim", p.wallpaperDim, 0, 1, 0.05))}
+        ${row("Blur", "Blurs the wallpaper behind the dim.", range("wallpaperBlur", p.wallpaperBlur, 0, 40, 1))}
+        <div class="row"><button class="danger-btn" id="remove-wallpaper">Remove custom wallpaper</button></div>
+      </div>
+    ` : ""}
+  </div>
+  
+  <p class="group-title">Clock & Greeting</p>
+  <div class="group">
+    ${row("Show clock", "", toggle("showClock", p.showClock))}
+    ${row("Clock format", "12-hour or 24-hour time.", radios("clockFormat", p.clockFormat, [["12h", "12-hour (3:30 PM)"], ["24h", "24-hour (15:30)"]]))}
+    ${row("Show greeting", "Displays a time-based greeting with your name.", toggle("showGreeting", p.showGreeting))}
+    ${row("Your name", "Name used in the greeting.", input("greetingName", p.greetingName, "text", "Captain"))}
+  </div>
+  
+  <p class="group-title">Content blocks</p>
+  <div class="group">
+    ${row("Pinned sites", "Sites you've starred in the address bar.", toggle("showPinned", p.showPinned))}
+    ${row("Suggestions", "Quick prompts under the search box.", toggle("showSuggestions", p.showSuggestions))}
+    ${row("Recent questions", "Your recent AI questions.", toggle("showRecentQuestions", p.showRecentQuestions))}
+  </div>
+  
+  <p class="group-title">Search box style</p>
+  <div class="group">
+    ${row("Style", "Layout of the search box on the new tab page.", radios("searchBoxStyle", p.searchBoxStyle, [["centered", "Centered (default)"], ["minimal", "Minimal (smaller)"], ["hero", "Hero (large, prominent)"]]))}
+  </div>
+  
+  <p class="group-title">Pinned sites editor</p>
+  <div class="group">
+    ${row("Manage pinned sites", "Rename, reorder, organize into folders.", `<button class="primary-btn" id="pinned-editor-btn">Open editor</button>`)}
+  </div>`;
+}
+
+function renderPrivacySettings() {
+  const p = state.prefs;
+  
+  return `<h2>Privacy</h2><p class="lead">Everything Odyssey stores stays on this computer.</p>
+  
+  <p class="group-title">Data clearing</p>
+  <div class="group">
+    ${row("Browsing history", `${fmtNum(state.history.length)} pages.`, `<button class="danger-btn" id="pv-history">Clear history</button>`)}
+    ${row("Cookies and site data", "Signs you out of websites and clears their caches.", `<button class="danger-btn" id="pv-sitedata">Clear site data</button>`)}
+    ${row("Recent questions", "The suggestions under the new tab search box.", `<button class="danger-btn" id="pv-asked">Clear</button>`)}
+    ${row("Pinned sites", `${state.bookmarks.length} pinned.`, `<button class="danger-btn" id="pv-pins">Remove all</button>`)}
+  </div>
+  
+  <p class="group-title">Network privacy</p>
+  <div class="group">
+    ${row("Load site icons", "Fetches favicons from icons.duckduckgo.com (reveals visited sites to DuckDuckGo). Disable for local-only fallback.", toggle("loadSiteIcons", p.loadSiteIcons))}
+  </div>
+  
+  <p class="group-title">Settings backup</p>
+  <div class="group">
+    ${row("Export all settings", "Downloads a JSON file with all preferences.", `<button class="ghost-btn" id="export-settings">Export settings…</button>`)}
+    ${row("Import settings", "Restores preferences from a JSON file.", `<button class="ghost-btn" id="import-settings">Import settings…</button><input type="file" id="import-settings-file" accept=".json" style="display:none"/>`)}
+    ${row("Reset to defaults", "Resets all preferences to factory defaults.", `<button class="danger-btn" id="reset-settings">Reset all to defaults</button>`)}
+  </div>`;
+}
+
+function renderThemeEditor() {
+  const theme = state.themeEditor.previewTheme;
+  const isPreset = theme.isPreset;
+  
+  return `<h2>${isPreset ? "Customize" : "Edit"} Theme: ${escapeHtml(theme.name)}</h2>
+  <p class="lead">${isPreset ? "Create a custom theme based on this preset." : "Modify your custom theme."}</p>
+  
+  <div class="theme-editor">
+    <div class="theme-editor-preview" id="theme-preview">
+      <div class="preview-card">
+        <div class="preview-header">
+          <div class="preview-dots"><span></span><span></span><span></span></div>
+        </div>
+        <div class="preview-content">
+          <div class="preview-tab-bar">
+            <div class="preview-tab active">Tab 1</div>
+            <div class="preview-tab">Tab 2</div>
+            <div class="preview-tab">Tab 3</div>
+          </div>
+          <div class="preview-toolbar">
+            <div class="preview-omni">Ask anything or enter a website</div>
+          </div>
+          <div class="preview-answer">
+            <h3>Sample Answer</h3>
+            <p>This is a preview of how your theme looks. The answer text uses your selected answer font and size.</p>
+            <pre><code>const code = "example";</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="theme-editor-controls">
+      <div class="theme-editor-section">
+        <h4>Basic colors</h4>
+        ${THEME_TOKENS.filter(t => !["accent-ink", "accent-dim"].includes(t)).map(token => `
+          <div class="theme-color-row">
+            <label>${token}</label>
+            <input type="color" data-theme-token="${token}" value="${theme[token]}"/>
+            <input type="text" data-theme-token-text="${token}" value="${theme[token]}" placeholder="#rrggbb"/>
+          </div>
+        `).join("")}
+      </div>
+      
+      <div class="theme-editor-section">
+        <h4>Metadata</h4>
+        <div class="theme-color-row">
+          <label>Theme name</label>
+          <input type="text" id="theme-name-input" value="${escapeHtml(theme.name)}" placeholder="My Theme"/>
+        </div>
+        <div class="theme-color-row">
+          <label>Description</label>
+          <input type="text" id="theme-desc-input" value="${escapeHtml(theme.description || "")}" placeholder="A beautiful theme"/>
+        </div>
+        <div class="theme-color-row">
+          <label>Color scheme</label>
+          <select id="theme-colorscheme-select">
+            <option value="dark" ${theme.colorScheme === "dark" ? "selected" : ""}>Dark</option>
+            <option value="light" ${theme.colorScheme === "light" ? "selected" : ""}>Light</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="theme-editor-actions">
+        <button class="primary-btn" id="theme-save-btn">Save theme</button>
+        <button class="ghost-btn" id="theme-cancel-btn">Cancel</button>
+        ${!isPreset ? `<button class="danger-btn" id="theme-delete-btn">Delete theme</button>` : ""}
+        <button class="ghost-btn" id="theme-export-btn">Export JSON</button>
+        <input type="file" id="theme-import-file" accept=".json" style="display:none"/>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderPinnedEditor() {
+  const p = state.prefs;
+  const sites = p.pinnedSites || state.bookmarks.map((b, i) => ({ id: b.url, name: b.name || hostOf(b.url), url: b.url, folderId: null }));
+  const folders = p.pinnedFolders || [];
+  
+  return `<h2>Pinned Sites Editor</h2>
+  <p class="lead">Drag to reorder. Click to rename. Organize into folders.</p>
+  
+  <div class="pinned-editor">
+    <div class="pinned-editor-toolbar">
+      <button class="primary-btn" id="pin-add-btn">${ICON.plus} Add site</button>
+      <button class="ghost-btn" id="pin-add-folder-btn">${ICON.folder} Add folder</button>
+      <button class="ghost-btn" id="pin-save-btn">Save</button>
+      <button class="ghost-btn" id="pin-cancel-btn">Cancel</button>
+    </div>
+    
+    <div class="pinned-list" id="pinned-list">
+      ${folders.map(folder => `
+        <div class="pinned-folder" data-folder-id="${folder.id}">
+          <div class="pinned-folder-header">
+            ${ICON.grip}
+            <input type="text" class="folder-name" value="${escapeHtml(folder.name)}" data-folder-id="${folder.id}"/>
+            <button class="icon-btn small" data-delete-folder="${folder.id}" title="Delete folder">${ICON.trash}</button>
+          </div>
+          <div class="pinned-folder-content">
+            ${sites.filter(s => s.folderId === folder.id).map(site => `
+              <div class="pinned-item" data-site-id="${site.id}" draggable="true">
+                ${ICON.grip}
+                <div class="pin-favicon">${favicon(site.url, 24, false)}</div>
+                <input type="text" class="pin-name" value="${escapeHtml(site.name)}" data-site-id="${site.id}"/>
+                <span class="pin-url">${escapeHtml(site.url)}</span>
+                <div class="pin-actions">
+                  <button class="icon-btn small" data-move-site="${site.id}" data-move-to="unfiled" title="Move out of folder">${ICON.chevronUp}</button>
+                  <button class="icon-btn small" data-delete-site="${site.id}" title="Remove">${ICON.trash}</button>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `).join("")}
+      
+      <div class="pinned-folder" data-folder-id="unfiled">
+        <div class="pinned-folder-header">
+          ${ICON.grip}
+          <strong>Unfiled</strong>
+        </div>
+        <div class="pinned-folder-content">
+          ${sites.filter(s => !s.folderId).map(site => `
+            <div class="pinned-item" data-site-id="${site.id}" draggable="true">
+              ${ICON.grip}
+              <div class="pin-favicon">${favicon(site.url, 24, false)}</div>
+              <input type="text" class="pin-name" value="${escapeHtml(site.name)}" data-site-id="${site.id}"/>
+              <span class="pin-url">${escapeHtml(site.url)}</span>
+              <div class="pin-actions">
+                <button class="icon-btn small" data-delete-site="${site.id}" title="Remove">${ICON.trash}</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderSettings() {
@@ -774,20 +1619,128 @@ function renderSettings() {
 
 function wireSettings(page) {
   $$("[data-sec]", page).forEach((b) => b.onclick = () => { state.settingsSection = b.dataset.sec; if (b.dataset.sec === "shields") refreshShields(); if (b.dataset.sec === "passwords") refreshVault(); renderSettings(); });
-  $$("[data-pref]", page).forEach((i) => i.onchange = () => { state.prefs[i.dataset.pref] = i.checked; savePrefs(); applyPrefsToUi(); });
+  
+  // Checkboxes
+  $$("[data-pref]", page).forEach((i) => {
+    if (i.type === "checkbox") {
+      i.onchange = () => { state.prefs[i.dataset.pref] = i.checked; savePrefs(); applyPrefsToUi(); };
+    } else if (i.type === "range") {
+      i.oninput = () => { 
+        state.prefs[i.dataset.pref] = parseFloat(i.value); 
+        i.nextElementSibling.textContent = i.value;
+        savePrefs(); 
+        applyPrefsToUi(); 
+      };
+      i.onchange = () => { state.prefs[i.dataset.pref] = parseFloat(i.value); savePrefs(); applyPrefsToUi(); };
+    } else {
+      i.onchange = () => { state.prefs[i.dataset.pref] = i.value; savePrefs(); applyPrefsToUi(); };
+    }
+  });
+  
+  // Radio buttons
   $$("[data-radio]", page).forEach((b) => b.onclick = () => {
     let v = b.dataset.val; if (v === "true") v = true; if (v === "false") v = false;
-    state.prefs[b.dataset.radio] = v; savePrefs(); renderSettings();
+    state.prefs[b.dataset.radio] = v; savePrefs(); applyPrefsToUi(); renderSettings();
   });
-  $$("[data-select]", page).forEach((s) => s.onchange = () => { state.prefs[s.dataset.select] = s.value; savePrefs(); });
+  
+  // Select dropdowns
+  $$("[data-select]", page).forEach((s) => s.onchange = () => { state.prefs[s.dataset.select] = s.value; savePrefs(); applyPrefsToUi(); });
+  
+  // Accent swatches
   $$("[data-accent]", page).forEach((b) => b.onclick = () => { state.prefs.accent = b.dataset.accent; savePrefs(); applyAppearance(); renderSettings(); });
+  
+  // Background cards
   $$("[data-bg]", page).forEach((b) => b.onclick = () => { state.prefs.background = b.dataset.bg; savePrefs(); applyAppearance(); renderSettings(); });
-  $$("[data-unallow]", page).forEach((b) => b.onclick = async () => { await invoke("shields_set_site", { host: b.dataset.unallow, on: true }); refreshShields(); });
+  
+  // Theme cards
+  $$("[data-theme]", page).forEach((b) => b.onclick = () => {
+    const themeId = b.dataset.theme;
+    const customId = b.dataset.customId;
+    if (themeId === "custom" && customId) {
+      state.prefs.theme = "custom";
+      state.prefs.customThemeId = customId;
+      savePrefs();
+      applyTheme("custom", state.prefs.customThemes[customId]);
+    } else if (themeId && THEME_PRESETS[themeId]) {
+      state.prefs.theme = themeId;
+      state.prefs.customThemeId = null;
+      savePrefs();
+      applyTheme(themeId);
+    }
+    renderSettings();
+  });
+  
+  // Theme editor actions
+  $$("[data-new-theme]", page).forEach((b) => b.onclick = () => openThemeEditor("new"));
+  $$("[data-edit-theme]", page).forEach((b) => b.onclick = (e) => { e.stopPropagation(); openThemeEditor(b.dataset.editTheme); });
+  $$("[data-delete-theme]", page).forEach((b) => b.onclick = (e) => { e.stopPropagation(); deleteCustomTheme(b.dataset.deleteTheme); });
+  $$("[data-export-theme]", page).forEach((b) => b.onclick = (e) => { e.stopPropagation(); exportTheme(b.dataset.exportTheme); });
+  
+  // Theme editor internal
+  const themeNameInput = $("#theme-name-input", page);
+  const themeDescInput = $("#theme-desc-input", page);
+  const themeColorSchemeSelect = $("#theme-colorscheme-select", page);
+  if (themeNameInput) themeNameInput.oninput = () => { if (state.themeEditor.previewTheme) state.themeEditor.previewTheme.name = themeNameInput.value; };
+  if (themeDescInput) themeDescInput.oninput = () => { if (state.themeEditor.previewTheme) state.themeEditor.previewTheme.description = themeDescInput.value; };
+  if (themeColorSchemeSelect) themeColorSchemeSelect.onchange = () => { if (state.themeEditor.previewTheme) state.themeEditor.previewTheme.colorScheme = themeColorSchemeSelect.value; };
+  
+  $$("[data-theme-token]", page).forEach((i) => {
+    i.oninput = () => { updateThemeEditorPreview(i.dataset.themeToken, i.value); };
+    i.onchange = () => { updateThemeEditorPreview(i.dataset.themeToken, i.value); };
+  });
+  $$("[data-theme-token-text]", page).forEach((i) => {
+    i.onchange = () => { 
+      if (/^#[0-9a-fA-F]{6}$/.test(i.value)) { 
+        updateThemeEditorPreview(i.dataset.themeTokenText, i.value); 
+        const colorInput = $(`[data-theme-token="${i.dataset.themeTokenText}"]`, page);
+        if (colorInput) colorInput.value = i.value;
+      }
+    };
+  });
+  
   const on = (id, fn) => { const el = $("#" + id, page); if (el) el.onclick = fn; };
   const ch = (id, fn) => { const el = $("#" + id, page); if (el) el.onchange = fn; };
+  
+  // Theme editor buttons
+  on("theme-save-btn", saveThemeEditorTheme);
+  on("theme-cancel-btn", closeThemeEditor);
+  on("theme-delete-btn", () => { if (state.themeEditor.editingId && state.themeEditor.editingId !== "new") deleteCustomTheme(state.themeEditor.editingId); });
+  on("theme-export-btn", () => { if (state.themeEditor.previewTheme) exportTheme(state.themeEditor.previewTheme.id); });
+  on("theme-import-btn", () => { $("#theme-import-file", page)?.click(); });
+  $("#theme-import-file", page)?.addEventListener("change", (e) => { if (e.target.files[0]) importThemeFromFile(e.target.files[0]); });
+  
+  // Toolbar editor
+  on("toolbar-editor-btn", () => openToolbarEditor());
+  on("toolbar-order-btn", () => openToolbarOrderEditor());
+  
+  // New tab settings
+  $$("[data-add-wallpaper]", page).forEach((b) => b.onclick = () => { $("#wallpaper-file", page)?.click(); });
+  $("#wallpaper-file", page)?.addEventListener("change", (e) => handleWallpaperFile(e.target.files[0]));
+  on("remove-wallpaper", () => { state.prefs.customWallpaper = null; state.prefs.background = "compass"; savePrefs(); applyAppearance(); renderSettings(); });
+  
+  // Pinned editor
+  on("pinned-editor-btn", () => { state.settingsSection = "newtab"; state.pinnedEditor.editingId = "main"; renderSettings(); });
+  on("pin-save-btn", savePinnedEditor);
+  on("pin-cancel-btn", () => { state.pinnedEditor.editingId = null; renderSettings(); });
+  on("pin-add-btn", addPinnedSite);
+  on("pin-add-folder-btn", addPinnedFolder);
+  
+  // Pinned site drag and drop
+  setupPinnedDragDrop(page);
+  
+  $$("[data-delete-site]", page).forEach((b) => b.onclick = () => deletePinnedSite(b.dataset.deleteSite));
+  $$("[data-delete-folder]", page).forEach((b) => b.onclick = () => deletePinnedFolder(b.dataset.deleteFolder));
+  $$("[data-move-site]", page).forEach((b) => b.onclick = () => movePinnedSite(b.dataset.moveSite, b.dataset.moveTo));
+  $$(".folder-name", page).forEach((i) => i.onchange = () => updatePinnedFolderName(i.dataset.folderId, i.value));
+  $$(".pin-name", page).forEach((i) => i.onchange = () => updatePinnedSiteName(i.dataset.siteId, i.value));
+  
+  // Shields
+  $$("[data-unallow]", page).forEach((b) => b.onclick = async () => { await invoke("shields_set_site", { host: b.dataset.unallow, on: true }); refreshShields(); });
   ch("sh-enabled", async (e) => { await invoke("shields_set_enabled", { on: e.target.checked }); refreshShields(); });
   ch("sh-cookies", async (e) => { await invoke("shields_set_cookie_banners", { on: e.target.checked }); notify("Rebuilding filter lists"); refreshShields(); });
   on("sh-update", async () => { await invoke("shields_update"); notify("Updating filter lists"); setTimeout(refreshShields, 800); });
+  
+  // AI config
   on("cfg-open", () => openUrl(baseUrl(), true));
   on("cfg-connect", connect);
   on("cfg-test", async () => { try { notify(await invoke("ai_test")); } catch (e) { notify(String(e)); } });
@@ -803,10 +1756,18 @@ function wireSettings(page) {
     } catch (e) { notify(String(e)); }
   });
   on("cfg-disconnect", async () => { await invoke("disconnect").catch(() => {}); await refreshConfig(); notify("Disconnected. Odyssey's key is deleted."); renderSettings(); });
+  
+  // Privacy
   on("pv-history", () => { state.history = []; store.set("history", []); notify("History cleared."); renderSettings(); });
   on("pv-sitedata", async () => { try { await invoke("clear_site_data"); notify("Cookies and site data cleared."); } catch (e) { notify(String(e)); } });
   on("pv-asked", () => { state.asked = []; store.set("asked", []); notify("Recent questions cleared."); });
   on("pv-pins", () => { state.bookmarks = []; store.set("bookmarks", []); notify("Pinned sites removed."); renderSettings(); });
+  on("export-settings", exportAllSettings);
+  on("import-settings", () => { $("#import-settings-file", page)?.click(); });
+  $("#import-settings-file", page)?.addEventListener("change", (e) => { if (e.target.files[0]) importAllSettings(e.target.files[0]); });
+  on("reset-settings", () => { if (confirm("Reset ALL settings to defaults? This cannot be undone.")) resetAllSettings(); });
+  
+  // Passwords
   on("pw-add", () => { state.vaultAdding = true; renderSettings(); setTimeout(() => $("#pw-origin", page)?.focus(), 0); });
   on("pw-cancel", () => { state.vaultAdding = false; renderSettings(); });
   on("pw-save", async () => {
@@ -842,10 +1803,281 @@ function wireSettings(page) {
     try { await invoke("vault_delete", { id: b.dataset.del }); notify("Password deleted."); await refreshVault(); } catch (e) { notify(String(e)); }
   });
 }
+
 function applyPrefsToUi() {
   $("#answer-web").checked = !!state.prefs.answerWeb;
   $("#side-page").checked = !!state.prefs.assistantPage;
+  applyAppearanceVariables();
   tickClock();
+  updateToolbarVisibility();
+  renderHome();
+}
+
+// Toolbar editor
+function openToolbarEditor() {
+  const buttons = [
+    { id: "back", label: "Back", icon: ICON.chevronLeft || '<svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>' },
+    { id: "forward", label: "Forward", icon: ICON.chevronRight || '<svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg>' },
+    { id: "reload", label: "Reload", icon: ICON.refresh || '<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3"/></svg>' },
+    { id: "omni", label: "Address bar", icon: ICON.search },
+    { id: "star", label: "Bookmark", icon: ICON.star || '<svg viewBox="0 0 16 16"><path d="m8 2 1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5z"/></svg>' },
+    { id: "shield", label: "Shields", icon: ICON.shield },
+    { id: "vault", label: "Passwords", icon: ICON.key },
+    { id: "connect", label: "Connect", icon: ICON.link || '<svg viewBox="0 0 16 16"><path d="M8 3l3 3-3 3M11 6l3-3-3-3"/></svg>' },
+    { id: "assist", label: "Assistant", icon: ICON.spark },
+    { id: "history", label: "History", icon: ICON.clock },
+    { id: "settings", label: "Settings", icon: ICON.gear },
+  ];
+  
+  const html = buttons.map(btn => `
+    <label class="toolbar-toggle">
+      <input type="checkbox" data-toolbar-btn="${btn.id}" ${state.prefs.toolbarButtons.includes(btn.id) ? "checked" : ""}/>
+      <span>${btn.icon} ${btn.label}</span>
+    </label>
+  `).join("");
+  
+  const panel = $(".panel", $("#page"));
+  const originalContent = panel.innerHTML;
+  panel.innerHTML = `
+    <div class="toolbar-editor">
+      <h3>Customize Toolbar</h3>
+      <p class="lead">Toggle buttons on/off. Drag to reorder in the "Reorder" dialog.</p>
+      <div class="toolbar-toggle-grid">${html}</div>
+      <div class="toolbar-editor-actions">
+        <button class="ghost-btn" id="toolbar-done-btn">Done</button>
+      </div>
+    </div>
+  `;
+  
+  $$("[data-toolbar-btn]", panel).forEach((i) => i.onchange = () => {
+    const btnId = i.dataset.toolbarBtn;
+    if (i.checked) {
+      if (!state.prefs.toolbarButtons.includes(btnId)) state.prefs.toolbarButtons.push(btnId);
+    } else {
+      state.prefs.toolbarButtons = state.prefs.toolbarButtons.filter(b => b !== btnId);
+    }
+    savePrefs();
+    updateToolbarVisibility();
+  });
+  
+  on("toolbar-done-btn", () => { panel.innerHTML = originalContent; wireSettings($("#page")); });
+}
+
+function openToolbarOrderEditor() {
+  const buttons = state.prefs.toolbarOrder.map((id, i) => {
+    const labels = { back: "Back", forward: "Forward", reload: "Reload", omni: "Address bar", star: "Bookmark", shield: "Shields", vault: "Passwords", connect: "Connect", assist: "Assistant", history: "History", settings: "Settings" };
+    return `<div class="toolbar-order-item" data-btn="${id}" draggable="true">${ICON.grip} ${labels[id] || id}</div>`;
+  }).join("");
+  
+  const panel = $(".panel", $("#page"));
+  const originalContent = panel.innerHTML;
+  panel.innerHTML = `
+    <div class="toolbar-order-editor">
+      <h3>Reorder Toolbar Buttons</h3>
+      <p class="lead">Drag items to reorder. Hidden buttons won't appear.</p>
+      <div class="toolbar-order-list" id="toolbar-order-list">${buttons}</div>
+      <div class="toolbar-editor-actions">
+        <button class="ghost-btn" id="toolbar-order-done-btn">Done</button>
+      </div>
+    </div>
+  `;
+  
+  setupToolbarDragDrop($("#toolbar-order-list", panel));
+  
+  on("toolbar-order-done-btn", () => { panel.innerHTML = originalContent; wireSettings($("#page")); });
+}
+
+function setupToolbarDragDrop(list) {
+  let dragged = null;
+  $$(".toolbar-order-item", list).forEach(item => {
+    item.addEventListener("dragstart", (e) => { dragged = item; item.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    item.addEventListener("dragend", () => { dragged = null; $$(".toolbar-order-item", list).forEach(i => i.classList.remove("dragging")); });
+    item.addEventListener("dragover", (e) => { e.preventDefault(); if (dragged && dragged !== item) { const rect = item.getBoundingClientRect(); if (e.clientY < rect.top + rect.height / 2) item.parentNode.insertBefore(dragged, item); else item.parentNode.insertBefore(dragged, item.nextSibling); } });
+  });
+  
+  list.addEventListener("dragend", () => {
+    const newOrder = $$(".toolbar-order-item", list).map(i => i.dataset.btn);
+    state.prefs.toolbarOrder = newOrder;
+    savePrefs();
+    updateToolbarVisibility();
+  });
+}
+
+// Wallpaper handling
+function handleWallpaperFile(file) {
+  if (!file || !file.type.startsWith("image/")) { notify("Please select an image file"); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    state.prefs.customWallpaper = e.target.result;
+    state.prefs.background = "custom";
+    savePrefs();
+    applyAppearance();
+    renderSettings();
+    notify("Custom wallpaper set");
+  };
+  reader.readAsDataURL(file);
+}
+
+// Pinned sites editor
+function savePinnedEditor() {
+  const items = $$(".pinned-item", $("#pinned-list"));
+  const folders = $$(".pinned-folder[data-folder-id]:not([data-folder-id='unfiled'])", $("#pinned-list"));
+  
+  const pinnedSites = [];
+  const pinnedFolders = [];
+  
+  folders.forEach((folder, fi) => {
+    const folderId = folder.dataset.folderId;
+    const nameInput = folder.querySelector(".folder-name");
+    pinnedFolders.push({ id: folderId, name: nameInput?.value || "Folder", order: fi });
+    
+    $$(".pinned-item", folder).forEach((item, si) => {
+      const siteId = item.dataset.siteId;
+      const nameInput = item.querySelector(".pin-name");
+      const site = state.prefs.pinnedSites?.find(s => s.id === siteId) || state.bookmarks.find(b => b.url === siteId);
+      if (site) {
+        pinnedSites.push({ id: siteId, name: nameInput?.value || site.name || hostOf(siteId), url: site.url || siteId, folderId, order: si });
+      }
+    });
+  });
+  
+  // Unfiled
+  $$(".pinned-item", $("#pinned-list .pinned-folder[data-folder-id='unfiled']")).forEach((item, si) => {
+    const siteId = item.dataset.siteId;
+    const nameInput = item.querySelector(".pin-name");
+    const site = state.prefs.pinnedSites?.find(s => s.id === siteId) || state.bookmarks.find(b => b.url === siteId);
+    if (site) {
+      pinnedSites.push({ id: siteId, name: nameInput?.value || site.name || hostOf(siteId), url: site.url || siteId, folderId: null, order: si });
+    }
+  });
+  
+  state.prefs.pinnedSites = pinnedSites;
+  state.prefs.pinnedFolders = pinnedFolders;
+  state.prefs.showPinned = true;
+  savePrefs();
+  state.pinnedEditor.editingId = null;
+  renderSettings();
+  notify("Pinned sites saved");
+}
+
+function addPinnedSite() {
+  const url = prompt("Enter URL:");
+  if (!url) return;
+  const name = prompt("Enter name (optional):") || hostOf(url);
+  const pinnedSites = state.prefs.pinnedSites || [];
+  pinnedSites.push({ id: uid(), name, url, folderId: null, order: pinnedSites.length });
+  state.prefs.pinnedSites = pinnedSites;
+  renderSettings();
+}
+
+function addPinnedFolder() {
+  const name = prompt("Folder name:");
+  if (!name) return;
+  const folders = state.prefs.pinnedFolders || [];
+  const newId = uid();
+  folders.push({ id: newId, name, order: folders.length });
+  state.prefs.pinnedFolders = folders;
+  renderSettings();
+}
+
+function deletePinnedSite(siteId) {
+  state.prefs.pinnedSites = (state.prefs.pinnedSites || []).filter(s => s.id !== siteId);
+  renderSettings();
+}
+
+function deletePinnedFolder(folderId) {
+  state.prefs.pinnedFolders = (state.prefs.pinnedFolders || []).filter(f => f.id !== folderId);
+  state.prefs.pinnedSites = (state.prefs.pinnedSites || []).map(s => s.folderId === folderId ? { ...s, folderId: null } : s);
+  renderSettings();
+}
+
+function movePinnedSite(siteId, targetFolderId) {
+  state.prefs.pinnedSites = (state.prefs.pinnedSites || []).map(s => s.id === siteId ? { ...s, folderId: targetFolderId === "unfiled" ? null : targetFolderId } : s);
+  renderSettings();
+}
+
+function updatePinnedFolderName(folderId, name) {
+  state.prefs.pinnedFolders = (state.prefs.pinnedFolders || []).map(f => f.id === folderId ? { ...f, name } : f);
+}
+
+function updatePinnedSiteName(siteId, name) {
+  state.prefs.pinnedSites = (state.prefs.pinnedSites || []).map(s => s.id === siteId ? { ...s, name } : s);
+}
+
+function setupPinnedDragDrop(page) {
+  const list = $("#pinned-list", page);
+  if (!list) return;
+  
+  let dragged = null;
+  $$(".pinned-item", list).forEach(item => {
+    item.addEventListener("dragstart", (e) => { dragged = item; item.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    item.addEventListener("dragend", () => { dragged = null; $$(".pinned-item", list).forEach(i => i.classList.remove("dragging")); });
+    item.addEventListener("dragover", (e) => { 
+      e.preventDefault(); 
+      if (dragged && dragged !== item) { 
+        const rect = item.getBoundingClientRect(); 
+        if (e.clientY < rect.top + rect.height / 2) item.parentNode.insertBefore(dragged, item); 
+        else item.parentNode.insertBefore(dragged, item.nextSibling); 
+      } 
+    });
+  });
+  
+  // Also allow dragging between folders
+  $$(".pinned-folder-content", list).forEach(folderContent => {
+    folderContent.addEventListener("dragover", (e) => { e.preventDefault(); });
+    folderContent.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (dragged) {
+        const folderId = folderContent.closest(".pinned-folder")?.dataset.folderId || "unfiled";
+        movePinnedSite(dragged.dataset.siteId, folderId === "unfiled" ? null : folderId);
+      }
+    });
+  });
+}
+
+// Settings import/export
+function exportAllSettings() {
+  const json = JSON.stringify(state.prefs, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    notify("Settings exported to clipboard");
+  }).catch(() => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `odyssey-settings-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify("Settings downloaded as file");
+  });
+}
+
+function importAllSettings(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      // Merge with defaults to ensure all keys exist
+      state.prefs = { ...DEFAULT_PREFS, ...imported };
+      savePrefs();
+      initTheme();
+      applyAppearanceVariables();
+      renderSettings();
+      notify("Settings imported successfully");
+    } catch (err) {
+      notify("Failed to import settings: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetAllSettings() {
+  state.prefs = { ...DEFAULT_PREFS };
+  savePrefs();
+  initTheme();
+  applyAppearanceVariables();
+  renderSettings();
+  notify("All settings reset to defaults");
 }
 
 // ---------------------------------------------------------------- history page
@@ -1035,7 +2267,7 @@ document.addEventListener("click", (e) => {
 
 // ---------------------------------------------------------------- start
 (async () => {
-  applyAppearance();
+  initTheme();
   applyPrefsToUi();
   try { setMaximized(await invoke("win_is_maximized")); } catch {}
   await refreshConfig();
