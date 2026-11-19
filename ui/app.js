@@ -12,4 +12,7 @@ if (fixture) {
   import('./fixture.js').then((m) => m.startFixture(fixture));
 } else if (location.hash === '#ipc-selftest') {
   import('./selftest.js');
+} else {
+  // Live mode: render browser shell and connect to engine.
+  import('./live.js').then((m) => m.startLive());
 }
