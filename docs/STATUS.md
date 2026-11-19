@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 2: The shell |
-| Current task | **P2-07 Settings page shell** |
-| State | P2-06 complete. Helm navigation toolbar (§7) implemented with back/forward/reload, web/internal/empty/asking address formats, download ring, downloads popover, and asking answer card. Input classification and keyboard flow (Ctrl+L focus, Esc blur, Enter navigation, IME compose guard) verified. Helm regions score 0.0 across all boards. |
-| Next step | P2-07 Settings page shell (§9 Settings: nav and Appearance section with working controls: Stars, Shooting stars, Accent, Trail, Faster downloads, saved to disk; accent recoloring). |
+| Phase | 3: New tab and private windows |
+| Current task | **P3-01 New tab** |
+| State | Phase 2 complete (Gate 2 met). Settings page shell (§9) implemented with nav, working controls (Stars, Shooting stars, Accent swatches, Trail, Faster downloads), dynamic accent recoloring, and atomic file persistence with corrupted settings recovery in Rust. Settings board visual check score 3.1 (limit 5.0). All Phase 2 tasks complete. |
+| Next step | P3-01 New tab (§9 New tab: greeting by time of day, clock, date, hint, and constellation built from the tab tree). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `12a5c26` (P2-06). |
+| Last pushed commit | `d89c704` (P2-07). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-07
+- Did: completed P2-07 Settings page shell (§9). Created `ui/settings.js` with `renderSettings`, `loadSettings`, `saveSettings`, `applyAccent`, and `DEFAULT_SETTINGS`. Built left navigation list (9 items, 36px buttons, 8px radius, selected highlight) and Appearance section controls: Stars segmented control (Off, Still, Drifting), Shooting stars switch (42x24, role="switch", accent fill on active), Accent swatches (5 colors: Sea, Mint, Lilac, Amber, Rose, with double-ring selection outline), Trail segmented control (Narrow / Wide), and Faster downloads select (1 / 4 / 8 / 16 connections). Clicking any swatch updates `--accent` dynamically across the document, immediately recoloring all active stars, rings, focus outlines, and switches. Wired settings persistence via `localStorage` and IPC messages `save-settings` / `load-settings`. In `app/shell`, implemented `save_settings_atomic` (atomic writes via tmp file + rename) and `load_settings_or_default` with automatic corrupted file recovery (creates `.bak` file and safely returns defaults per EDGE_CASES §1). Created `tools/test_settings.py` testing interactive control state updates, accent recoloring, section switching, and persistence across page reload/restart.
+- Verified: `python tools/visual_check.py Settings` passed with score 3.1 (limit 5.0, 0.11% pixels); `python tools/test_settings.py` passed all assertions; `cargo test` unit tests `save_and_load_settings_round_trip` and `corrupted_settings_recovers_defaults_and_makes_backup` passed; `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` clean.
+- Edge cases: §1 corrupted settings file: handled + tested in Rust unit tests (atomic rename prevents half-written files, invalid JSON is backed up to `.bak` and recovered using defaults); §1 dynamic accent recoloring: handled + tested (recolors `--accent` and all dependent elements without reload); §1 settings survival: handled + tested across reload; §1 defaults on first run: handled + tested. Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: none.
+- Next: P3-01 New tab (§9 New tab: greeting by time of day, clock, date, hint, constellation from tab tree).
+- Commit: `d89c704` "P2-07: settings page shell"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-06
 - Did: completed P2-06 Helm: navigation and address. Implemented `renderHelm` in `ui/helm.js` (§7): 560x52 floating pill centered dynamically, Back/Forward (32x32 round, 18px icons), Reload (32x32 round, 17px icon), address display (empty placeholder "Ask or enter an address", web with lock icon 14 and host + muted path, internal "odyssey://" + page name, asking mode with accent star 16, caret and Enter hint, Ask button with up-arrow 18). Implemented download ring (progress circle with circumference 69.1, stroke-dasharray and download arrow) and downloads popover aligned to Helm's right edge. Implemented `renderAnswerCard` for asking mode with constellation diagram and source chips. Implemented `classifyInput` handling EDGE_CASES §3 (blocking `javascript:`, `data:`, `chrome://`, `devtools://`, handling Windows paths `C:\...`, `file:///`, localhost, IPs, intranet names, web URLs, and DuckDuckGo search query fallback). Implemented keyboard flow (Ctrl+L activates typing input, Esc leaves, Enter triggers navigation, IME composing check prevents premature submission). Wired into `ui/shell.js`. Created `tools/test_helm.py` verifying all classification rules and keyboard navigation.

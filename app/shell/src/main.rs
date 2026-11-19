@@ -141,6 +141,17 @@ impl Shell {
                     engine.set_bounds(view, page_bounds(engine, self.rail_width));
                 }
             }
+            FromUi::SaveSettings { settings } => {
+                let dir = profile_dir();
+                if let Err(e) = save_settings_atomic(&dir, &settings) {
+                    eprintln!("Failed to save settings: {e}");
+                }
+            }
+            FromUi::LoadSettings => {
+                let dir = profile_dir();
+                let settings = load_settings_or_default(&dir);
+                engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
@@ -216,9 +227,101 @@ fn main() {
     }
 }
 
+/// Default user settings (DESIGN.md §9).
+pub fn default_settings() -> serde_json::Value {
+    serde_json::json!({
+        "stars": "Still",
+        "shootingStars": false,
+        "accent": "Sea",
+        "trail": "Narrow",
+        "connections": 8
+    })
+}
+
+/// Atomically save settings to disk (EDGE_CASES §1: atomic writes via tmp + rename).
+pub fn save_settings_atomic(dir: &Path, settings: &serde_json::Value) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let target = dir.join("settings.json");
+    let tmp = dir.join("settings.json.tmp");
+    let content = serde_json::to_string_pretty(settings)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, &target)?;
+    Ok(())
+}
+
+/// Load settings from disk or return defaults if missing or corrupted (EDGE_CASES §1).
+pub fn load_settings_or_default(dir: &Path) -> serde_json::Value {
+    let target = dir.join("settings.json");
+    if !target.exists() {
+        return default_settings();
+    }
+    match std::fs::read_to_string(&target) {
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(val) => val,
+            Err(e) => {
+                eprintln!(
+                    "Warning: settings.json corrupted ({e}), creating backup and restoring defaults"
+                );
+                let bak = dir.join("settings.json.bak");
+                let _ = std::fs::rename(&target, &bak);
+                default_settings()
+            }
+        },
+        Err(_) => default_settings(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_and_load_settings_round_trip() {
+        let tmp_dir =
+            std::env::temp_dir().join(format!("ody_test_settings_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
+        let custom = serde_json::json!({
+            "stars": "Drifting",
+            "shootingStars": true,
+            "accent": "Rose",
+            "trail": "Wide",
+            "connections": 16
+        });
+
+        assert!(save_settings_atomic(&tmp_dir, &custom).is_ok());
+        let loaded = load_settings_or_default(&tmp_dir);
+        assert_eq!(loaded["accent"], "Rose");
+        assert_eq!(loaded["stars"], "Drifting");
+        assert_eq!(loaded["shootingStars"], true);
+        assert_eq!(loaded["trail"], "Wide");
+        assert_eq!(loaded["connections"], 16);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn corrupted_settings_recovers_defaults_and_makes_backup() {
+        let tmp_dir = std::env::temp_dir().join(format!("ody_test_corrupt_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+
+        let target = tmp_dir.join("settings.json");
+        std::fs::write(&target, "{ corrupted invalid json content ...").unwrap();
+
+        let loaded = load_settings_or_default(&tmp_dir);
+        assert_eq!(loaded, default_settings());
+
+        let bak = tmp_dir.join("settings.json.bak");
+        assert!(bak.exists(), "settings.json.bak should be created");
+        assert_eq!(
+            std::fs::read_to_string(&bak).unwrap(),
+            "{ corrupted invalid json content ..."
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 
     #[test]
     fn closing_parent_reattaches_children_to_grandparent() {

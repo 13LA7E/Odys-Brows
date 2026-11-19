@@ -49,6 +49,12 @@ pub enum FromUi {
     SetRailWidth {
         width: i32,
     },
+    /// Save settings (P2-07).
+    SaveSettings {
+        settings: serde_json::Value,
+    },
+    /// Load settings (P2-07).
+    LoadSettings,
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -93,6 +99,9 @@ pub enum ToUi {
     },
     Closed {
         view: ViewId,
+    },
+    SettingsLoaded {
+        settings: serde_json::Value,
     },
 }
 
@@ -187,6 +196,16 @@ mod tests {
         assert_eq!(
             parse(r#"{"type":"set-rail-width","width":264}"#),
             Ok(FromUi::SetRailWidth { width: 264 })
+        );
+        assert_eq!(
+            parse(r#"{"type":"load-settings"}"#),
+            Ok(FromUi::LoadSettings)
+        );
+        assert_eq!(
+            parse(r#"{"type":"save-settings","settings":{"accent":"Sea"}}"#),
+            Ok(FromUi::SaveSettings {
+                settings: serde_json::json!({"accent": "Sea"})
+            })
         );
     }
 

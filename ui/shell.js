@@ -6,6 +6,7 @@
 import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
+import { renderSettings, applyAccent } from './settings.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -74,6 +75,9 @@ function notch(count) {
 export function renderShell(root, state) {
   root.replaceChildren();
   root.classList.toggle('private', !!state.private);
+  if (state.settings?.accent) {
+    applyAccent(state.settings.accent);
+  }
   const railWidth = state.rail === 'expanded' ? 264 : 56;
   root.style.setProperty('--rail', `${railWidth}px`);
   if (typeof window.odysseyBridge === 'function') {
@@ -151,6 +155,20 @@ export function renderShell(root, state) {
       const site = el('div', 'page-site');
       site.innerHTML = state.pageHtml;
       panel.append(site);
+    } else if (state.page === 'internal') {
+      const pageName = state.pageName || state.helm?.address?.name;
+      if (pageName === 'settings' || state.settings) {
+        renderSettings(panel, state, (field, val) => {
+          if (field === 'stars') {
+            state.starsMode = val.toLowerCase();
+          } else if (field === 'shootingStars') {
+            state.shootingStars = val;
+          } else if (field === 'trail') {
+            state.rail = val === 'Wide' ? 'expanded' : 'collapsed';
+          }
+          renderShell(root, state);
+        });
+      }
     }
     root.append(panel);
     if (state.dimPage && !state.pageHtml?.includes('rgba(0,0,0,.5)')) {

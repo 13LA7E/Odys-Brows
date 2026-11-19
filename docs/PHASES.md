@@ -114,7 +114,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P2-06 Helm: navigation and address.** §7 frame, back/forward/reload, the three address formats, typing a URL or search, `odyssey://settings` and `odyssey://history` internal pages, keyboard (Ctrl+L focuses the Helm, Esc leaves it). The Assistant button opens ask mode in Phase 7; disabled until then.
   - Edge: §3
   - Done when: [Main] and [Browsing] Helm regions pass; keyboard flow works.
-- [ ] **P2-07 Settings page shell.** §9 Settings: nav and the Appearance section with working controls saved to disk (Stars, Shooting stars, Accent, Trail, Faster downloads). The other sections show their title only for now.
+- [x] **P2-07 Settings page shell.** §9 Settings: nav and the Appearance section with working controls saved to disk (Stars, Shooting stars, Accent, Trail, Faster downloads). The other sections show their title only for now.
   - Edge: §1 (corrupted settings)
   - Done when: [Settings] passes; changing accent recolours everything that uses the accent; settings survive a restart.
 
