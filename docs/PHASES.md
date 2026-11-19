@@ -79,7 +79,7 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
 - [x] **P1-03 UI host and IPC.** (Windows) Load `ui/index.html` as the browser chrome. A small message bridge between the UI and Rust (JSON messages with a `type` field). Web pages get **no** bridge.
   - Edge: §4, §11 (secrets)
   - Done when: from the UI you can open a page view, navigate it and see its title come back; a test page proves a normal web page can't reach the bridge.
-- [~] **P1-04 Fixture mode (important for every later UI task).** In progress: see STATUS "Handover". `ui/index.html?fixture=<Board>` renders the UI with no engine, filled with the exact sample content from that design board (tab titles, times, download numbers, and so on), at 1280×800. Boards: Main, Browsing, Settings, HelmAnswer, ClosedTabs, Private, History. The real page area shows a flat placeholder; Browsing, ClosedTabs and HelmAnswer can show `design/preview`'s article markup there.
+- [x] **P1-04 Fixture mode (important for every later UI task).** Fixture mode loads each board's sample content at 1280x800 with no engine. Boards: Main, Browsing, Settings, HelmAnswer, ClosedTabs, Private, History. Visual check scores recorded as baseline for Phase 2.
   - Done when: each board's fixture loads in a normal browser with no errors in the console, even before it looks right; `python tools/visual_check.py` runs and prints a score for each.
 - [ ] **P1-05 Tokens and fonts.** `ui/tokens.css` with every value from DESIGN.md §3 as CSS variables, and `@font-face` for the bundled Familjen Grotesk files.
   - Done when: no raw hex colours appear in UI CSS outside `tokens.css` (grep check in `check`).

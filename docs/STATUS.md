@@ -7,12 +7,12 @@
 | | |
 |---|---|
 | Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-04 Fixture mode** — IN PROGRESS (WIP commit, not pushed) |
-| State | P1-04 half built (see "Handover: P1-04 in progress" below). P1-01..P1-03 done on Windows and pushed (last `6fb834f`). Phase 0: Windows parts done; several items await the owner or Linux. |
-| Next step | Finish P1-04 exactly as listed under "Handover: P1-04 in progress", then P1-05 (tokens grep), P1-06 (check scripts), P1-07 (CI). |
+| Current task | **P1-05 Tokens and fonts** |
+| State | P1-01..P1-04 done on Windows. P1-04 fixture mode verified (all 7 boards load without JS errors; visual check baseline scores recorded). |
+| Next step | P1-05 (tokens grep check), then P1-06 (check scripts), P1-07 (CI). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `6fb834f` (P1-03). A local `WIP P1-04` commit sits on top and is NOT pushed. |
-| Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
+| Last pushed commit | `0d7b5d0` (P1-04). |
+| Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
 
@@ -117,6 +117,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-04
+- Did: completed P1-04 fixture mode. Installed Playwright chromium; verified `tools/visual_check.py --report-only` against all 7 boards (`Main`, `Browsing`, `Settings`, `HelmAnswer`, `ClosedTabs`, `Private`, `History`). All boards load in headless chromium with 0 JS/console errors.
+- Verified: `python -u tools/visual_check.py --report-only` outputs scores for all 7 boards (Main: 24.3, Browsing: 25.0, Settings: 45.2, HelmAnswer: 311.9, ClosedTabs: 21.8, Private: 52.9, History: 46.7; 0 JS errors); `cargo build` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; `cargo test` (10 passed); `node --check` on all `ui/*.js` passed; `tools\run-dev.ps1 --ipc-selftest` printed PASSED (exit 0); `tools\run-dev.ps1 --engine-selftest` printed PASSED (exit 0); no lingering processes.
+- Edge cases: §1 empty/unknown fixture: displays clear error message naming known fixtures (`ui/fixture.js`); missing sky/page falls back safely; zero console errors on all boards. Linux: not tested.
+- Not verified / unsure: Linux; visual match (scores will remain high until Phase 2 styling).
+- Decisions proposed: none.
+- Next: P1-05 Tokens and fonts.
+- Commit: `0d7b5d0` "P1-04: fixture mode"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P1-04 (stopped mid-task)
 - Did: see "Handover: P1-04 in progress" above. Stopped on the owner's request (usage limit); nothing pushed for P1-04.
