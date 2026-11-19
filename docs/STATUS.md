@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-04 Fixture mode** |
-| State | **P1-03 done on Windows** (UI on `odyssey-ui://`, bridge for our UI only, self-tests pass). **P1-02 done on Windows** (engine trait; self-test passes; D-017 Proposed). **P1-01 Windows done** (workspace builds, empty window opens). **P0-08 done as a proposal** (D-007 plain Rust + cef-rs, Proposed). **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P1-04: `ui/index.html?fixture=<Board>` renders the UI with no engine and the exact sample content of each board (Main, Browsing, Settings, HelmAnswer, ClosedTabs, Private, History) at 1280x800; loads in a normal browser with no console errors; `python tools/visual_check.py` runs and prints a score for each. Read `tools/visual_check.py` first for how it loads fixtures. |
+| Current task | **P1-04 Fixture mode** — IN PROGRESS (WIP commit, not pushed) |
+| State | P1-04 half built (see "Handover: P1-04 in progress" below). P1-01..P1-03 done on Windows and pushed (last `6fb834f`). Phase 0: Windows parts done; several items await the owner or Linux. |
+| Next step | Finish P1-04 exactly as listed under "Handover: P1-04 in progress", then P1-05 (tokens grep), P1-06 (check scripts), P1-07 (CI). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `4c86cfb` (P1-02); P1-03 commit follows (see the session log) |
+| Last pushed commit | `6fb834f` (P1-03). A local `WIP P1-04` commit sits on top and is NOT pushed. |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -28,6 +28,29 @@ Gate 0 is **not met**. Following the autopilot instructions, Phase 1 continues o
 ## Blockers
 
 - **\* LINUX PENDING \*** P0-01b needs the deferred Ubuntu toolchain setup and version record. P0-03 (P0-02 on Linux) also waits for it. Windows work can continue, but the full P0-01 task and Phase 0 gate remain open.
+
+## Handover: P1-04 in progress (19 Nov 2026, Claude Code stopped here on the owner's request)
+
+Done so far (in the local `WIP P1-04` commit):
+- `tools/extract_fixtures.py` → `ui/fixtures/sky.json` (exact star positions per board from `design/preview`) and `ui/fixtures/page-{Browsing,ClosedTabs,HelmAnswer}.html` (the sample website from the page panel). Re-run it only if `design/preview` changes.
+- `ui/fixtures.js`: each board's sample content (tabs, times, downloads, settings values, history rows, answer card, private copy). The Main constellation labels order is a guess: check it against `design/preview/Main.html` in P3-01.
+- `ui/tokens.css`: all DESIGN.md §3 values as CSS variables + `@font-face` (this is most of P1-05 already).
+- `ui/shell.js` (`renderShell`): draws the shared frame: sky (SVG from the star list), rail area, page panel (sample site / internal background), page dim, Helm frame with its address text, notch. `ui/fixture.js` loads a board; `ui/app.js` starts fixture mode on `?fixture=<Board>`; `ui/app.css` styles it with tokens only.
+- `node --check` passes on all `ui/*.js`.
+- Installed for the visual check: `pip install playwright pillow` (done) and `python -m playwright install chromium` (was downloading when stopped; re-run it, it resumes).
+
+To finish P1-04:
+1. `python -m playwright install chromium` (if not finished), then `python tools/visual_check.py --report-only`. It must load every board with no JS errors and print a score for each (scores will be high until Phase 2; that's fine for P1-04).
+2. Fix any JS/console errors it reports; look at `out/visual/<Board>.png`.
+3. Check the native app still works: `cargo build`, `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --ipc-selftest` and `--engine-selftest` (both must print PASSED, exit 0). `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test`.
+4. Update PHASES (tick P1-04), add the session log entry, commit "P1-04: fixture mode" (a normal commit on top of the WIP one is fine), then fetch/rebase/push. Don't rewrite the pushed history.
+
+Facts the next agent must know (all in DECISIONS/STATUS log too):
+- Each tab is its own owned frameless Chrome-style CEF window (D-017 Proposed): CEF refuses a second Chrome-style page view in one window.
+- Our UI is served from `odyssey-ui://app/` (not `file://`; ES modules don't run from `file://`). The JS bridge `odysseyBridge(json)` exists only in our UI's frame; messages are JSON with a `type` (`app/shell/src/bridge.rs`).
+- The `cef` crate is pinned `=156.7.0`; first build downloads CEF (~2 min). Run the app with `tools\run-dev.ps1` (it puts CEF on PATH).
+- Kill running `constellations.exe` / spike exes before rebuilding, or the link step fails ("Access is denied").
+- Screenshots: use `PrintWindow` per window (spike `shot.ps1`/`shot-all.ps1`), never a screen copy (privacy).
 
 ## Awaiting Owner OK
 
@@ -95,6 +118,12 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P1-04 (stopped mid-task)
+- Did: see "Handover: P1-04 in progress" above. Stopped on the owner's request (usage limit); nothing pushed for P1-04.
+- Verified: `node --check` on all `ui/*.js`; `tools/extract_fixtures.py` ran (stars per board: Main 166, Browsing 46, Settings 22, HelmAnswer 14, ClosedTabs 46, Private 120, History 14). `visual_check.py` not run yet.
+- Next: finish P1-04 (steps in the handover), then P1-05.
+- Commit: local "WIP P1-04: fixture data, tokens, shell frame"  Pushed: no (WIP)
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P1-03 (Windows)
 - Did: our UI is now served from `odyssey-ui://app/` by a CEF scheme handler (`app/engine-cef/src/ui_scheme.rs`): standard + secure + display-isolated + fetch; files only from the UI folder (percent-decoding, `..`/backslash/NUL/drive paths refused, canonical path must stay inside); `Cache-Control: no-store`. Reason: Chromium won't run ES modules from `file://`, and the UI gets its own origin. Bridge: a renderer handler installs a read-only `odysseyBridge(json)` only in main frames under `odyssey-ui://app/` (prefix passed to child processes by switch); only the UI's client accepts the `odyssey-ui-bridge` process message and re-checks the frame URL; Rust → UI through `window.odysseyReceive(...)` (`CefEngine::send_to_ui`, U+2028/2029 escaped). `app/shell/src/bridge.rs`: typed protocol (`type` field; open, navigate, back, forward, reload, stop, show, close; view-opened, url, title, loading, load-failed, new-window, closed), 256 KiB limit, unknown fields refused, bad input logged and ignored. Shell keeps the open views and shows one at a time in the page area (right of the 56 px rail). `ui/bridge.js`, `ui/selftest.js`, `--ipc-selftest`. New dependencies: `serde` + `serde_json` (the bridge's JSON).
 - Verified: `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test` (10 tests: bridge parsing incl. empty/`null`/unknown type/extra field/negative id/oversize, Unicode + U+2028 round trip, event mapping; UI scheme path escapes `../`, `%2e%2e`, `..%2f`, backslash, drive letter, `//etc`, wrong host/scheme, missing file, directory; MIME). `tools\run-dev.ps1 --ipc-selftest`: UI has the bridge; view 1 title "Page A" came back; navigated, "Page B" came back; probe page sees `undefined,undefined`; PASSED, exit 0. `--engine-selftest` still PASSED.
@@ -102,7 +131,7 @@ Copy this template for each session:
 - Not verified / unsure: a web page navigating to `odyssey-ui://` (expected blocked by display isolation); Linux.
 - Decisions proposed: none (implementation detail; the custom scheme replaces `file://` for the UI).
 - Next: P1-04 fixture mode.
-- Commit: see git log "P1-03: UI served from odyssey-ui://, bridge for our UI only"  Pushed: yes
+- Commit: `6fb834f` "P1-03: UI served from odyssey-ui://, bridge for our UI only"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P1-02 (Windows)
 - Did: `app/engine-api`: the `Engine` trait with doc comments (create/close view, bounds, visibility, navigate/back/forward/reload/stop, zoom, find, UI-only script, sleep/wake, devtools, permission and certificate answers) and the `Event` enum (url, title, favicon, loading, load failed, audio, new window with opener id, download, permission, certificate error, crash, closed); object-safety test. `app/engine-cef`: `CefEngine` implements create/close/bounds/visibility/navigate/back/forward/reload/stop/run_ui_script and emits url, title, loading, load-failed, new-window (popups are cancelled and handed to the browser) and closed events through a re-entrancy-safe queue; zoom/find/devtools/permissions/certificates `todo!("P4-06 ...")`, sleep/wake `todo!("P5-02 ...")`. Page views are owned frameless Chrome style windows (D-017 Proposed). `app/shell`: `--engine-selftest` (data: pages, 30 s timeout, exit 0/1, throwaway profile). `tools/run-dev.ps1` now passes the exit code through. Spike `p0-04-helm --swap` kept as evidence for D-017.

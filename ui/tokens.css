@@ -1,4 +1,82 @@
-/* Design tokens (DESIGN.md section 3). Filled in P1-05. */
+/* Design tokens: every value from DESIGN.md §3. The only file in ui/ with raw colours
+   (checked by tools/check.*). Private windows override --accent and the private tokens. */
+
+@font-face { font-family: 'Familjen Grotesk'; font-style: normal; font-weight: 400; font-display: block; src: url('fonts/familjen-grotesk-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Familjen Grotesk'; font-style: normal; font-weight: 500; font-display: block; src: url('fonts/familjen-grotesk-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Familjen Grotesk'; font-style: normal; font-weight: 600; font-display: block; src: url('fonts/familjen-grotesk-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Familjen Grotesk'; font-style: normal; font-weight: 700; font-display: block; src: url('fonts/familjen-grotesk-latin-700-normal.woff2') format('woff2'); }
+
 :root {
+  /* Colour */
   --bg: #000000;
+  --bg-private: #02040a;
+  --surface: #13161a;
+  --panel-internal: #0a0c0f;
+  --panel-web: #f8f8f6;
+  --text: #e8ecef;
+  --text-strong: #f2f5f7;
+  --text-soft: #aeb7bf;
+  --text-muted: #7d868f;
+  --pin: #8a949d;
+  --node: #5b656f;
+  --node-faded-text: #6b757e;
+  --space-dot: #3a424a;
+  --private-ink: #cdd9ee;
+  --private-node: #6b7a90;
+  --on-accent: #00131b;
+  --white: #ffffff;
+
+  /* Accent (user-selectable; default Sea). Private windows always use Lilac. */
+  --accent-sea: #5ad0f0;
+  --accent-mint: #6ee7b7;
+  --accent-lilac: #b6a8ff;
+  --accent-amber: #f2c46d;
+  --accent-rose: #ff8fa3;
+  --accent: var(--accent-sea);
+
+  /* White overlays (#fff at the given opacity) */
+  --w-trail: rgba(255, 255, 255, .16);
+  --w-constellation: rgba(255, 255, 255, .18);
+  --w-newtab-ring: rgba(255, 255, 255, .28);
+  --w-active-row: rgba(255, 255, 255, .07);
+  --w-hover-row: rgba(255, 255, 255, .05);
+  --w-field: rgba(255, 255, 255, .06);
+  --w-segment-selected: rgba(255, 255, 255, .14);
+  --w-toggle-off: rgba(255, 255, 255, .14);
+  --w-assistant: rgba(255, 255, 255, .08);
+  --w-nav-selected: rgba(255, 255, 255, .08);
+  --w-progress-track: rgba(255, 255, 255, .10);
+  --w-ring-track: rgba(255, 255, 255, .14);
+
+  /* Page dim behind a Helm answer */
+  --page-dim: rgba(0, 0, 0, .5);
+
+  /* Type */
+  --font: 'Familjen Grotesk', system-ui, sans-serif;
+
+  /* Shape */
+  --r-helm: 26px;
+  --r-answer: 20px;
+  --r-popover: 14px;
+  --r-search: 12px;
+  --r-track: 10px;
+  --r-row: 8px;
+  --r-segment: 7px;
+
+  /* Depth */
+  --shadow-helm: 0 12px 32px rgba(0, 0, 0, .5);
+  --shadow-popover: 0 16px 40px rgba(0, 0, 0, .55);
+
+  /* Layout */
+  --rail-collapsed: 56px;
+  --rail-expanded: 264px;
+  --helm-w: 560px;
+  --helm-h: 52px;
+  --helm-bottom: 28px;
+  --notch-h: 34px;
+}
+
+.private {
+  --accent: var(--accent-lilac);
+  --bg: var(--bg-private);
 }
