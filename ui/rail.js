@@ -259,6 +259,8 @@ export function renderExpandedRail(railEl, options = {}) {
     onNewTab,
     onCollapse,
     onOpenSettings,
+    onRelightClosedTab,
+    onForgetClosedTab,
   } = options;
 
   railEl.replaceChildren();
@@ -467,7 +469,7 @@ export function renderExpandedRail(railEl, options = {}) {
       // Hovered preview card beside rail
       if (c.hovered) {
         const card = el('div', 'closed-preview-card');
-        card.style.cssText = `position:absolute;left:276px;top:${cy - 76}px;width:296px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);overflow:hidden;`;
+        card.style.cssText = `position:absolute;left:276px;top:${cy - 76}px;width:296px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);overflow:hidden;z-index:10;`;
 
         // Thumbnail
         const thumb = el('div', 'closed-thumb');
@@ -496,9 +498,26 @@ export function renderExpandedRail(railEl, options = {}) {
         const btns = el('div');
         btns.style.cssText = 'display:flex;gap:18px;margin-top:12px;';
         const relightBtn = el('button', null, 'Relight');
-        relightBtn.style.cssText = 'color:var(--accent);font-size:13.5px;font-weight:500;';
+        relightBtn.style.cssText = 'color:var(--accent);font-size:13.5px;font-weight:500;cursor:pointer;';
+        relightBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (typeof onRelightClosedTab === 'function') {
+            onRelightClosedTab(c.id);
+          } else if (typeof window.odysseyBridge === 'function') {
+            window.odysseyBridge(JSON.stringify({ type: 'relight-closed-tab', id: c.id }));
+          }
+        });
+
         const forgetBtn = el('button', null, 'Forget');
-        forgetBtn.style.cssText = 'color:var(--text-soft);font-size:13.5px;';
+        forgetBtn.style.cssText = 'color:var(--text-soft);font-size:13.5px;cursor:pointer;';
+        forgetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (typeof onForgetClosedTab === 'function') {
+            onForgetClosedTab(c.id);
+          } else if (typeof window.odysseyBridge === 'function') {
+            window.odysseyBridge(JSON.stringify({ type: 'forget-closed-tab', id: c.id }));
+          }
+        });
         btns.append(relightBtn, forgetBtn);
 
         body.append(titleEl, hostEl, timeEl, btns);

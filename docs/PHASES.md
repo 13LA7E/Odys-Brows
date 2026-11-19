@@ -144,7 +144,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.
   - Edge: §6
   - Done when: [History] passes with the fixture and works with real data.
-- [ ] **P4-04 Closed tabs.** §6 Closed tabs: "Closed earlier" list with fading, hover preview with a real snapshot, Relight restores the tab (url, scroll, history stack where the engine allows), Forget removes it, gone after 24 h.
+- [x] **P4-04 Closed tabs.** §6 Closed tabs: "Closed earlier" list with fading, hover preview with a real snapshot, Relight restores the tab (url, scroll, history stack where the engine allows), Forget removes it, gone after 24 h.
   - Edge: §6
   - Done when: [ClosedTabs] passes; relight tested.
 - [ ] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.

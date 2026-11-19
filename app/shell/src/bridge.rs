@@ -84,6 +84,14 @@ pub enum FromUi {
     },
     /// Clear all history (P4-02).
     ClearAllHistory,
+    /// Relight a closed tab (P4-04).
+    RelightClosedTab {
+        id: u64,
+    },
+    /// Forget a closed tab from the closed earlier list (P4-04).
+    ForgetClosedTab {
+        id: u64,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -146,6 +154,18 @@ pub enum ToUi {
     HistoryLoaded {
         groups: Vec<history::DayGroup>,
     },
+    ClosedTabsUpdated {
+        tabs: Vec<ClosedTabInfo>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClosedTabInfo {
+    pub id: u64,
+    pub title: String,
+    pub url: String,
+    pub host: String,
+    pub closed_ago: String,
 }
 
 /// Parse one message from the UI. `Err` carries a short reason for the log.

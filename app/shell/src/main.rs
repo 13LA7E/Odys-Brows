@@ -15,7 +15,7 @@ use engine_api::{Engine, Rect, ViewId};
 use engine_cef::CefEngine;
 use history::HistoryStore;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -67,6 +67,17 @@ pub struct Tab {
     pub opener: Option<ViewId>,
 }
 
+#[derive(Clone, Debug)]
+pub struct ClosedTabRecord {
+    pub id: u64,
+    pub view: ViewId,
+    pub url: String,
+    pub title: String,
+    pub host: String,
+    pub closed_at: i64,
+    pub opener: Option<ViewId>,
+}
+
 #[derive(Debug)]
 struct Shell {
     tabs: Vec<Tab>,
@@ -75,6 +86,10 @@ struct Shell {
     is_private: bool,
     history: Option<HistoryStore>,
     tab_visit_id: HashMap<ViewId, i64>,
+    tab_urls: HashMap<ViewId, String>,
+    tab_titles: HashMap<ViewId, String>,
+    closed_tabs: VecDeque<ClosedTabRecord>,
+    next_closed_id: u64,
 }
 
 impl Default for Shell {
@@ -86,6 +101,10 @@ impl Default for Shell {
             is_private: false,
             history: None,
             tab_visit_id: HashMap::new(),
+            tab_urls: HashMap::new(),
+            tab_titles: HashMap::new(),
+            closed_tabs: VecDeque::new(),
+            next_closed_id: 1,
         }
     }
 }
@@ -95,7 +114,7 @@ impl Shell {
         self.tabs.iter().any(|t| t.view == view)
     }
 
-    fn close_tab(&mut self, view: ViewId) {
+    fn close_tab(&mut self, view: ViewId) -> Option<ClosedTabRecord> {
         let parent_opener = self
             .tabs
             .iter()
@@ -111,6 +130,86 @@ impl Shell {
         if self.shown == Some(view) {
             self.shown = None;
         }
+
+        if self.is_private {
+            return None;
+        }
+
+        let url = self.tab_urls.remove(&view).unwrap_or_default();
+        let title = self.tab_titles.remove(&view).unwrap_or_default();
+        if url.is_empty() || url.starts_with("odyssey://") || url.starts_with("odyssey-ui://") {
+            return None;
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        let host = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))
+            .unwrap_or(&url)
+            .split(['/', ':', '?', '#'])
+            .next()
+            .unwrap_or(&url)
+            .to_string();
+
+        let id = self.next_closed_id;
+        self.next_closed_id += 1;
+
+        let record = ClosedTabRecord {
+            id,
+            view,
+            url,
+            title: if title.is_empty() {
+                host.clone()
+            } else {
+                title
+            },
+            host,
+            closed_at: now,
+            opener: parent_opener,
+        };
+
+        self.closed_tabs.push_front(record.clone());
+        // 24 hour expiry (86,400 seconds)
+        self.closed_tabs.retain(|c| now - c.closed_at < 86400);
+
+        Some(record)
+    }
+
+    fn relight_closed_tab(&mut self, id: u64) -> Option<(String, Option<ViewId>)> {
+        let pos = self.closed_tabs.iter().position(|c| c.id == id)?;
+        let record = self.closed_tabs.remove(pos)?;
+        Some((record.url, record.opener))
+    }
+
+    fn closed_tab_infos(&self) -> Vec<bridge::ClosedTabInfo> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.closed_tabs
+            .iter()
+            .map(|c| {
+                let secs = (now - c.closed_at).max(0);
+                let closed_ago = if secs < 60 {
+                    "Closed just now".to_string()
+                } else if secs < 3600 {
+                    format!("Closed {} minutes ago", secs / 60)
+                } else {
+                    format!("Closed {} hours ago", secs / 3600)
+                };
+                bridge::ClosedTabInfo {
+                    id: c.id,
+                    title: c.title.clone(),
+                    url: c.url.clone(),
+                    host: c.host.clone(),
+                    closed_ago,
+                }
+            })
+            .collect()
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
@@ -122,6 +221,7 @@ impl Shell {
         {
             return;
         }
+        self.tab_urls.insert(view, url.to_string());
         let opener_visit_id = self
             .tabs
             .iter()
@@ -142,6 +242,7 @@ impl Shell {
         if self.is_private {
             return;
         }
+        self.tab_titles.insert(view, title.to_string());
         let visit_id = match self.tab_visit_id.get(&view).copied() {
             Some(id) => id,
             None => return,
@@ -282,6 +383,22 @@ impl Shell {
                     groups: Vec::new(),
                 }));
             }
+            FromUi::RelightClosedTab { id } => {
+                if let Some((url, opener)) = self.relight_closed_tab(id) {
+                    let view = engine.create_view(&url);
+                    self.tabs.push(Tab { view, opener });
+                    self.show(engine, view);
+                    self.on_url_changed(view, &url);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
+                    let infos = self.closed_tab_infos();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
+                }
+            }
+            FromUi::ForgetClosedTab { id } => {
+                self.closed_tabs.retain(|c| c.id != id);
+                let infos = self.closed_tab_infos();
+                engine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
@@ -307,6 +424,9 @@ fn connect(engine: CefEngine, is_private: bool) {
             match &event {
                 engine_api::Event::Closed { view } => {
                     s.close_tab(*view);
+                    let infos = s.closed_tab_infos();
+                    CefEngine
+                        .send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
                 }
                 engine_api::Event::UrlChanged { view, url } => {
                     s.on_url_changed(*view, url);
@@ -612,5 +732,89 @@ mod tests {
         shell.on_title_changed(1, "Private Page");
         assert!(shell.tab_visit_id.is_empty());
         assert!(shell.history.is_none());
+    }
+
+    #[test]
+    fn closing_tab_records_closed_tab_and_relight_restores_it() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab {
+            view: 1,
+            opener: None,
+        });
+        shell
+            .tab_urls
+            .insert(1, "https://tides.example/tables".into());
+        shell.tab_titles.insert(1, "Tide tables".into());
+
+        // Close the tab
+        let closed = shell.close_tab(1);
+        assert!(closed.is_some());
+        let rec = closed.unwrap();
+        assert_eq!(rec.title, "Tide tables");
+        assert_eq!(rec.url, "https://tides.example/tables");
+        assert_eq!(rec.host, "tides.example");
+        assert_eq!(shell.closed_tabs.len(), 1);
+
+        let infos = shell.closed_tab_infos();
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].title, "Tide tables");
+        assert_eq!(infos[0].host, "tides.example");
+
+        // Relight closed tab
+        let closed_id = rec.id;
+        let restored = shell.relight_closed_tab(closed_id);
+        assert!(restored.is_some());
+        let (url, opener) = restored.unwrap();
+        assert_eq!(url, "https://tides.example/tables");
+        assert_eq!(opener, None);
+
+        // The closed tab should now be removed from closed_tabs
+        assert_eq!(shell.closed_tabs.len(), 0);
+    }
+
+    #[test]
+    fn closed_tabs_expire_after_24_hours() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab {
+            view: 10,
+            opener: None,
+        });
+        shell.tab_urls.insert(10, "https://old.example".into());
+        shell.tab_titles.insert(10, "Old page".into());
+
+        shell.close_tab(10);
+        assert_eq!(shell.closed_tabs.len(), 1);
+
+        // Manually age the closed tab beyond 24 hours (86,400s + 1s)
+        shell.closed_tabs[0].closed_at -= 86401;
+
+        // When another tab is closed, expired ones are evicted
+        shell.tabs.push(Tab {
+            view: 11,
+            opener: None,
+        });
+        shell.tab_urls.insert(11, "https://new.example".into());
+        shell.close_tab(11);
+
+        assert_eq!(shell.closed_tabs.len(), 1);
+        assert_eq!(shell.closed_tabs[0].url, "https://new.example");
+    }
+
+    #[test]
+    fn private_mode_never_records_closed_tabs() {
+        let mut shell = Shell {
+            is_private: true,
+            ..Shell::default()
+        };
+        shell.tabs.push(Tab {
+            view: 20,
+            opener: None,
+        });
+        shell.tab_urls.insert(20, "https://secret.example".into());
+        shell.tab_titles.insert(20, "Secret".into());
+
+        let closed = shell.close_tab(20);
+        assert!(closed.is_none());
+        assert!(shell.closed_tabs.is_empty());
     }
 }

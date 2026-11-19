@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-04 Closed tabs** |
-| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete (ui/history.js rendering odyssey://history with search, day groups, trunk lines, curved branches, active tab accent star, came-back bright white star, hover actions Open/Forget, and side panel mini-constellation; visual check on History board passes with score 0.6). |
-| Next step | P4-04 Closed tabs (§6 Closed tabs: "Closed earlier" list with fading, hover preview with snapshot, Relight restores tab, Forget removes, 24h expiry; pass visual check on ClosedTabs board). |
+| Current task | **P4-05 Session restore** |
+| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete (closed_tabs VecDeque in Shell with 24-hour expiry; bridge RelightClosedTab and ForgetClosedTab; "Closed earlier" list with dot fading in expanded rail; hover preview card with Relight and Forget actions; z-index popover layering; private windows never record closed tabs; passes visual check on rail region with score 2.2). |
+| Next step | P4-05 Session restore (save/restore open tabs, opener tree and active tab to session.json; lazy restore; private isolation). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | d2a2010 (P4-02). |
+| Last pushed commit | 2d76816 (P4-03). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,18 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-04
+- Did: completed P4-04 Closed tabs (DESIGN.md §6, PHASES.md P4-04, EDGE_CASES §6).
+  - In `app/shell`: added `ClosedTabRecord` (`id`, `view`, `url`, `title`, `host`, `closed_at`, `opener`) in `Shell::closed_tabs`. Implemented automatic 24-hour expiration (`retain(|c| now - c.closed_at < 86400)`).
+  - Shell bridge: added `FromUi::RelightClosedTab { id }`, `FromUi::ForgetClosedTab { id }`, and `ToUi::ClosedTabsUpdated { tabs: Vec<ClosedTabInfo> }`.
+  - In `ui/rail.js`: fixed popover z-index layering (`z-index: 10`) so the preview card floats over page content; connected Relight and Forget button actions to send bridge events; preserved dot fading (.4, .27, .16) and hovered card presentation.
+  - Private isolation: private windows never record or store closed tabs.
+- Verified: unit tests in `app/shell` (`closing_tab_records_closed_tab_and_relight_restores_it`, `closed_tabs_expire_after_24_hours`, `private_mode_never_records_closed_tabs`), `python tools/visual_check.py ClosedTabs --region 0,0,580,800` passed with score 2.2 (limit 5.0) and preview card region with score 0.5 (limit 5.0), `node --check ui/rail.js`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- Edge cases §6: Private windows never record closed tabs (handled + tested); 24-hour expiration eviction (handled + tested); relighting restores tab URL and hierarchy and removes from closed tabs (handled + tested); forgetting removes from closed tabs (handled + tested).
+- Decisions proposed: none.
+- Next: P4-05 Session restore (reopen tabs, tab tree and active tab after restart/crash; atomic save to session.json; private isolation).
+- Commit: P4-04: closed tabs and relight  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-03
 - Did: completed P4-03 History page (DESIGN.md §9, PHASES.md P4-03, EDGE_CASES §6).
