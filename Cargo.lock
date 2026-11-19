@@ -908,6 +908,8 @@ version = "0.1.0"
 dependencies = [
  "engine-api",
  "engine-cef",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

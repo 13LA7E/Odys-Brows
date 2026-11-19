@@ -16,12 +16,16 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
+mod ui_scheme;
+
 /// What the shell asks the engine to start with.
 pub struct StartOptions {
     /// Folder for the profile (cache, cookies, settings written by the engine).
     pub profile_dir: PathBuf,
-    /// URL of our UI page (`ui/index.html`).
-    pub ui_url: String,
+    /// Folder with our UI (`ui/`). `None` when it's missing: the window then says so.
+    pub ui_dir: Option<PathBuf>,
+    /// Appended to the UI URL, e.g. `#ipc-selftest` or `?fixture=Main`.
+    pub ui_suffix: String,
     /// Window title (the product name; one place, DESIGN.md §11).
     pub title: String,
 }
@@ -70,14 +74,18 @@ struct State {
     ui_closed: bool,
     pages: HashMap<ViewId, Page>,
     next_id: ViewId,
+    /// URL prefix of our UI folder; only frames under it get the bridge (P1-03).
+    ui_prefix: String,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
+type UiSink = Box<dyn FnMut(String)>;
 type Ready = Box<dyn FnOnce(CefEngine)>;
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
     static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
+    static UI_SINK: RefCell<Option<UiSink>> = const { RefCell::new(None) };
     static QUEUE: RefCell<VecDeque<Event>> = const { RefCell::new(VecDeque::new()) };
     static DISPATCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static ON_READY: RefCell<Option<Ready>> = const { RefCell::new(None) };
@@ -273,6 +281,26 @@ wrap_load_handler! {
     }
 }
 
+/// Name of the process message our UI sends (renderer → browser).
+const BRIDGE_MESSAGE: &str = "odyssey-ui-bridge";
+/// Command-line switch that tells renderer processes where our UI lives.
+const UI_PREFIX_SWITCH: &str = "odyssey-ui-prefix";
+/// The JS function our UI calls; only defined in our UI's main frame.
+const BRIDGE_FUNCTION: &str = "odysseyBridge";
+
+fn deliver_ui_message(json: String) {
+    let sink = UI_SINK.with(|s| s.borrow_mut().take());
+    if let Some(mut sink) = sink {
+        sink(json);
+        UI_SINK.with(|s| {
+            let mut s = s.borrow_mut();
+            if s.is_none() {
+                *s = Some(sink);
+            }
+        });
+    }
+}
+
 wrap_client! {
     struct UiClient {}
 
@@ -282,6 +310,111 @@ wrap_client! {
         }
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(UiLoad::new())
+        }
+        // Only this client (our UI's browser) listens for bridge messages. Page views use
+        // `PageClient`, which has no such handler, so a page can never reach Rust (P1-03).
+        fn on_process_message_received(
+            &self,
+            _browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>,
+            source_process: ProcessId,
+            message: Option<&mut ProcessMessage>,
+        ) -> i32 {
+            let Some(message) = message else { return 0 };
+            if source_process != ProcessId::RENDERER
+                || CefString::from(&message.name()).to_string() != BRIDGE_MESSAGE
+            {
+                return 0;
+            }
+            // Defence in depth: the sending frame must be our UI's main frame.
+            let prefix = STATE.with(|s| s.borrow().ui_prefix.clone());
+            let ok_frame = frame.is_some_and(|f| {
+                f.is_main() != 0 && CefString::from(&f.url()).to_string().starts_with(&prefix)
+            });
+            if !ok_frame || prefix.is_empty() {
+                eprintln!("bridge: ignored a message from a frame that is not our UI");
+                return 1;
+            }
+            if let Some(args) = message.argument_list() {
+                deliver_ui_message(CefString::from(&args.string(0)).to_string());
+            }
+            1
+        }
+    }
+}
+
+// ---- renderer side of the bridge (runs in renderer processes) ------------------------------
+
+wrap_v8_handler! {
+    struct BridgeFunction {}
+
+    impl V8Handler {
+        fn execute(
+            &self,
+            _name: Option<&CefString>,
+            _object: Option<&mut V8Value>,
+            arguments: Option<&[Option<V8Value>]>,
+            _retval: Option<&mut Option<V8Value>>,
+            exception: Option<&mut CefString>,
+        ) -> i32 {
+            let text = arguments
+                .and_then(|a| a.first().cloned().flatten())
+                .filter(|v| v.is_string() != 0)
+                .map(|v| CefString::from(&v.string_value()).to_string());
+            let Some(text) = text else {
+                if let Some(e) = exception {
+                    *e = CefString::from("odysseyBridge expects one JSON string");
+                }
+                return 1;
+            };
+            let frame = v8_context_get_current_context().and_then(|c| c.frame());
+            let msg = process_message_create(Some(&CefString::from(BRIDGE_MESSAGE)));
+            if let (Some(frame), Some(mut msg)) = (frame, msg) {
+                if let Some(args) = msg.argument_list() {
+                    args.set_string(0, Some(&CefString::from(text.as_str())));
+                }
+                frame.send_process_message(ProcessId::BROWSER, Some(&mut msg));
+            }
+            1
+        }
+    }
+}
+
+wrap_render_process_handler! {
+    struct BridgeRenderer {}
+
+    impl RenderProcessHandler {
+        fn on_context_created(
+            &self,
+            _browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>,
+            context: Option<&mut V8Context>,
+        ) {
+            let (Some(frame), Some(context)) = (frame, context) else { return };
+            if frame.is_main() == 0 {
+                return;
+            }
+            let prefix = command_line_get_global()
+                .map(|c| {
+                    CefString::from(&c.switch_value(Some(&CefString::from(UI_PREFIX_SWITCH))))
+                        .to_string()
+                })
+                .unwrap_or_default();
+            let url = CefString::from(&frame.url()).to_string();
+            // Only our UI gets the bridge. Web pages, data: pages, extension pages: never.
+            if prefix.is_empty() || !url.starts_with(&prefix) {
+                return;
+            }
+            let Some(global) = context.global() else { return };
+            let mut handler = BridgeFunction::new();
+            let name = CefString::from(BRIDGE_FUNCTION);
+            if let Some(mut f) = v8_value_create_function(Some(&name), Some(&mut handler)) {
+                let attr = V8Propertyattribute::from(sys::cef_v8_propertyattribute_t(
+                    sys::cef_v8_propertyattribute_t::V8_PROPERTY_ATTRIBUTE_READONLY.0
+                        | sys::cef_v8_propertyattribute_t::V8_PROPERTY_ATTRIBUTE_DONTDELETE.0,
+                ));
+                global.set_value_bykey(Some(&name), Some(&mut f), attr);
+            }
         }
     }
 }
@@ -504,6 +637,35 @@ impl CefEngine {
         SINK.with(|s| *s.borrow_mut() = Some(Box::new(sink)));
     }
 
+    /// Where messages from our UI go (one JSON string each, sent by `odysseyBridge(json)`).
+    pub fn set_ui_message_sink(&self, sink: impl FnMut(String) + 'static) {
+        UI_SINK.with(|s| *s.borrow_mut() = Some(Box::new(sink)));
+    }
+
+    /// Send one JSON message to our UI (`window.odysseyReceive(message)`).
+    pub fn send_to_ui(&self, json: &str) {
+        // U+2028/2029 are valid in JSON but end a line in older JS parsers: escape them.
+        let json = json
+            .replace('\u{2028}', "\\u2028")
+            .replace('\u{2029}', "\\u2029");
+        let script = format!("window.odysseyReceive && window.odysseyReceive({json});");
+        CefEngine.run_ui_script(&script);
+    }
+
+    /// The main window's client area size in DIP (0×0 before it exists).
+    pub fn client_size(&self) -> (i32, i32) {
+        STATE.with(|s| {
+            s.borrow()
+                .main
+                .as_ref()
+                .map(|m| {
+                    let c = m.client_area_bounds_in_screen();
+                    (c.width, c.height)
+                })
+                .unwrap_or((0, 0))
+        })
+    }
+
     /// Close the main window (and with it every page), ending [`run`].
     pub fn quit(&self) {
         if let Some(main) = STATE.with(|s| s.borrow().main.clone()) {
@@ -668,12 +830,35 @@ wrap_browser_process_handler! {
     struct Process {}
 
     impl BrowserProcessHandler {
+        fn on_before_child_process_launch(&self, command_line: Option<&mut CommandLine>) {
+            let prefix = STATE.with(|s| s.borrow().ui_prefix.clone());
+            if let Some(c) = command_line {
+                c.append_switch_with_value(
+                    Some(&CefString::from(UI_PREFIX_SWITCH)),
+                    Some(&CefString::from(prefix.as_str())),
+                );
+            }
+        }
+
         fn on_context_initialized(&self) {
-            let (url, title) = STATE.with(|s| {
+            let (dir, suffix, title) = STATE.with(|s| {
                 let s = s.borrow();
                 let o = s.options.as_ref().expect("start options are set before CEF starts");
-                (o.ui_url.clone(), o.title.clone())
+                (o.ui_dir.clone(), o.ui_suffix.clone(), o.title.clone())
             });
+            let url = match dir {
+                Some(root) => {
+                    let mut factory = ui_scheme::UiSchemeFactory::new(root);
+                    register_scheme_handler_factory(
+                        Some(&CefString::from(ui_scheme::SCHEME)),
+                        Some(&CefString::from(ui_scheme::HOST)),
+                        Some(&mut factory),
+                    );
+                    format!("{}index.html{suffix}", ui_scheme::prefix())
+                }
+                // Never a blank screen without a word (EDGE_CASES §1).
+                None => "data:text/html;charset=utf-8,<body style='background:#000;color:#aeb7bf;font:15px system-ui;padding:40px'>The browser's interface files are missing. Please reinstall.</body>".to_string(),
+            };
             let mut client = UiClient::new();
             let mut delegate = UiView::new();
             let ui = browser_view_create(
@@ -697,6 +882,15 @@ wrap_app! {
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(Process::new())
         }
+        fn render_process_handler(&self) -> Option<RenderProcessHandler> {
+            Some(BridgeRenderer::new())
+        }
+        // Runs in every process (browser and helpers).
+        fn on_register_custom_schemes(&self, registrar: Option<&mut SchemeRegistrar>) {
+            if let Some(r) = registrar {
+                r.add_custom_scheme(Some(&CefString::from(ui_scheme::SCHEME)), ui_scheme::options());
+            }
+        }
     }
 }
 
@@ -713,7 +907,13 @@ pub fn run(
 
     // CEF starts helper processes with the same executable and a `--type=` switch.
     let is_browser = cmd_line.has_switch(Some(&CefString::from("type"))) != 1;
-    let code = execute_process(Some(args.as_main_args()), None, std::ptr::null_mut());
+    // Helper processes need the app too: the renderer side of the UI bridge lives in it.
+    let mut helper_app = EngineApp::new();
+    let code = execute_process(
+        Some(args.as_main_args()),
+        Some(&mut helper_app),
+        std::ptr::null_mut(),
+    );
     if !is_browser {
         return Ok(Role::Helper(code.max(0)));
     }
@@ -726,7 +926,11 @@ pub fn run(
         root_cache_path: CefString::from(options.profile_dir.to_string_lossy().as_ref()),
         ..Default::default()
     };
-    STATE.with(|s| s.borrow_mut().options = Some(options));
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.ui_prefix = ui_scheme::prefix();
+        s.options = Some(options);
+    });
     ON_READY.with(|r| *r.borrow_mut() = Some(Box::new(on_ready)));
 
     let mut app = EngineApp::new();

@@ -177,3 +177,23 @@ pub fn start(mut engine: CefEngine) {
         finish(false, &timeout_t);
     });
 }
+
+/// `--ipc-selftest` result reported by `ui/selftest.js` through the bridge.
+pub fn ipc_result(ok: bool, log: &[String]) {
+    if PASSED.with(|p| p.get()).is_some() {
+        return;
+    }
+    for line in log {
+        println!("ipc-selftest: {line}");
+    }
+    println!("ipc-selftest: {}", if ok { "PASSED" } else { "FAILED" });
+    PASSED.with(|p| p.set(Some(ok)));
+    CefEngine.quit();
+}
+
+/// Fail `--ipc-selftest` if the UI never reports (e.g. it has no bridge at all).
+pub fn ipc_timeout(engine: CefEngine) {
+    engine.after(30_000, || {
+        ipc_result(false, &["timed out after 30 s".to_string()])
+    });
+}

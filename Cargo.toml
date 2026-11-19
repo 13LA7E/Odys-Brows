@@ -21,6 +21,8 @@ publish = false
 cef = { version = "=156.7.0", default-features = false }
 engine-api = { path = "app/engine-api" }
 engine-cef = { path = "app/engine-cef" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
