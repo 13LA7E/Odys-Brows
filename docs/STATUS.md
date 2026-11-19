@@ -8,10 +8,10 @@
 |---|---|
 | Phase | 0: Spike |
 | Current task | **P0-01 Toolchains** (not started) |
-| State | P0-00 complete pending final push verification; handover and design are on `Constellations` |
+| State | P0-00 complete; handover and design are on `Constellations` |
 | Next step | Do P0-01. Ask the owner whether Linux testing will be a VM or dual boot. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | pending P0-00 push |
+| Last pushed commit | `9968cfb` (P0-00) |
 | Last agent | Copilot SDK in VS Code |
 
 ## Blockers
@@ -62,12 +62,12 @@ Copy this template for each session:
 
 ### 2026-11-19: Copilot SDK in VS Code: P0-00
 - Did: initialized this checkout, recorded `origin/main` as `755c7e574bea0514effccee60893ba99b18cf820`, verified `origin/Constellations` started at `755c7e5`, checked out `Constellations`, removed Odyssey's 22 tracked files from this branch only, and added the handover, design, tools, `.gitattributes` and `.gitignore`.
-- Verified: checkout had no untracked-file collisions; `git status --short` showed exactly the 22 expected Odyssey deletions plus the new project files. Final branch, cleanliness, remote-tip and unchanged-`main` checks are pending the push.
+- Verified: checkout had no untracked-file collisions; `git status --short` showed exactly the 22 expected Odyssey deletions plus the new project files. After pushing `9968cfb`, `git branch --show-current` printed `Constellations`, `git status --short` was empty, `git log origin/Constellations -1` showed the P0-00 commit, and `git ls-remote origin main` still returned `755c7e574bea0514effccee60893ba99b18cf820`.
 - Edge cases: §1 interrupted operations and slow/unavailable network: handled + checked by hand by stopping on command failure and never rewriting pushed history. Paths with spaces: handled + tested by quoting the two Odyssey batch-file paths during `git rm`. Unexpected remote changes and untracked-file collisions: handled + tested by checking the remote tip and checkout result. Empty/missing data, long text, huge counts, repeated input, display scaling, window sizes, accessibility, settings/migrations, multiple instances, sleep/clock changes and engine/OS runtime errors: not applicable because P0-00 changes no application or UI code. Both OSes: not applicable to these Git metadata and documentation changes.
 - Not verified / unsure: no application checks exist until P1-06; none apply to P0-00.
 - Decisions proposed: none
 - Next: P0-01; ask the owner whether Linux testing will use a VM or dual boot.
-- Commit: pending "P0-00: start Constellations with handover docs and design (Odyssey stays on main)"  Pushed: no
+- Commit: `9968cfb` "P0-00: start Constellations with handover docs and design (Odyssey stays on main)"  Pushed: yes. This completion record is a separate same-task commit so the pushed hash is preserved.
 
 ### 2026-11-19: Claude (chat, claude.ai) / Claude Opus 5.5: handover
 - Did: wrote AGENTS.md, CLAUDE.md, docs/ (STATUS, PHASES, EDGE_CASES, DECISIONS, DESIGN, HANDOVER), exported the approved design (`design/source` from the published canvas, byte-identical as checked by SHA-256), generated `design/preview` and `design/png` (2x), bundled the font, and added tools (make_previews, render_png, compare_png, visual_check).
