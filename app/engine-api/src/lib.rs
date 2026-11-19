@@ -158,6 +158,9 @@ pub trait Engine {
     /// Answer a [`Event::CertificateError`] (proceed only after the user chose to).
     fn answer_certificate_error(&mut self, request: u64, proceed: bool);
 
+    /// Pause, resume or cancel a download running under the engine (`action`: "pause", "resume", "cancel").
+    fn download_control(&mut self, id: u32, action: &str);
+
     /// Minimize the main browser window.
     fn minimize_window(&mut self);
     /// Toggle maximize / restore of the main browser window.

@@ -144,6 +144,9 @@ impl Shell {
                 }
             }
             FromUi::SaveSettings { settings } => {
+                if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
+                    segdl::set_connections(c as usize);
+                }
                 if !self.is_private {
                     let dir = profile_dir();
                     if let Err(e) = save_settings_atomic(&dir, &settings) {
@@ -158,7 +161,29 @@ impl Shell {
                     let dir = profile_dir();
                     load_settings_or_default(&dir)
                 };
+                if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
+                    segdl::set_connections(c as usize);
+                }
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
+            }
+            FromUi::DownloadControl { id, action } => {
+                if !segdl::control(&id, &action) {
+                    let _ = id
+                        .parse::<u32>()
+                        .map(|dl_id| engine.download_control(dl_id, &action));
+                }
+            }
+            FromUi::OpenDownload { path } => {
+                let p = PathBuf::from(&path);
+                if let Err(e) = open_file(&p) {
+                    eprintln!("Failed to open file {path}: {e}");
+                }
+            }
+            FromUi::ShowInFolder { path } => {
+                let p = PathBuf::from(&path);
+                if let Err(e) = show_in_folder(&p) {
+                    eprintln!("Failed to show in folder {path}: {e}");
+                }
             }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
@@ -293,6 +318,53 @@ pub fn load_settings_or_default(dir: &Path) -> serde_json::Value {
             }
         },
         Err(_) => default_settings(),
+    }
+}
+
+/// Reveal a downloaded file in the system file explorer (EDGE_CASES §5).
+pub fn show_in_folder(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err("File does not exist".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let parent = path.parent().unwrap_or(path);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+/// Open a downloaded file with the default associated application (EDGE_CASES §5).
+pub fn open_file(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err("File does not exist".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
 

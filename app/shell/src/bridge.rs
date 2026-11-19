@@ -55,6 +55,19 @@ pub enum FromUi {
     },
     /// Load settings (P2-07).
     LoadSettings,
+    /// Pause, resume or cancel a download (P4-01).
+    DownloadControl {
+        id: String,
+        action: String,
+    },
+    /// Open a completed download with the default app (P4-01).
+    OpenDownload {
+        path: String,
+    },
+    /// Show a downloaded file in the system file manager (P4-01).
+    ShowInFolder {
+        path: String,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -102,6 +115,17 @@ pub enum ToUi {
     },
     SettingsLoaded {
         settings: serde_json::Value,
+    },
+    DownloadProgress {
+        id: u32,
+        url: String,
+        file_name: String,
+        received: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total: Option<i64>,
+        speed: i64,
+        complete: bool,
+        cancelled: bool,
     },
 }
 
@@ -152,6 +176,16 @@ pub fn event_to_ui(e: &Event) -> Option<ToUi> {
             user_gesture,
         },
         Event::Closed { view } => ToUi::Closed { view },
+        Event::Download(info) => ToUi::DownloadProgress {
+            id: info.id,
+            url: info.url,
+            file_name: info.file_name,
+            received: info.received_bytes,
+            total: info.total_bytes,
+            speed: info.bytes_per_second,
+            complete: info.complete,
+            cancelled: info.cancelled,
+        },
         _ => return None,
     })
 }
@@ -205,6 +239,25 @@ mod tests {
             parse(r#"{"type":"save-settings","settings":{"accent":"Sea"}}"#),
             Ok(FromUi::SaveSettings {
                 settings: serde_json::json!({"accent": "Sea"})
+            })
+        );
+        assert_eq!(
+            parse(r#"{"type":"download-control","id":"C:/Downloads/foo.pdf","action":"pause"}"#),
+            Ok(FromUi::DownloadControl {
+                id: "C:/Downloads/foo.pdf".into(),
+                action: "pause".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"type":"open-download","path":"C:/Downloads/foo.pdf"}"#),
+            Ok(FromUi::OpenDownload {
+                path: "C:/Downloads/foo.pdf".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"type":"show-in-folder","path":"C:/Downloads/foo.pdf"}"#),
+            Ok(FromUi::ShowInFolder {
+                path: "C:/Downloads/foo.pdf".into()
             })
         );
     }

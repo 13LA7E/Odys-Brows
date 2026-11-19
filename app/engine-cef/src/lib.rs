@@ -11,10 +11,11 @@
 //! All CEF callbacks and all [`Engine`] calls run on the UI thread, so state is thread-local.
 
 use cef::*;
-use engine_api::{Engine, Event, NewWindowKind, Rect as ViewRect, ViewId};
+use engine_api::{DownloadInfo, Engine, Event, NewWindowKind, Rect as ViewRect, ViewId};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 mod ui_scheme;
 
@@ -76,6 +77,7 @@ struct State {
     ui_closed: bool,
     pages: HashMap<ViewId, Page>,
     next_id: ViewId,
+    cef_downloads: HashMap<u32, DownloadItemCallback>,
     /// URL prefix of our UI folder; only frames under it get the bridge (P1-03).
     ui_prefix: String,
 }
@@ -646,6 +648,202 @@ wrap_load_handler! {
     }
 }
 
+wrap_download_handler! {
+    struct PageDownload { id: ViewId }
+
+    impl DownloadHandler {
+        fn can_download(
+            &self,
+            _browser: Option<&mut Browser>,
+            _url: Option<&CefString>,
+            _request_method: Option<&CefString>,
+        ) -> i32 {
+            1
+        }
+
+        fn on_before_download(
+            &self,
+            _browser: Option<&mut Browser>,
+            download_item: Option<&mut DownloadItem>,
+            suggested_name: Option<&CefString>,
+            callback: Option<&mut BeforeDownloadCallback>,
+        ) -> i32 {
+            let Some(item) = download_item else { return 0 };
+            let Some(callback) = callback else { return 0 };
+            let id = item.id();
+            let url = CefString::from(&item.url()).to_string();
+            let name = suggested_name
+                .map(CefString::to_string)
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| CefString::from(&item.suggested_file_name()).to_string());
+            let dir = segdl::default_download_dir();
+            let target = segdl::unique_path(&dir, &name);
+            let target_str = target.to_string_lossy().to_string();
+
+            segdl::clear_taken(&segdl::path_key(&target_str), &url);
+
+            callback.cont(Some(&CefString::from(target_str.as_str())), 0);
+
+            let total = item.total_bytes();
+            let file_name = target
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or(name);
+
+            emit(Event::Download(DownloadInfo {
+                id,
+                view: Some(self.id),
+                url: url.clone(),
+                file_name: file_name.clone(),
+                received_bytes: 0,
+                total_bytes: if total > 0 { Some(total) } else { None },
+                bytes_per_second: 0,
+                complete: false,
+                cancelled: false,
+                interrupted: false,
+            }));
+
+            if segdl::enabled() && (url.starts_with("http://") || url.starts_with("https://")) {
+                let req = segdl::Request {
+                    url: url.clone(),
+                    path: target,
+                    cookie: None,
+                    referer: None,
+                };
+                let view_id = self.id;
+                let url_for_emit = url.clone();
+                let file_name_for_emit = file_name;
+                let emit_fn: segdl::Emit = Arc::new(move |ev, payload| {
+                    if ev == "download-started" {
+                        let total = payload.get("total").and_then(|v| v.as_i64());
+                        emit(Event::Download(DownloadInfo {
+                            id,
+                            view: Some(view_id),
+                            url: url_for_emit.clone(),
+                            file_name: file_name_for_emit.clone(),
+                            received_bytes: 0,
+                            total_bytes: total,
+                            bytes_per_second: 0,
+                            complete: false,
+                            cancelled: false,
+                            interrupted: false,
+                        }));
+                    } else if ev == "download-progress" {
+                        let bytes = payload.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let total = payload.get("total").and_then(|v| v.as_i64());
+                        let speed = payload
+                            .get("speed")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0) as i64;
+                        emit(Event::Download(DownloadInfo {
+                            id,
+                            view: Some(view_id),
+                            url: url_for_emit.clone(),
+                            file_name: file_name_for_emit.clone(),
+                            received_bytes: bytes,
+                            total_bytes: total,
+                            bytes_per_second: speed,
+                            complete: false,
+                            cancelled: false,
+                            interrupted: false,
+                        }));
+                    } else if ev == "download-finished" {
+                        let success = payload
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        emit(Event::Download(DownloadInfo {
+                            id,
+                            view: Some(view_id),
+                            url: url_for_emit.clone(),
+                            file_name: file_name_for_emit.clone(),
+                            received_bytes: 0,
+                            total_bytes: None,
+                            bytes_per_second: 0,
+                            complete: success,
+                            cancelled: !success,
+                            interrupted: false,
+                        }));
+                    }
+                });
+
+                segdl::spawn(emit_fn, req, move |taken| {
+                    if taken {
+                        let mut task = Later::new(std::rc::Rc::new(RefCell::new(Some(Box::new(move || {
+                            STATE.with(|s| {
+                                if let Some(cb) = s.borrow_mut().cef_downloads.remove(&id) {
+                                    cb.cancel();
+                                }
+                            });
+                        })))));
+                        post_task(ThreadId::UI, Some(&mut task));
+                    }
+                });
+            }
+
+            1
+        }
+
+        fn on_download_updated(
+            &self,
+            _browser: Option<&mut Browser>,
+            download_item: Option<&mut DownloadItem>,
+            callback: Option<&mut DownloadItemCallback>,
+        ) {
+            let Some(item) = download_item else { return };
+            let id = item.id();
+            let url = CefString::from(&item.url()).to_string();
+            let full_path = CefString::from(&item.full_path()).to_string();
+            let path_key = segdl::path_key(&full_path);
+
+            if let Some(cb) = callback.as_ref() {
+                STATE.with(|s| {
+                    s.borrow_mut().cef_downloads.insert(id, (*cb).clone());
+                });
+            }
+
+            if segdl::was_taken(&path_key, &url) {
+                if let Some(cb) = callback.as_ref() {
+                    cb.cancel();
+                }
+                STATE.with(|s| {
+                    s.borrow_mut().cef_downloads.remove(&id);
+                });
+                return;
+            }
+
+            let complete = item.is_complete() != 0;
+            let cancelled = item.is_canceled() != 0;
+            let interrupted = item.is_interrupted() != 0;
+
+            if complete || cancelled || interrupted {
+                STATE.with(|s| {
+                    s.borrow_mut().cef_downloads.remove(&id);
+                });
+            }
+
+            let total = item.total_bytes();
+            let file_name = Path::new(&full_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            emit(Event::Download(DownloadInfo {
+                id,
+                view: Some(self.id),
+                url,
+                file_name,
+                received_bytes: item.received_bytes(),
+                total_bytes: if total > 0 { Some(total) } else { None },
+                bytes_per_second: item.current_speed(),
+                complete,
+                cancelled,
+                interrupted,
+            }));
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient { id: ViewId }
 
@@ -658,6 +856,9 @@ wrap_client! {
         }
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(PageLoad::new(self.id))
+        }
+        fn download_handler(&self) -> Option<DownloadHandler> {
+            Some(PageDownload::new(self.id))
         }
     }
 }
@@ -858,6 +1059,20 @@ impl Engine for CefEngine {
 
     fn answer_certificate_error(&mut self, _request: u64, _proceed: bool) {
         todo!("P4-06 page basics: certificate error page")
+    }
+
+    fn download_control(&mut self, id: u32, action: &str) {
+        STATE.with(|s| {
+            let guard = s.borrow();
+            if let Some(cb) = guard.cef_downloads.get(&id) {
+                match action {
+                    "pause" => cb.pause(),
+                    "resume" => cb.resume(),
+                    "cancel" => cb.cancel(),
+                    _ => {}
+                }
+            }
+        });
     }
 
     fn minimize_window(&mut self) {

@@ -257,7 +257,18 @@ export function renderShell(root, state) {
 
   // Downloads popover (Browsing board)
   if (state.downloadsOpen && state.downloads) {
-    root.append(renderDownloadsPopover(state.downloads));
+    root.append(renderDownloadsPopover(state.downloads, {
+      onControl: (id, action) => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'download-control', id, action }));
+        }
+      },
+      onOpen: (path) => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open-download', path }));
+        }
+      },
+    }));
   }
 
   root.append(notch(state.shields ?? 0));

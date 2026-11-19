@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-01 Downloads** |
-| State | Phase 3 complete (P3-01 New tab, P3-02 Private windows). Private mode implemented: separate in-memory profile (in_memory flag in StartOptions, root_cache_path empty, no cookies, cache or settings on disk), lilac accent (#b6a8ff), private sky (120 marks with 40% hollow rings in #cdd9ee), private rail (outlined logo, moon icon at left 18 top 70, dashed trunk, active tab r 13 ring + outlined star, inactive hollow ring r 4, no pinned apps, no spaces), copy block at (150, 214) ("Private voyage", 3 bullet points with hollow accent rings), Helm empty. Visual check score 0.0 on Private. Verified via tools/test_private.py, Rust unit tests, and check.ps1. |
-| Next step | P4-01 Downloads (port segdl.rs from Odyssey on engine download hooks; UI download ring and popover). |
+| Current task | **P4-02 History store** |
+| State | Phase 4 in progress: P4-01 Downloads complete. Segmented multi-connection downloader ported from Odyssey into app/segdl (MIN_BYTES = 8 MiB, 1-16 connections, atomic pause/resume/cancel Ctl, Range probe, .odypart preallocation and atomic rename, immediate .odypart removal on cancel/error). Connected to CEF PageClient download handler and shell bridge. Settings connection count synchronised. UI: Helm download ring and popover wired with pause/resume and open controls. Visual check on Browsing popover region and Helm ring scores 0.0 diff pixels. Verified by tools/test_downloads.py, cargo test integration tests, check.ps1, --engine-selftest, and --ipc-selftest. |
+| Next step | P4-02 History store (rusqlite schema with visits, opener links for branches, "came back" flag; unit tests for record, query by day, search, forget, clear day; private windows never write history). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 12746d8 (P3-02). |
+| Last pushed commit | 7e70a8e (P4-01). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,23 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-01
+- Did: completed P4-01 Downloads (port segdl from Odyssey, engine download hooks, UI download ring and popover, EDGE_CASES §5).
+  - Ported `C:\Projects\Odyssey\src\segdl.rs` into `app/segdl`: Range probe (`bytes=0-0`, 206 and $\ge 8$ MiB), N connections (clamp 1..16, atomic setting), `.odypart` preallocation then atomic rename to destination, pause/resume/cancel controls (`control(key, action)`), sliding-window speed calculation, immediate deletion of `.odypart` on cancel or error.
+  - Added helpers to `segdl`: `sanitize_filename` (cleaning invalid chars and Windows-reserved names like CON, NUL), `unique_path` (handling collisions `(1)`, `(2)`, etc.), `default_download_dir` (resolving user download directory on Windows and Linux), and `spawn` (background tokio runtime for non-blocking downloads).
+  - In `app/engine-api`: added `download_control(&mut self, id: u32, action: &str)` to `Engine` trait; preserved object safety.
+  - In `app/engine-cef`: implemented `PageDownload` using `wrap_download_handler!` and wired into `PageClient::download_handler`. Emits `Event::Download` for starts, progress and completion. Spawns `segdl` for eligible HTTP/HTTPS requests, taking over and cancelling CEF's native download via thread-safe task runner on UI thread; tracks CEF downloads in state map for fallback/engine download pause/resume/cancel.
+  - In `app/shell`: added `segdl.workspace = true`; added bridge message types `FromUi::DownloadControl`, `FromUi::OpenDownload`, `FromUi::ShowInFolder`, `ToUi::DownloadProgress`; handled connection count synchronization on settings save/load; implemented OS handlers `open_file` (cmd /C start on Windows, xdg-open on Linux) and `show_in_folder` (explorer /select on Windows, xdg-open on Linux).
+  - In `ui/helm.js` & `ui/shell.js`: wired downloads popover with Pause/Resume toggle button and Open button communicating over the bridge; preserved pixel-perfect DOM structure and CSS tokens.
+  - Created integration test suite `app/segdl/tests/integration.rs` covering: 200 MB+ segmented download with speed reporting and multi-connection concurrency; pause & resume; cancel with immediate `.odypart` deletion; < 8 MiB fallback; non-Range server fallback.
+  - Created companion test tool `tools/test_downloads.py` validating both the integration test suite and visual fidelity of the popover and Helm download ring.
+- Verified: `python tools/test_downloads.py` passed (5/5 integration tests pass; Browsing popover diff pixels: 0 / 168000; Helm ring diff pixels: 0 / 116480); `cargo test` passed 24/24 tests across all crates; `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all checks passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings` and `cargo fmt --check` clean with 0 warnings.
+- Edge cases: §5 Server without Range support: handled + tested (falls back to engine single connection); §5 Unknown size / files under 8 MiB: handled + tested (not segmented, falls back to engine); §5 Files over 4 GB: handled + tested (u64/i64 byte tracking throughout); §5 File collision: handled + tested (`unique_path` generates `(1).ext`); §5 Windows reserved names & invalid characters: handled + tested (`sanitize_filename` sanitizes); §5 Pause/resume/cancel: handled + tested (atomic `Ctl` state transitions); §5 No leftover `.odypart` files: handled + tested (renamed on finish, deleted immediately on cancel/failure); §5 Private-window downloads: handled (download kept in folder, no history written).
+- Not verified / unsure: Linux native.
+- Decisions proposed: none (followed existing architecture and D-007/D-009).
+- Next: P4-02 History store (rusqlite schema with visits, opener links for branches, "came back" flag; unit tests for record, query by day, search, forget, clear day; private windows never write history).
+- Commit: 7e70a8e "P4-01: segmented downloads and download UI"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P3-02
 - Did: completed P3-02 Private windows (§9 Private, EDGE_CASES §7).

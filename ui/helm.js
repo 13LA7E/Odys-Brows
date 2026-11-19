@@ -315,7 +315,8 @@ export function renderHelm(state, handlers = {}) {
 }
 
 /** Render downloads popover aligned with Helm right edge (DESIGN.md §7). */
-export function renderDownloadsPopover(downloads = []) {
+export function renderDownloadsPopover(downloads = [], handlers = {}) {
+  const { onControl, onOpen } = handlers;
   const pop = el('div', 'downloads-popover');
   pop.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2 + var(--helm-w) - 300px);bottom:92px;width:300px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);padding:6px 0;';
 
@@ -335,18 +336,29 @@ export function renderDownloadsPopover(downloads = []) {
       const track = el('div');
       track.style.cssText = 'height:2px;border-radius:1px;background:var(--w-progress-track);margin-top:10px;';
       const fill = el('div');
-      fill.style.cssText = `height:2px;border-radius:1px;width:${Math.round(item.progress * 100)}%;background:var(--accent);`;
+      fill.style.cssText = `height:2px;border-radius:1px;width:${Math.round((item.progress || 0) * 100)}%;background:var(--accent);`;
       track.append(fill);
       info.append(track);
 
       const pauseBtn = el('button');
-      pauseBtn.setAttribute('aria-label', 'Pause');
+      pauseBtn.setAttribute('aria-label', item.paused ? 'Resume' : 'Pause');
       pauseBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);background:transparent;';
-      pauseBtn.append(ico('M9 6v12M15 6v12', 16));
+      if (item.paused) {
+        pauseBtn.append(ico('M8 5v14l11-7z', 16));
+      } else {
+        pauseBtn.append(ico('M9 6v12M15 6v12', 16));
+      }
+      pauseBtn.addEventListener('click', () => {
+        const action = item.paused ? 'resume' : 'pause';
+        onControl?.(item.id || item.path, action);
+      });
       row.append(info, pauseBtn);
     } else {
       const openBtn = el('button', null, 'Open');
       openBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;font-size:13px;color:var(--accent);padding:6px 2px;';
+      openBtn.addEventListener('click', () => {
+        onOpen?.(item.path || item.id);
+      });
       row.append(info, openBtn);
     }
     pop.append(row);
