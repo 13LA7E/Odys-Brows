@@ -22,6 +22,8 @@ mod ui_scheme;
 pub struct StartOptions {
     /// Folder for the profile (cache, cookies, settings written by the engine).
     pub profile_dir: PathBuf,
+    /// When true, use an in-memory profile: no cookies, cache or storage written to disk (P3-02).
+    pub in_memory: bool,
     /// Folder with our UI (`ui/`). `None` when it's missing: the window then says so.
     pub ui_dir: Option<PathBuf>,
     /// Appended to the UI URL, e.g. `#ipc-selftest` or `?fixture=Main`.
@@ -978,11 +980,17 @@ pub fn run(
     }
 
     let options = options();
-    let _ = std::fs::create_dir_all(&options.profile_dir);
+    if !options.in_memory && !options.profile_dir.as_os_str().is_empty() {
+        let _ = std::fs::create_dir_all(&options.profile_dir);
+    }
     let settings = Settings {
         // Sandbox: off until the bootstrap layout is set up (D-007/D-013, P9-01).
         no_sandbox: 1,
-        root_cache_path: CefString::from(options.profile_dir.to_string_lossy().as_ref()),
+        root_cache_path: if options.in_memory || options.profile_dir.as_os_str().is_empty() {
+            CefString::default()
+        } else {
+            CefString::from(options.profile_dir.to_string_lossy().as_ref())
+        },
         ..Default::default()
     };
     STATE.with(|s| {

@@ -152,6 +152,14 @@ Consequences to handle:
 - Linux/Wayland: apps can't place top-level windows themselves; owned page windows may not work there. Test in P0-03/P1 on Linux; the fallback there may be one CEF window per tab without our overlay UI (owner decision). *Unverified.*
 - Memory: one more native window per tab (small); measured again in P5-04.
 
+## D-018 Private windows session isolation and lifecycle. Proposed (P3-02)
+
+In accordance with EDGE_CASES §7 ("Several private windows at once: decide whether they share one session (document it)"):
+- Private windows use an in-memory profile (`in_memory: true` with empty `root_cache_path`).
+- Multiple private windows running concurrently share the same in-memory session (cookies, temporary cache), matching common user expectations from Chrome and Firefox.
+- When all private windows close, the in-memory session is discarded completely.
+- No history, session restore, settings, cookies, or cache files are written to disk.
+
 ---
 
 ## Open questions for the owner

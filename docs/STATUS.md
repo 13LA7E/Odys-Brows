@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 3: New tab and private windows |
-| Current task | **P3-02 Private windows** |
-| State | P3-01 complete. New tab greeting by time of day, clock, date, hint, and deterministic tab constellation layout implemented in `ui/newtab.js`. Tested with 1, 6, 20, and 100+ tabs with branches; older tabs fade in 100+ mode. Main visual check score 0.0. Screenshots logged at `docs/shots/p3-01-newtab-*.png`. |
-| Next step | P3-02 Private windows (§9 Private: separate in-memory profile, lilac accent, private sky, rail, copy). |
+| Phase | 4: Everyday browsing |
+| Current task | **P4-01 Downloads** |
+| State | Phase 3 complete (P3-01 New tab, P3-02 Private windows). Private mode implemented: separate in-memory profile (in_memory flag in StartOptions, root_cache_path empty, no cookies, cache or settings on disk), lilac accent (#b6a8ff), private sky (120 marks with 40% hollow rings in #cdd9ee), private rail (outlined logo, moon icon at left 18 top 70, dashed trunk, active tab r 13 ring + outlined star, inactive hollow ring r 4, no pinned apps, no spaces), copy block at (150, 214) ("Private voyage", 3 bullet points with hollow accent rings), Helm empty. Visual check score 0.0 on Private. Verified via tools/test_private.py, Rust unit tests, and check.ps1. |
+| Next step | P4-01 Downloads (port segdl.rs from Odyssey on engine download hooks; UI download ring and popover). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `4e205a2` (P3-01). |
+| Last pushed commit | 12746d8 (P3-02). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,23 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P3-02
+- Did: completed P3-02 Private windows (§9 Private, EDGE_CASES §7).
+  - In `ui/fixtures.js`: updated Private fixture to 2 tabs (matching board geometry: y=214 and y=258, plus at 302).
+  - In `ui/rail.js`: implemented private collapsed rail rendering when `isPrivate` is true: outlined star 20 logo in `var(--private-ink)` (`#cdd9ee`, stroke-width 1.6), moon icon at left 18 top 70 in Lilac (`#b6a8ff`, stroke 1.7), pinned apps omitted, dashed trunk line (`stroke-opacity=".25" stroke-dasharray="3 4"`), new tab ring in `var(--bg)` (`#02040a`) with dashed stroke `var(--private-ink)` (`stroke-opacity=".3" stroke-dasharray="2.5 3"`), active tab node r 13 ring + outlined star 18 in Lilac, inactive tab hollow ring r 4 in `var(--private-node)` (`#6b7a90`, stroke-width 1.4), spaces column omitted, Settings button at bottom (left 12, top 748).
+  - In `ui/shell.js`: added `renderPrivateCopy` rendering "Private voyage" title (46px/600), body copy (16px, line 1.6), and 3 bullet items ("History is not saved", "Cookies and site data are cleared on close", "Shields stay on") with hollow accent rings (r 4.5, stroke-width 1.3). Enabled `rail-private` support.
+  - In `app/engine-cef`: added `in_memory: bool` to `StartOptions`; when `in_memory` is true (or profile_dir empty), `root_cache_path` is left empty (`CefString::default()`) so CEF runs purely in memory without creating profile directories or writing disk caches/cookies.
+  - In `app/shell`: added `--private` flag handling (`in_memory: true`, `profile_dir: PathBuf::new()`, window title formatted with `(Private)` suffix, `ui_suffix: "?fixture=Private"`); suppressed settings writes in private mode (`FromUi::SaveSettings` no-ops in private mode, returns default settings without reading from disk).
+  - Added unit test `tests::private_mode_leaves_no_files_on_disk` in `app/shell/src/main.rs`.
+  - Created `tools/test_private.py` using Playwright verifying CSS custom properties (`--bg: #02040a`, `--accent: #b6a8ff`), DOM copy structure, collapsed rail specifics (moon icon, no pinned apps, no spaces, active/inactive stars), interactive tab switching, and disk isolation.
+  - Added Proposed decision D-018 in `docs/DECISIONS.md`.
+- Verified: `python tools/visual_check.py Private` passed with score 0.0 (limit 5.0, 0.00% pixels); `python tools/test_private.py` passed all assertions; `cargo test` unit tests passed (8 shell tests including `private_mode_leaves_no_files_on_disk`); `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` clean.
+- Edge cases: §7 separate in-memory profile: handled + tested (CEF root_cache_path empty, no settings/history/cookies written to disk, verified by test); §7 multiple private windows: handled + documented in D-018 (concurrent private windows share in-memory session, cleared on close); §7 extensions off: documented for Phase 6; §7 crash while private: handled (no session restore written for private windows). Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: D-018 (private windows session isolation and lifecycle).
+- Next: P4-01 Downloads (port segdl.rs from Odyssey on engine download hooks; UI download ring and popover).
+- Commit: `12746d8` "P3-02: private windows"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P3-01
 - Did: completed P3-01 New tab (§9). Created `ui/newtab.js` with `renderNewTab`, `layoutConstellation`, `getGreeting`, `formatClock`, and `formatDate`. Built top-left greeting block (15px muted greeting by time of day, 84px clock with -3px tracking, 15px date "Wednesday, 18 November"), hint text at (120, 262), and deterministic constellation layout generated from the tab tree. Layout rules: deterministic from tab IDs (no jumping stars), meandering celestial serpentine trail with branches for child tabs, safely bounded in `[500..1140, 200..600]`, clear of clock, hint, rail, and Helm. Active tab gets accent ring r 14 and accent star 20; other tabs get white dots (r 2.8 - 3.6, opacity .92). Handled Edge §2 (100+ tabs): older tabs fade gracefully in opacity down to .22 while recent and active tabs shine brightly; labels shown for active and top 16 tabs to prevent overlap clutter, while all stars remain interactive click targets. Wired into `ui/shell.js`. Created `tools/test_newtab.py` validating determinism, formatting, and captured screenshots with 1, 6, 20, and 100 tabs into `docs/shots/`.

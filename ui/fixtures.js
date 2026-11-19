@@ -98,7 +98,7 @@ export const FIXTURES = {
   },
   Private: {
     rail: 'private',
-    tabCount: 3,
+    tabCount: 2,
     activeTab: 1,
     page: 'none',
     private: true,

@@ -72,6 +72,42 @@ function notch(count) {
   return n;
 }
 
+export function renderPrivateCopy(copy = {}) {
+  const container = el('div', 'private-copy');
+  container.style.cssText = 'position:absolute;left:150px;top:214px;width:520px;';
+
+  const title = el('div', 'private-title', copy.title || 'Private voyage');
+  title.style.cssText = 'font-size:46px;font-weight:600;letter-spacing:-1px;line-height:1.1;color:var(--text-strong);';
+
+  const body = el('div', 'private-body', copy.body || 'This window leaves no trail behind. Nothing you open here is kept once you close it.');
+  body.style.cssText = 'font-size:16px;line-height:1.6;color:var(--text-muted);margin-top:18px;';
+
+  const bulletsWrapper = el('div', 'private-bullets');
+  bulletsWrapper.style.cssText = 'margin-top:28px;';
+
+  const bullets = copy.bullets || [
+    'History is not saved',
+    'Cookies and site data are cleared on close',
+    'Shields stay on',
+  ];
+
+  bullets.forEach((bText) => {
+    const row = el('div', 'private-bullet');
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;font-size:15px;color:var(--text-soft);height:34px;';
+    const ringSvg = svg('svg', {
+      width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': 'true',
+    });
+    ringSvg.append(svg('circle', {
+      cx: 7, cy: 7, r: 4.5, fill: 'none', stroke: 'var(--accent)', 'stroke-width': '1.3',
+    }));
+    row.append(ringSvg, document.createTextNode(bText));
+    bulletsWrapper.append(row);
+  });
+
+  container.append(title, body, bulletsWrapper);
+  return container;
+}
+
 /** Render the whole window for one state (a fixture now, live state later). */
 export function renderShell(root, state) {
   root.replaceChildren();
@@ -93,7 +129,7 @@ export function renderShell(root, state) {
   });
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
-  if (state.rail === 'collapsed') {
+  if (state.rail === 'collapsed' || state.rail === 'private') {
     const tabs = state.tabs || Array.from({ length: state.tabCount || 1 }, (_, i) => ({ id: i + 1 }));
     renderCollapsedRail(rail, {
       tabs,
@@ -177,7 +213,9 @@ export function renderShell(root, state) {
     }
   }
 
-  if (state.page === 'none' || state.newTab) {
+  if (state.private && (state.page === 'none' || state.privateCopy)) {
+    root.append(renderPrivateCopy(state.privateCopy || {}));
+  } else if (state.page === 'none' || state.newTab) {
     renderNewTab(root, state, (tabId) => {
       state.activeTab = tabId;
       renderShell(root, state);

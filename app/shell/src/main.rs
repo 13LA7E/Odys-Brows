@@ -70,6 +70,7 @@ struct Shell {
     tabs: Vec<Tab>,
     shown: Option<ViewId>,
     rail_width: i32,
+    is_private: bool,
 }
 
 impl Default for Shell {
@@ -78,6 +79,7 @@ impl Default for Shell {
             tabs: Vec::new(),
             shown: None,
             rail_width: RAIL_WIDTH,
+            is_private: false,
         }
     }
 }
@@ -142,14 +144,20 @@ impl Shell {
                 }
             }
             FromUi::SaveSettings { settings } => {
-                let dir = profile_dir();
-                if let Err(e) = save_settings_atomic(&dir, &settings) {
-                    eprintln!("Failed to save settings: {e}");
+                if !self.is_private {
+                    let dir = profile_dir();
+                    if let Err(e) = save_settings_atomic(&dir, &settings) {
+                        eprintln!("Failed to save settings: {e}");
+                    }
                 }
             }
             FromUi::LoadSettings => {
-                let dir = profile_dir();
-                let settings = load_settings_or_default(&dir);
+                let settings = if self.is_private {
+                    default_settings()
+                } else {
+                    let dir = profile_dir();
+                    load_settings_or_default(&dir)
+                };
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
             }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
@@ -158,8 +166,11 @@ impl Shell {
     }
 }
 
-fn connect(engine: CefEngine) {
-    let shell = Rc::new(RefCell::new(Shell::default()));
+fn connect(engine: CefEngine, is_private: bool) {
+    let shell = Rc::new(RefCell::new(Shell {
+        is_private,
+        ..Shell::default()
+    }));
 
     let events_shell = shell.clone();
     engine.set_event_sink(move |event| {
@@ -172,8 +183,9 @@ fn connect(engine: CefEngine) {
         }
     });
 
+    let ui_shell = shell.clone();
     engine.set_ui_message_sink(move |json| match bridge::parse(&json) {
-        Ok(message) => shell.borrow_mut().handle(&mut CefEngine, message),
+        Ok(message) => ui_shell.borrow_mut().handle(&mut CefEngine, message),
         Err(reason) => eprintln!("bridge: ignored a malformed message: {reason}"),
     });
 }
@@ -181,28 +193,40 @@ fn connect(engine: CefEngine) {
 fn main() {
     let engine_selftest = std::env::args().any(|a| a == "--engine-selftest");
     let ipc_selftest = std::env::args().any(|a| a == "--ipc-selftest");
+    let is_private =
+        std::env::args().any(|a| a == "--private" || a == "-private" || a == "--incognito");
     let any_selftest = engine_selftest || ipc_selftest;
     let result = engine_cef::run(
-        || engine_cef::StartOptions {
+        move || engine_cef::StartOptions {
             // Self-tests use a throwaway profile so they never touch real data.
-            profile_dir: if any_selftest {
+            // Private windows use an in-memory profile: no cookies, cache or storage on disk (P3-02).
+            profile_dir: if is_private {
+                PathBuf::new()
+            } else if any_selftest {
                 std::env::temp_dir().join(format!("{}-selftest", brand::DATA_DIR))
             } else {
                 profile_dir()
             },
+            in_memory: is_private,
             ui_dir: ui_dir(),
             ui_suffix: if ipc_selftest {
                 "#ipc-selftest".into()
+            } else if is_private {
+                "?fixture=Private".into()
             } else {
                 String::new()
             },
-            title: brand::NAME.to_string(),
+            title: if is_private {
+                format!("{} (Private)", brand::NAME)
+            } else {
+                brand::NAME.to_string()
+            },
         },
         move |engine| {
             if engine_selftest {
                 selftest::start(engine);
             } else {
-                connect(engine);
+                connect(engine, is_private);
                 if ipc_selftest {
                     selftest::ipc_timeout(engine);
                 }
@@ -365,6 +389,28 @@ mod tests {
         assert_eq!(
             shell.tabs.iter().find(|t| t.view == 4).unwrap().opener,
             None
+        );
+    }
+
+    #[test]
+    fn private_mode_leaves_no_files_on_disk() {
+        let tmp = std::env::temp_dir().join(format!("ody_priv_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let mut shell = Shell {
+            is_private: true,
+            ..Shell::default()
+        };
+
+        let custom = serde_json::json!({
+            "stars": "Drifting",
+            "accent": "Lilac"
+        });
+        shell.handle(&mut CefEngine, FromUi::SaveSettings { settings: custom });
+
+        assert!(
+            !tmp.exists(),
+            "Private mode must not create directories or save settings to disk"
         );
     }
 }
