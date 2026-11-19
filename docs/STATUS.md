@@ -7,9 +7,9 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-02 History store** |
-| State | Phase 4 in progress: P4-01 Downloads complete. Segmented multi-connection downloader ported from Odyssey into app/segdl (MIN_BYTES = 8 MiB, 1-16 connections, atomic pause/resume/cancel Ctl, Range probe, .odypart preallocation and atomic rename, immediate .odypart removal on cancel/error). Connected to CEF PageClient download handler and shell bridge. Settings connection count synchronised. UI: Helm download ring and popover wired with pause/resume and open controls. Visual check on Browsing popover region and Helm ring scores 0.0 diff pixels. Verified by tools/test_downloads.py, cargo test integration tests, check.ps1, --engine-selftest, and --ipc-selftest. |
-| Next step | P4-02 History store (rusqlite schema with visits, opener links for branches, "came back" flag; unit tests for record, query by day, search, forget, clear day; private windows never write history). |
+| Current task | **P4-03 History page** |
+| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete (app/history with rusqlite visits table, branch links, came_back detection, day grouping, search, forget with branch re-parenting, clear_day, clear_all; bridge messages wired to app/shell; private windows strictly isolated). 7 unit tests in app/history, unit test in app/shell. All tests, clippy, check.ps1, --ipc-selftest, and --engine-selftest passed. |
+| Next step | P4-03 History page (odyssey://history page rendering in ui/history.js, search, day groups, branch curves, mini constellation side panel, visual_check on History board). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
 | Last pushed commit | efb8884 (P4-01). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
@@ -119,6 +119,19 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-02
+- Did: completed P4-02 History store (SQLite history store with visits, branch links, came_back detection, day grouping, search, forget, clear_day, and private isolation; EDGE_CASES §6).
+  - Created new workspace crate `app/history` with `rusqlite = { version = "0.32", features = ["bundled"] }`.
+  - Schema: `visits` table (`id`, `url`, `title`, `host`, `timestamp`, `opener_id`, `came_back`) with indexes on `timestamp DESC`, `url`, and `opener_id`.
+  - Implemented `HistoryStore` methods: `open`, `open_in_memory`, `record`, `update_title`, `query_range`, `query_recent`, `search`, `query_day_groups`, `group_visits`, `forget` (re-parents child branches to grandparent so branches don't orphan), `clear_day`, and `clear_all`.
+  - Shell bridge: added `FromUi` variants (`QueryHistory`, `SearchHistory`, `ForgetVisit`, `ClearHistoryDay`, `ClearAllHistory`) and `ToUi::HistoryLoaded { groups }`.
+  - Shell event loop: wired `Event::UrlChanged` and `Event::TitleChanged` to record visits and track opener hierarchies; private windows never write to history (`history: None`).
+- Verified: `cargo test -p history` (7/7 unit tests passed), `cargo test` across workspace (9/9 shell tests passed, including `private_mode_never_writes_history`), `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `powershell -ExecutionPolicy Bypass -File tools\check.ps1`, `--ipc-selftest` (PASSED), `--engine-selftest` (PASSED).
+- Edge cases §6: Private windows never write history (handled + tested); day grouping across boundaries (handled + tested); repeated visits set came_back = true (handled + tested); forget re-parents branches (handled + tested); search with special characters uses SQL parameters (handled + tested).
+- Decisions proposed: none.
+- Next: P4-03 History page (`odyssey://history` internal page, search, day groups, branches, side panel mini constellation, visual_check).
+- Commit: P4-02: SQLite history store  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-01
 - Did: completed P4-01 Downloads (port segdl from Odyssey, engine download hooks, UI download ring and popover, EDGE_CASES §5).

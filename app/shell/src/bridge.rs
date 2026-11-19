@@ -68,6 +68,22 @@ pub enum FromUi {
     ShowInFolder {
         path: String,
     },
+    /// Query history day groups (P4-02).
+    QueryHistory,
+    /// Search history (P4-02).
+    SearchHistory {
+        query: String,
+    },
+    /// Forget a specific visit (P4-02).
+    ForgetVisit {
+        id: i64,
+    },
+    /// Clear a day of history (P4-02).
+    ClearHistoryDay {
+        day_start_secs: i64,
+    },
+    /// Clear all history (P4-02).
+    ClearAllHistory,
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -126,6 +142,9 @@ pub enum ToUi {
         speed: i64,
         complete: bool,
         cancelled: bool,
+    },
+    HistoryLoaded {
+        groups: Vec<history::DayGroup>,
     },
 }
 

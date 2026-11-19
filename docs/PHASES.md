@@ -138,7 +138,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P4-01 Downloads.** Port `segdl.rs` from Odyssey (HANDOVER.md §4) onto the engine's download hooks: Range probe, N connections, `.odypart` then rename, pause/resume/cancel, the 1/4/8/16 setting. UI: the Helm download ring and the popover (§7).
   - Edge: §5
   - Done when: [Browsing] popover passes; a 200 MB+ file downloads segmented with the right speed text; pause, resume and cancel work; no leftover files.
-- [ ] **P4-02 History store.** SQLite (rusqlite) with visits, opener links (for branches) and a "came back" flag. Not written in private windows.
+- [x] **P4-02 History store.** SQLite (rusqlite) with visits, opener links (for branches) and a "came back" flag. Not written in private windows.
   - Edge: §6
   - Done when: unit tests for record, query by day, search, forget and clear day.
 - [ ] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.

@@ -13,7 +13,9 @@ mod selftest;
 use bridge::{FromUi, ToUi};
 use engine_api::{Engine, Rect, ViewId};
 use engine_cef::CefEngine;
+use history::HistoryStore;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -71,6 +73,8 @@ struct Shell {
     shown: Option<ViewId>,
     rail_width: i32,
     is_private: bool,
+    history: Option<HistoryStore>,
+    tab_visit_id: HashMap<ViewId, i64>,
 }
 
 impl Default for Shell {
@@ -80,6 +84,8 @@ impl Default for Shell {
             shown: None,
             rail_width: RAIL_WIDTH,
             is_private: false,
+            history: None,
+            tab_visit_id: HashMap::new(),
         }
     }
 }
@@ -101,8 +107,47 @@ impl Shell {
                 tab.opener = parent_opener;
             }
         }
+        self.tab_visit_id.remove(&view);
         if self.shown == Some(view) {
             self.shown = None;
+        }
+    }
+
+    fn on_url_changed(&mut self, view: ViewId, url: &str) {
+        if self.is_private
+            || url.is_empty()
+            || url.starts_with("odyssey://")
+            || url.starts_with("odyssey-ui://")
+            || url.starts_with("about:")
+        {
+            return;
+        }
+        let opener_visit_id = self
+            .tabs
+            .iter()
+            .find(|t| t.view == view)
+            .and_then(|t| t.opener)
+            .and_then(|op| self.tab_visit_id.get(&op).copied());
+        if let Some(h) = &self.history {
+            match h.record(url, "", opener_visit_id) {
+                Ok(id) => {
+                    self.tab_visit_id.insert(view, id);
+                }
+                Err(e) => eprintln!("Failed to record history visit: {e}"),
+            }
+        }
+    }
+
+    fn on_title_changed(&mut self, view: ViewId, title: &str) {
+        if self.is_private {
+            return;
+        }
+        let visit_id = match self.tab_visit_id.get(&view).copied() {
+            Some(id) => id,
+            None => return,
+        };
+        if let Some(h) = &self.history {
+            let _ = h.update_title(visit_id, title);
         }
     }
 
@@ -125,6 +170,9 @@ impl Shell {
                 let view = engine.create_view(&url);
                 self.tabs.push(Tab { view, opener });
                 self.show(engine, view);
+                if !url.is_empty() {
+                    self.on_url_changed(view, &url);
+                }
                 engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
             }
             FromUi::Navigate { view, url } if known(self, view) => engine.navigate(view, &url),
@@ -185,6 +233,55 @@ impl Shell {
                     eprintln!("Failed to show in folder {path}: {e}");
                 }
             }
+            FromUi::QueryHistory => {
+                let groups = self
+                    .history
+                    .as_ref()
+                    .and_then(|h| h.query_day_groups().ok())
+                    .unwrap_or_default();
+                engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::SearchHistory { query } => {
+                let groups = self
+                    .history
+                    .as_ref()
+                    .map(|h| {
+                        let visits = h.search(&query).unwrap_or_default();
+                        history::HistoryStore::group_visits(visits)
+                    })
+                    .unwrap_or_default();
+                engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::ForgetVisit { id } => {
+                if let Some(h) = &self.history {
+                    let _ = h.forget(id);
+                }
+                let groups = self
+                    .history
+                    .as_ref()
+                    .and_then(|h| h.query_day_groups().ok())
+                    .unwrap_or_default();
+                engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::ClearHistoryDay { day_start_secs } => {
+                if let Some(h) = &self.history {
+                    let _ = h.clear_day(day_start_secs);
+                }
+                let groups = self
+                    .history
+                    .as_ref()
+                    .and_then(|h| h.query_day_groups().ok())
+                    .unwrap_or_default();
+                engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::ClearAllHistory => {
+                if let Some(h) = &self.history {
+                    let _ = h.clear_all();
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded {
+                    groups: Vec::new(),
+                }));
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
@@ -192,16 +289,33 @@ impl Shell {
 }
 
 fn connect(engine: CefEngine, is_private: bool) {
+    let history_store = if is_private {
+        None
+    } else {
+        HistoryStore::open(&profile_dir().join("history.db")).ok()
+    };
     let shell = Rc::new(RefCell::new(Shell {
         is_private,
+        history: history_store,
         ..Shell::default()
     }));
 
     let events_shell = shell.clone();
     engine.set_event_sink(move |event| {
-        if let engine_api::Event::Closed { view } = &event {
+        {
             let mut s = events_shell.borrow_mut();
-            s.close_tab(*view);
+            match &event {
+                engine_api::Event::Closed { view } => {
+                    s.close_tab(*view);
+                }
+                engine_api::Event::UrlChanged { view, url } => {
+                    s.on_url_changed(*view, url);
+                }
+                engine_api::Event::TitleChanged { view, title } => {
+                    s.on_title_changed(*view, title);
+                }
+                _ => {}
+            }
         }
         if let Some(message) = bridge::event_to_ui(&event) {
             CefEngine.send_to_ui(&bridge::to_json(&message));
@@ -484,5 +598,19 @@ mod tests {
             !tmp.exists(),
             "Private mode must not create directories or save settings to disk"
         );
+    }
+
+    #[test]
+    fn private_mode_never_writes_history() {
+        let mut shell = Shell {
+            is_private: true,
+            history: None,
+            ..Shell::default()
+        };
+
+        shell.on_url_changed(1, "https://private-example.com");
+        shell.on_title_changed(1, "Private Page");
+        assert!(shell.tab_visit_id.is_empty());
+        assert!(shell.history.is_none());
     }
 }

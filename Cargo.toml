@@ -5,6 +5,7 @@ members = [
     "app/engine-api",
     "app/engine-cef",
     "app/segdl",
+    "app/history",
     "app/shields",
     "app/vault",
     "app/ai",
@@ -22,8 +23,10 @@ cef = { version = "=156.7.0", default-features = false }
 engine-api = { path = "app/engine-api" }
 engine-cef = { path = "app/engine-cef" }
 segdl = { path = "app/segdl" }
+history = { path = "app/history" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }

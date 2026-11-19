@@ -1,0 +1,13 @@
+[package]
+name = "history"
+description = "SQLite history store with visits, branch links and day grouping (P4-02)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true
