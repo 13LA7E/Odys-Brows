@@ -11,7 +11,7 @@
 | State | Phase 4 in progress: P4-01 Downloads complete. Segmented multi-connection downloader ported from Odyssey into app/segdl (MIN_BYTES = 8 MiB, 1-16 connections, atomic pause/resume/cancel Ctl, Range probe, .odypart preallocation and atomic rename, immediate .odypart removal on cancel/error). Connected to CEF PageClient download handler and shell bridge. Settings connection count synchronised. UI: Helm download ring and popover wired with pause/resume and open controls. Visual check on Browsing popover region and Helm ring scores 0.0 diff pixels. Verified by tools/test_downloads.py, cargo test integration tests, check.ps1, --engine-selftest, and --ipc-selftest. |
 | Next step | P4-02 History store (rusqlite schema with visits, opener links for branches, "came back" flag; unit tests for record, query by day, search, forget, clear day; private windows never write history). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 7e70a8e (P4-01). |
+| Last pushed commit | efb8884 (P4-01). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -135,7 +135,7 @@ Copy this template for each session:
 - Not verified / unsure: Linux native.
 - Decisions proposed: none (followed existing architecture and D-007/D-009).
 - Next: P4-02 History store (rusqlite schema with visits, opener links for branches, "came back" flag; unit tests for record, query by day, search, forget, clear day; private windows never write history).
-- Commit: 7e70a8e "P4-01: segmented downloads and download UI"  Pushed: yes
+- Commit: efb8884 "P4-01: segmented downloads and download UI"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P3-02
 - Did: completed P3-02 Private windows (§9 Private, EDGE_CASES §7).
