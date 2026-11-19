@@ -3,6 +3,8 @@
 // methods (never innerHTML with data), except the fixture's sample website, which is our own
 // file from design/preview.
 
+import { createSky } from './sky.js';
+
 const SVG = 'http://www.w3.org/2000/svg';
 
 function el(tag, cls, text) {
@@ -16,17 +18,6 @@ function svg(tag, attrs) {
   const e = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   return e;
-}
-
-/** The still sky from a star list (DESIGN.md §5). P2-01 replaces this with the canvas sky. */
-function sky(stars) {
-  const s = svg('svg', { class: 'sky', width: 1280, height: 800, viewBox: '0 0 1280 800', 'aria-hidden': 'true' });
-  for (const st of stars) {
-    s.append(st.ring
-      ? svg('circle', { cx: st.x, cy: st.y, r: st.r, fill: 'none', stroke: st.stroke, 'stroke-opacity': st.o, 'stroke-width': st.w })
-      : svg('circle', { cx: st.x, cy: st.y, r: st.r, fill: st.fill || '#fff', opacity: st.o }));
-  }
-  return s;
 }
 
 function helm(state) {
@@ -67,7 +58,12 @@ export function renderShell(root, state) {
   const railWidth = state.rail === 'expanded' ? 264 : 56;
   root.style.setProperty('--rail', `${railWidth}px`);
 
-  root.append(sky(state.sky || []));
+  createSky(root, {
+    stars: state.sky,
+    mode: state.starsMode || 'still',
+    shootingStars: state.shootingStars,
+    private: state.private,
+  });
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
   root.append(rail);

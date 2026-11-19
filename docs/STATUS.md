@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 1: Skeleton complete (Gate 1 met on Windows; Linux native app test deferred to dual boot) |
-| Current task | **P2-01 Sky** (Phase 2: The shell) |
-| State | P1-01..P1-07 complete. CI workflow (`.github/workflows/ci.yml`) set up for Windows and Ubuntu runners on the `Constellations` branch. |
-| Next step | P2-01 Sky (canvas render of stars at device pixel ratio, Still/Drifting modes, shooting stars). |
+| Phase | 2: The shell |
+| Current task | **P2-02 Notch** |
+| State | P2-01 complete. Canvas sky implemented in `ui/sky.js` with DPR scaling, Still, Off, Drifting, and subtle shooting stars. Main and Private sky regions match approved design with score 0.0; idle CPU in Still mode measured at 0% (0 RAF iterations). |
+| Next step | P2-02 Notch (frameless window controls, drag, double-click maximize, snap layouts, Shields count). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `1d44bdd` (P1-07). |
+| Last pushed commit | `0667e18` (P2-01). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -53,6 +53,8 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 - Screenshots: use `PrintWindow` per window (spike `shot.ps1`/`shot-all.ps1`), never a screen copy (privacy).
 
 ## Awaiting Owner OK
+
+- **P2-01 (Sky Drifting and Shooting Stars):** Drifting mode and occasional subtle comets (shooting stars) are built in `ui/sky.js`. Needs: Owner OK on the speed and visual subtlety.
 
 - **D-017 (P1-02):** each tab is its own owned Chrome style window (CEF refuses a second Chrome page view in a window). Phase 1 builds on it.
 
@@ -117,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-01
+- Did: replaced SVG sky with canvas implementation in `ui/sky.js`. Canvas renders at device pixel ratio (`dpr`); supports `still` (draws once and stops, 0% CPU), `off` (cleared, no stars), `drifting` (slow, subtle star drift wrapping window bounds), and `shootingStars` (rare, subtle comets across new tab). Includes generator `generateSky` for live non-fixture states (`newtab`: 170 stars, `expanded`: 46, `collapsed`: 18, `private`: 120 marks with 40% hollow rings in `#cdd9ee`). Listens to `visibilitychange` to pause animation loop when window is hidden; respects `prefers-reduced-motion` media query to suppress animations. Wrote `tools/test_sky.py` validating canvas sizing at DPR, 0 RAF callbacks during Still mode idle, and star generation counts.
+- Verified: `python -u tools/test_sky.py` passed all assertions; `python -u tools/visual_check.py Main --region 1100,50,150,200` and `--region 120,360,180,240` scored 0.0 (PASS); `python -u tools/visual_check.py Private --region 1100,50,150,200` scored 0.0 (PASS); `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps PASSED; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; 0% idle CPU in Still mode.
+- Edge cases: §1 display scaling: canvas buffer scaled by `devicePixelRatio`, styled in CSS pixels; §1 reduced motion: media query disables drifting and comets; §1 window hidden: `visibilitychange` immediately cancels animation frames; §1 zero idle CPU: Still mode draws once without running an animation loop; §5 private mode: renders hollow rings and lilac tint per design.
+- Not verified / unsure: Owner OK on drifting speed and comet subtlety (added to "Awaiting Owner OK").
+- Decisions proposed: none.
+- Next: P2-02 Notch (frameless window drag, double-click maximize, snap layouts, min/max/close, Shields count).
+- Commit: `0667e18` "P2-01: canvas sky with still, drifting and shooting star modes"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-07
 - Did: created GitHub Actions CI workflow in `.github/workflows/ci.yml`. Runs on both `windows-latest` and `ubuntu-latest` on pushes to the `Constellations` branch only. Executes `tools/check.ps1` on Windows and `tools/check.sh` on Ubuntu (with playwright chromium installation and system dependencies). Also made `tools/check.sh` and `tools/run-dev.sh` executable in Git index and added atomic directory counter to `engine-api` unit tests.
