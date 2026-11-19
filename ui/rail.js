@@ -59,10 +59,13 @@ export function renderCollapsedRail(railEl, options = {}) {
   const {
     tabs = [],
     activeTab = 1,
+    activeSpace = 0,
     isPrivate = false,
     onSelectTab,
     onNewTab,
     onOpenSettings,
+    onSwitchSpace,
+    onOpenPinnedSite,
   } = options;
 
   railEl.replaceChildren();
@@ -172,8 +175,11 @@ export function renderCollapsedRail(railEl, options = {}) {
     pins.forEach((p, i) => {
       const b = el('button', 'rail-pin');
       b.setAttribute('aria-label', p.label);
-      b.style.cssText = `position:absolute;left:12px;top:${68 + 36 * i}px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--pin);background:transparent;`;
+      b.style.cssText = `position:absolute;left:12px;top:${68 + 36 * i}px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--pin);background:transparent;cursor:pointer;`;
       b.append(ico(p.d, 18, p.extra));
+      b.addEventListener('click', () => {
+        if (typeof onOpenPinnedSite === 'function') onOpenPinnedSite(p.label);
+      });
       railEl.append(b);
     });
   }
@@ -224,12 +230,27 @@ export function renderCollapsedRail(railEl, options = {}) {
   if (!isPrivate) {
     const spaces = el('div', 'rail-spaces');
     spaces.style.cssText = 'position:absolute;left:21px;top:calc(100% - 122px);display:flex;flex-direction:column;gap:12px;align-items:center;width:14px;';
-    spaces.append(star(13, 'var(--text-strong)', isPrivate));
-    const sdot1 = el('span');
-    sdot1.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;';
-    const sdot2 = el('span');
-    sdot2.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;';
-    spaces.append(sdot1, sdot2);
+    for (let sIdx = 0; sIdx < 3; sIdx++) {
+      if (sIdx === activeSpace) {
+        const s = star(13, 'var(--text-strong)', isPrivate);
+        s.style.cursor = 'pointer';
+        s.setAttribute('role', 'button');
+        s.setAttribute('aria-label', `Space ${sIdx + 1}`);
+        s.addEventListener('click', () => {
+          if (typeof onSwitchSpace === 'function') onSwitchSpace(sIdx);
+        });
+        spaces.append(s);
+      } else {
+        const sdot = el('span');
+        sdot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;cursor:pointer;';
+        sdot.setAttribute('role', 'button');
+        sdot.setAttribute('aria-label', `Space ${sIdx + 1}`);
+        sdot.addEventListener('click', () => {
+          if (typeof onSwitchSpace === 'function') onSwitchSpace(sIdx);
+        });
+        spaces.append(sdot);
+      }
+    }
     railEl.append(spaces);
   }
 
@@ -253,6 +274,7 @@ export function renderExpandedRail(railEl, options = {}) {
   const {
     tabs = [],
     activeTab = 1,
+    activeSpace = 0,
     closed = [],
     isPrivate = false,
     onSelectTab,
@@ -261,6 +283,8 @@ export function renderExpandedRail(railEl, options = {}) {
     onOpenSettings,
     onRelightClosedTab,
     onForgetClosedTab,
+    onSwitchSpace,
+    onOpenPinnedSite,
   } = options;
 
   railEl.replaceChildren();
@@ -420,12 +444,15 @@ export function renderExpandedRail(railEl, options = {}) {
   pinnedList.forEach((p, i) => {
     const b = el('button', 'rail-pin');
     b.setAttribute('aria-label', p.label);
-    b.style.cssText = `position:absolute;left:${12 + 38 * i}px;top:68px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--pin);background:transparent;`;
+    b.style.cssText = `position:absolute;left:${12 + 38 * i}px;top:68px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--pin);background:transparent;cursor:pointer;`;
     if (p.star) {
       b.append(star(16, 'var(--accent)'));
     } else {
       b.append(ico(p.d, 18, p.extra));
     }
+    b.addEventListener('click', () => {
+      if (typeof onOpenPinnedSite === 'function') onOpenPinnedSite(p.label);
+    });
     railEl.append(b);
   });
 
@@ -528,15 +555,69 @@ export function renderExpandedRail(railEl, options = {}) {
   }
 
   // Bottom: Home + spaces at left 20, top calc(100% - 40px)
+  const spaceNames = ['Home', 'Work', 'Personal'];
   const bottom = el('div', 'rail-bottom');
   bottom.style.cssText = 'position:absolute;left:20px;top:calc(100% - 40px);display:flex;align-items:center;gap:10px;font-size:14px;color:var(--text-soft);';
-  bottom.append(star(13, 'var(--text-strong)', isPrivate));
-  bottom.append(el('span', null, 'Home'));
-  const sdot1 = el('span');
-  sdot1.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);margin-left:2px;display:block;';
-  const sdot2 = el('span');
-  sdot2.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;';
-  bottom.append(sdot1, sdot2);
+  if (activeSpace === 0) {
+    const s = star(13, 'var(--text-strong)', isPrivate);
+    s.style.cursor = 'pointer';
+    s.setAttribute('role', 'button');
+    s.setAttribute('aria-label', 'Space 1 (active)');
+    s.addEventListener('click', () => {
+      if (typeof onSwitchSpace === 'function') onSwitchSpace(0);
+    });
+    const nameEl = el('span', null, 'Home');
+    nameEl.style.cursor = 'pointer';
+    nameEl.addEventListener('click', () => {
+      if (typeof onSwitchSpace === 'function') onSwitchSpace(0);
+    });
+    bottom.append(s, nameEl);
+
+    const sdot1 = el('span');
+    sdot1.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);margin-left:2px;display:block;cursor:pointer;';
+    sdot1.setAttribute('role', 'button');
+    sdot1.setAttribute('aria-label', 'Space 2');
+    sdot1.addEventListener('click', () => {
+      if (typeof onSwitchSpace === 'function') onSwitchSpace(1);
+    });
+
+    const sdot2 = el('span');
+    sdot2.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;cursor:pointer;';
+    sdot2.setAttribute('role', 'button');
+    sdot2.setAttribute('aria-label', 'Space 3');
+    sdot2.addEventListener('click', () => {
+      if (typeof onSwitchSpace === 'function') onSwitchSpace(2);
+    });
+
+    bottom.append(sdot1, sdot2);
+  } else {
+    for (let sIdx = 0; sIdx < 3; sIdx++) {
+      if (sIdx === activeSpace) {
+        const s = star(13, 'var(--text-strong)', isPrivate);
+        s.style.cursor = 'pointer';
+        s.setAttribute('role', 'button');
+        s.setAttribute('aria-label', `Space ${sIdx + 1} (active)`);
+        s.addEventListener('click', () => {
+          if (typeof onSwitchSpace === 'function') onSwitchSpace(sIdx);
+        });
+        const nameEl = el('span', null, spaceNames[sIdx] || `Space ${sIdx + 1}`);
+        nameEl.style.cursor = 'pointer';
+        nameEl.addEventListener('click', () => {
+          if (typeof onSwitchSpace === 'function') onSwitchSpace(sIdx);
+        });
+        bottom.append(s, nameEl);
+      } else {
+        const sdot = el('span');
+        sdot.style.cssText = 'width:5px;height:5px;border-radius:3px;background:var(--space-dot);display:block;cursor:pointer;';
+        sdot.setAttribute('role', 'button');
+        sdot.setAttribute('aria-label', `Space ${sIdx + 1}`);
+        sdot.addEventListener('click', () => {
+          if (typeof onSwitchSpace === 'function') onSwitchSpace(sIdx);
+        });
+        bottom.append(sdot);
+      }
+    }
+  }
   railEl.append(bottom);
 
   // Settings button at left 220, top calc(100% - 52px)

@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 4: Everyday browsing |
-| Current task | **P4-07 Pins and spaces** |
-| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete. P4-05 Session restore complete. P4-06 Page basics complete. Next is P4-07 Pins and spaces. |
-| Next step | P4-07 Pins and spaces (rail pinned apps, spaces dots at bottom of rail, switching active spaces and tab collections; follow §6 & §10). |
+| Phase | 5: Shields and efficiency |
+| Current task | **P5-01 Shields** |
+| State | Phase 4 complete (P4-01 Downloads, P4-02 History store, P4-03 History page, P4-04 Closed tabs, P4-05 Session restore, P4-06 Page basics, P4-07 Pins and spaces). All Phase 4 tasks verified and pushed. |
+| Next step | P5-01 Shields (port shields.rs adblock engine, filter list cache, cosmetic filtering, notch count and settings panel). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 830d708 (P4-05). |
+| Last pushed commit | 1865b17 (P4-06). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,25 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-07
+- Did: completed P4-07 Pins and spaces (DESIGN.md §6, PHASES.md P4-07, EDGE_CASES §6 & §9).
+  - In `app/shell`:
+    - Updated `Tab` and `SavedTab` schema with `space: usize` (default 0) and `pinned: bool` (default false) with serde default attributes preserving backwards compatibility.
+    - Updated `SessionData` with `active_space: usize` (default 0).
+    - Implemented space switching logic on `Shell`: `switch_space_state(space)` and `switch_space(engine, space)` switching shown tabs to the active space and emitting `ToUi::SpaceChanged { space }`.
+    - Implemented pinned site handler `open_pinned_site(engine, name)` mapping standard pinned apps (Mail, Calendar, Notes, Files, Maps, Odysseus) to URLs (`mail.google.com`, `calendar.google.com`, `odyssey://notes`, `odyssey://files`, `maps.google.com`, `odyssey://ai`), focusing existing pinned tabs or opening new pinned tabs.
+    - Added bridge commands `FromUi::SwitchSpace { space }` and `FromUi::OpenPinnedSite { name }`, plus notification `ToUi::SpaceChanged { space }`.
+  - In `ui/rail.js`:
+    - Updated `renderCollapsedRail`: pinned app buttons (Mail, Calendar, Notes) wire `onOpenPinnedSite(p.label)`; space dots column at left 21 renders star for active space (Space 1/2/3) and 5px dots for inactive spaces with interactive click switching, preserving exact DOM measurements and 0px shift for default space 0.
+    - Updated `renderExpandedRail`: pinned app buttons row (Mail, Calendar, Notes, Files, Maps, Odysseus) wire `onOpenPinnedSite(p.label)`; bottom spaces bar renders star and active space name ("Home", "Work", "Personal") and space dots with interactive click switching, preserving exact DOM measurements and 0px shift for default space 0.
+  - In `ui/shell.js`:
+    - Connected `activeSpace: state.activeSpace ?? 0`, `onSwitchSpace`, and `onOpenPinnedSite` across collapsed and expanded rail renderers.
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (all 6/6 checks passed: formatting, clippy with 0 warnings, 39 cargo tests passing, JS syntax check, CSS token check, visual check on all boards), `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --engine-selftest` printed PASSED, `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --ipc-selftest` printed PASSED.
+- Edge cases §6 & §9: Space index clamped (0..=2); switching to empty space handled gracefully; pinned tabs flagged to avoid tab sleeping; active space and tab space/pinned status preserved across session persistence; private windows omit spaces and pinned sites.
+- Decisions proposed: none.
+- Next: Phase 5: Shields and efficiency (P5-01 Shields).
+- Commit: P4-07: pins and spaces  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-06
 - Did: completed P4-06 Page basics (DESIGN.md §10, PHASES.md P4-06, EDGE_CASES §4).

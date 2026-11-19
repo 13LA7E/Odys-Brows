@@ -118,6 +118,14 @@ pub enum FromUi {
     OpenDevTools {
         view: ViewId,
     },
+    /// Switch active space (P4-07).
+    SwitchSpace {
+        space: usize,
+    },
+    /// Open or focus a pinned site (P4-07).
+    OpenPinnedSite {
+        name: String,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -182,6 +190,9 @@ pub enum ToUi {
     },
     ClosedTabsUpdated {
         tabs: Vec<ClosedTabInfo>,
+    },
+    SpaceChanged {
+        space: usize,
     },
 }
 
@@ -323,6 +334,16 @@ mod tests {
             parse(r#"{"type":"show-in-folder","path":"C:/Downloads/foo.pdf"}"#),
             Ok(FromUi::ShowInFolder {
                 path: "C:/Downloads/foo.pdf".into()
+            })
+        );
+        assert_eq!(
+            parse(r#"{"type":"switch-space","space":1}"#),
+            Ok(FromUi::SwitchSpace { space: 1 })
+        );
+        assert_eq!(
+            parse(r#"{"type":"open-pinned-site","name":"Mail"}"#),
+            Ok(FromUi::OpenPinnedSite {
+                name: "Mail".into()
             })
         );
     }

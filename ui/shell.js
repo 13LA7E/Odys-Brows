@@ -140,6 +140,7 @@ export function renderShell(root, state) {
     renderCollapsedRail(rail, {
       tabs,
       activeTab: state.activeTab ?? 1,
+      activeSpace: state.activeSpace ?? 0,
       isPrivate: !!state.private,
       onSelectTab: (id) => {
         state.activeTab = id;
@@ -160,11 +161,24 @@ export function renderShell(root, state) {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
         }
       },
+      onSwitchSpace: (space) => {
+        state.activeSpace = space;
+        renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'switch-space', space }));
+        }
+      },
+      onOpenPinnedSite: (name) => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open-pinned-site', name }));
+        }
+      },
     });
   } else if (state.rail === 'expanded') {
     renderExpandedRail(rail, {
       tabs: state.tabs || [],
       activeTab: state.activeTab ?? 1,
+      activeSpace: state.activeSpace ?? 0,
       closed: state.closed || [],
       isPrivate: !!state.private,
       onSelectTab: (id) => {
@@ -184,6 +198,18 @@ export function renderShell(root, state) {
       onOpenSettings: () => {
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
+        }
+      },
+      onSwitchSpace: (space) => {
+        state.activeSpace = space;
+        renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'switch-space', space }));
+        }
+      },
+      onOpenPinnedSite: (name) => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open-pinned-site', name }));
         }
       },
     });

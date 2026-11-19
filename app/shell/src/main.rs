@@ -66,6 +66,19 @@ fn page_bounds(engine: &CefEngine, rail_width: i32) -> Rect {
 pub struct Tab {
     pub view: ViewId,
     pub opener: Option<ViewId>,
+    pub space: usize,
+    pub pinned: bool,
+}
+
+impl Tab {
+    pub fn new(view: ViewId, opener: Option<ViewId>) -> Self {
+        Self {
+            view,
+            opener,
+            space: 0,
+            pinned: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +97,7 @@ struct Shell {
     tabs: Vec<Tab>,
     shown: Option<ViewId>,
     rail_width: i32,
+    active_space: usize,
     is_private: bool,
     history: Option<HistoryStore>,
     tab_visit_id: HashMap<ViewId, i64>,
@@ -99,6 +113,7 @@ impl Default for Shell {
             tabs: Vec::new(),
             shown: None,
             rail_width: RAIL_WIDTH,
+            active_space: 0,
             is_private: false,
             history: None,
             tab_visit_id: HashMap::new(),
@@ -239,6 +254,8 @@ impl Shell {
                     url,
                     title,
                     opener_index,
+                    space: t.space,
+                    pinned: t.pinned,
                 }
             })
             .collect();
@@ -251,7 +268,68 @@ impl Shell {
             tabs,
             active_tab_index,
             rail_width: self.rail_width,
+            active_space: self.active_space,
         }
+    }
+
+    fn switch_space_state(&mut self, space: usize) -> Option<ViewId> {
+        let space = space.min(2);
+        self.active_space = space;
+        let current_in_space = self
+            .shown
+            .and_then(|v| self.tabs.iter().find(|t| t.view == v))
+            .map(|t| t.space == space)
+            .unwrap_or(false);
+        if !current_in_space {
+            let target = self.tabs.iter().find(|t| t.space == space).map(|t| t.view);
+            if target.is_some() {
+                self.shown = target;
+            }
+            return target;
+        }
+        None
+    }
+
+    fn switch_space(&mut self, engine: &mut CefEngine, space: usize) {
+        if let Some(target) = self.switch_space_state(space) {
+            self.show(engine, target);
+        }
+        self.persist_session();
+        engine.send_to_ui(&bridge::to_json(&ToUi::SpaceChanged {
+            space: self.active_space,
+        }));
+    }
+
+    fn open_pinned_site(&mut self, engine: &mut CefEngine, name: &str) {
+        let url = match name.to_lowercase().as_str() {
+            "mail" => "https://mail.google.com/",
+            "calendar" => "https://calendar.google.com/",
+            "notes" => "odyssey://notes",
+            "files" => "odyssey://files",
+            "maps" => "https://maps.google.com/",
+            "odysseus" => "odyssey://ai",
+            _ => "odyssey://pinned",
+        };
+        if let Some(existing) = self
+            .tabs
+            .iter()
+            .find(|t| t.pinned && self.tab_urls.get(&t.view).map(|u| u.as_str()) == Some(url))
+        {
+            let view = existing.view;
+            self.show(engine, view);
+        } else {
+            let view = engine.create_view(url);
+            self.tabs.push(Tab {
+                view,
+                opener: None,
+                space: self.active_space,
+                pinned: true,
+            });
+            self.show(engine, view);
+            self.on_url_changed(view, url);
+            engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener: None }));
+        }
+        self.persist_session();
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
@@ -314,7 +392,12 @@ impl Shell {
         match message {
             FromUi::Open { url, opener } => {
                 let view = engine.create_view(&url);
-                self.tabs.push(Tab { view, opener });
+                self.tabs.push(Tab {
+                    view,
+                    opener,
+                    space: self.active_space,
+                    pinned: false,
+                });
                 self.show(engine, view);
                 if !url.is_empty() {
                     self.on_url_changed(view, &url);
@@ -432,7 +515,12 @@ impl Shell {
             FromUi::RelightClosedTab { id } => {
                 if let Some((url, opener)) = self.relight_closed_tab(id) {
                     let view = engine.create_view(&url);
-                    self.tabs.push(Tab { view, opener });
+                    self.tabs.push(Tab {
+                        view,
+                        opener,
+                        space: self.active_space,
+                        pinned: false,
+                    });
                     self.show(engine, view);
                     self.on_url_changed(view, &url);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
@@ -459,6 +547,8 @@ impl Shell {
             } if known(self, view) => engine.stop_finding(view, clear_selection),
             FromUi::PrintPage { view } if known(self, view) => engine.print(view),
             FromUi::OpenDevTools { view } if known(self, view) => engine.open_devtools(view),
+            FromUi::SwitchSpace { space } => self.switch_space(engine, space),
+            FromUi::OpenPinnedSite { name } => self.open_pinned_site(engine, &name),
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
@@ -480,6 +570,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
         is_private,
         history: history_store,
         rail_width: saved_session.rail_width,
+        active_space: saved_session.active_space,
         ..Shell::default()
     }));
 
@@ -489,7 +580,12 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
         for tab in &saved_session.tabs {
             let view = CefEngine.create_view(&tab.url);
             created_views.push(view);
-            s.tabs.push(Tab { view, opener: None });
+            s.tabs.push(Tab {
+                view,
+                opener: None,
+                space: tab.space,
+                pinned: tab.pinned,
+            });
             s.tab_urls.insert(view, tab.url.clone());
             s.tab_titles.insert(view, tab.title.clone());
         }
@@ -649,20 +745,26 @@ pub fn load_settings_or_default(dir: &Path) -> serde_json::Value {
     }
 }
 
-/// A tab saved in session restore (P4-05).
+/// A tab saved in session restore (P4-05, P4-07).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SavedTab {
     pub url: String,
     pub title: String,
     pub opener_index: Option<usize>,
+    #[serde(default)]
+    pub space: usize,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
-/// The session state preserved across restarts or crashes (P4-05).
+/// The session state preserved across restarts or crashes (P4-05, P4-07).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionData {
     pub tabs: Vec<SavedTab>,
     pub active_tab_index: Option<usize>,
     pub rail_width: i32,
+    #[serde(default)]
+    pub active_space: usize,
 }
 
 impl Default for SessionData {
@@ -671,6 +773,7 @@ impl Default for SessionData {
             tabs: Vec::new(),
             active_tab_index: None,
             rail_width: RAIL_WIDTH,
+            active_space: 0,
         }
     }
 }
@@ -808,22 +911,10 @@ mod tests {
     #[test]
     fn closing_parent_reattaches_children_to_grandparent() {
         let mut shell = Shell::default();
-        shell.tabs.push(Tab {
-            view: 1,
-            opener: None,
-        });
-        shell.tabs.push(Tab {
-            view: 2,
-            opener: Some(1),
-        });
-        shell.tabs.push(Tab {
-            view: 3,
-            opener: Some(2),
-        });
-        shell.tabs.push(Tab {
-            view: 4,
-            opener: Some(1),
-        });
+        shell.tabs.push(Tab::new(1, None));
+        shell.tabs.push(Tab::new(2, Some(1)));
+        shell.tabs.push(Tab::new(3, Some(2)));
+        shell.tabs.push(Tab::new(4, Some(1)));
 
         // Close tab 2 (child of 1): tab 3 should now have opener Some(1)
         shell.close_tab(2);
@@ -889,10 +980,7 @@ mod tests {
     #[test]
     fn closing_tab_records_closed_tab_and_relight_restores_it() {
         let mut shell = Shell::default();
-        shell.tabs.push(Tab {
-            view: 1,
-            opener: None,
-        });
+        shell.tabs.push(Tab::new(1, None));
         shell
             .tab_urls
             .insert(1, "https://tides.example/tables".into());
@@ -927,10 +1015,7 @@ mod tests {
     #[test]
     fn closed_tabs_expire_after_24_hours() {
         let mut shell = Shell::default();
-        shell.tabs.push(Tab {
-            view: 10,
-            opener: None,
-        });
+        shell.tabs.push(Tab::new(10, None));
         shell.tab_urls.insert(10, "https://old.example".into());
         shell.tab_titles.insert(10, "Old page".into());
 
@@ -941,10 +1026,7 @@ mod tests {
         shell.closed_tabs[0].closed_at -= 86401;
 
         // When another tab is closed, expired ones are evicted
-        shell.tabs.push(Tab {
-            view: 11,
-            opener: None,
-        });
+        shell.tabs.push(Tab::new(11, None));
         shell.tab_urls.insert(11, "https://new.example".into());
         shell.close_tab(11);
 
@@ -958,10 +1040,7 @@ mod tests {
             is_private: true,
             ..Shell::default()
         };
-        shell.tabs.push(Tab {
-            view: 20,
-            opener: None,
-        });
+        shell.tabs.push(Tab::new(20, None));
         shell.tab_urls.insert(20, "https://secret.example".into());
         shell.tab_titles.insert(20, "Secret".into());
 
@@ -981,15 +1060,20 @@ mod tests {
                     url: "https://example.com".into(),
                     title: "Example Domain".into(),
                     opener_index: None,
+                    space: 0,
+                    pinned: false,
                 },
                 SavedTab {
                     url: "https://sub.example.com".into(),
                     title: "Sub Page".into(),
                     opener_index: Some(0),
+                    space: 1,
+                    pinned: true,
                 },
             ],
             active_tab_index: Some(1),
             rail_width: 264,
+            active_space: 1,
         };
 
         assert!(save_session_atomic(&tmp_dir, &session).is_ok());
@@ -1025,17 +1109,11 @@ mod tests {
     #[test]
     fn preserves_tab_tree_hierarchy_across_session_restore() {
         let mut shell = Shell::default();
-        shell.tabs.push(Tab {
-            view: 100,
-            opener: None,
-        });
+        shell.tabs.push(Tab::new(100, None));
         shell.tab_urls.insert(100, "https://root.com".into());
         shell.tab_titles.insert(100, "Root".into());
 
-        shell.tabs.push(Tab {
-            view: 101,
-            opener: Some(100),
-        });
+        shell.tabs.push(Tab::new(101, Some(100)));
         shell.tab_urls.insert(101, "https://child.com".into());
         shell.tab_titles.insert(101, "Child".into());
 
@@ -1048,5 +1126,52 @@ mod tests {
         assert_eq!(session.tabs[1].opener_index, Some(0));
         assert_eq!(session.active_tab_index, Some(1));
         assert_eq!(session.rail_width, 264);
+        assert_eq!(session.active_space, 0);
+    }
+
+    #[test]
+    fn space_switching_and_pinned_tabs() {
+        let mut shell = Shell::default();
+        // Space 0: Tab 1
+        shell.tabs.push(Tab {
+            view: 1,
+            opener: None,
+            space: 0,
+            pinned: false,
+        });
+        // Space 1: Tab 2 (pinned), Tab 3
+        shell.tabs.push(Tab {
+            view: 2,
+            opener: None,
+            space: 1,
+            pinned: true,
+        });
+        shell.tabs.push(Tab {
+            view: 3,
+            opener: None,
+            space: 1,
+            pinned: false,
+        });
+        shell.shown = Some(1);
+
+        // Switch to space 1
+        let target = shell.switch_space_state(1);
+        assert_eq!(shell.active_space, 1);
+        assert_eq!(target, Some(2));
+        assert_eq!(shell.shown, Some(2));
+
+        // Switch to space 2 (empty)
+        let target2 = shell.switch_space_state(2);
+        assert_eq!(shell.active_space, 2);
+        assert_eq!(target2, None); // no tab in space 2 yet
+
+        // Session data preserves space and pinned attributes
+        let session = shell.to_session_data();
+        assert_eq!(session.active_space, 2);
+        assert_eq!(session.tabs.len(), 3);
+        assert_eq!(session.tabs[1].space, 1);
+        assert!(session.tabs[1].pinned);
+        assert_eq!(session.tabs[2].space, 1);
+        assert!(!session.tabs[2].pinned);
     }
 }
