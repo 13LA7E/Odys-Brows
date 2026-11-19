@@ -229,6 +229,19 @@ wrap_window_delegate! {
             }
         }
 
+        fn is_frameless(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+        fn can_resize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+        fn can_maximize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+        fn can_minimize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
         fn window_runtime_style(&self) -> RuntimeStyle {
             RuntimeStyle::CHROME
         }
@@ -301,10 +314,32 @@ fn deliver_ui_message(json: String) {
     }
 }
 
+wrap_drag_handler! {
+    struct UiDrag {}
+
+    impl DragHandler {
+        fn on_draggable_regions_changed(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            regions: Option<&[DraggableRegion]>,
+        ) {
+            STATE.with(|s| {
+                if let Some(main) = s.borrow().main.as_ref() {
+                    main.set_draggable_regions(regions);
+                }
+            });
+        }
+    }
+}
+
 wrap_client! {
     struct UiClient {}
 
     impl Client {
+        fn drag_handler(&self) -> Option<DragHandler> {
+            Some(UiDrag::new())
+        }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(UiLife::new())
         }
@@ -821,6 +856,30 @@ impl Engine for CefEngine {
 
     fn answer_certificate_error(&mut self, _request: u64, _proceed: bool) {
         todo!("P4-06 page basics: certificate error page")
+    }
+
+    fn minimize_window(&mut self) {
+        STATE.with(|s| {
+            if let Some(w) = s.borrow().main.as_ref() {
+                w.minimize();
+            }
+        });
+    }
+
+    fn toggle_maximize_window(&mut self) {
+        STATE.with(|s| {
+            if let Some(w) = s.borrow().main.as_ref() {
+                if w.is_maximized() != 0 {
+                    w.restore();
+                } else {
+                    w.maximize();
+                }
+            }
+        });
+    }
+
+    fn close_window(&mut self) {
+        self.quit();
     }
 }
 

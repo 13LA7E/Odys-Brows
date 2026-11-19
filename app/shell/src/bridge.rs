@@ -39,6 +39,10 @@ pub enum FromUi {
     Close {
         view: ViewId,
     },
+    /// Window controls from the notch (P2-02).
+    MinimizeWindow,
+    MaximizeWindow,
+    CloseWindow,
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -155,6 +159,15 @@ mod tests {
             parse(r#"{"type":"back","view":3}"#),
             Ok(FromUi::Back { view: 3 })
         );
+        assert_eq!(
+            parse(r#"{"type":"minimize-window"}"#),
+            Ok(FromUi::MinimizeWindow)
+        );
+        assert_eq!(
+            parse(r#"{"type":"maximize-window"}"#),
+            Ok(FromUi::MaximizeWindow)
+        );
+        assert_eq!(parse(r#"{"type":"close-window"}"#), Ok(FromUi::CloseWindow));
     }
 
     #[test]

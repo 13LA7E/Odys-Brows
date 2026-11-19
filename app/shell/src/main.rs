@@ -94,6 +94,9 @@ impl Shell {
             FromUi::Stop { view } if known(self, view) => engine.stop(view),
             FromUi::Show { view } => self.show(engine, view),
             FromUi::Close { view } if known(self, view) => engine.close_view(view),
+            FromUi::MinimizeWindow => engine.minimize_window(),
+            FromUi::MaximizeWindow => engine.toggle_maximize_window(),
+            FromUi::CloseWindow => engine.close_window(),
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }

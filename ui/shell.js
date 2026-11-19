@@ -40,12 +40,47 @@ function helm(state) {
 
 function notch(count) {
   const n = el('div', 'notch');
-  const shields = el('button', 'notch-shields', String(count));
+  const shields = el('button', 'notch-shields');
   shields.setAttribute('aria-label', `Shields, ${count} blocked`);
+  const shieldIcon = svg('svg', {
+    width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true'
+  });
+  shieldIcon.append(svg('path', { d: 'M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z' }));
+  shields.append(shieldIcon, el('span', null, String(count)));
   n.append(shields);
-  for (const label of ['Minimize', 'Maximize', 'Close']) {
+
+  const actions = {
+    Minimize: 'minimize-window',
+    Maximize: 'maximize-window',
+    Close: 'close-window',
+  };
+
+  const btns = [
+    { label: 'Minimize', d: 'M6 12h12' },
+    { label: 'Maximize', rect: true },
+    { label: 'Close', d: 'M6 6l12 12M18 6L6 18' },
+  ];
+  for (const info of btns) {
     const b = el('button', 'notch-button');
-    b.setAttribute('aria-label', label);
+    b.setAttribute('aria-label', info.label);
+    const s = svg('svg', {
+      width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', 'aria-hidden': 'true'
+    });
+    if (info.rect) {
+      s.append(svg('rect', { x: 5, y: 5, width: 14, height: 14, rx: 2 }));
+    } else {
+      s.append(svg('path', { d: info.d }));
+    }
+    b.append(s);
+    b.addEventListener('click', () => {
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: actions[info.label] }));
+      }
+    });
     n.append(b);
   }
   return n;
@@ -78,7 +113,9 @@ export function renderShell(root, state) {
       panel.append(site);
     }
     root.append(panel);
-    if (state.dimPage) root.append(el('div', 'page-dim'));
+    if (state.dimPage && !state.pageHtml?.includes('rgba(0,0,0,.5)')) {
+      root.append(el('div', 'page-dim'));
+    }
   }
 
   root.append(helm(state.helm || { kind: 'empty' }));

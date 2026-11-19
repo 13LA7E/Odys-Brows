@@ -99,7 +99,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P2-01 Sky.** §5. Still mode exactly as drawn; Off; Drifting (very slow, sparse); shooting stars (rare, subtle). Render to a canvas at device pixel ratio; no work while the window is hidden; under 1% CPU when idle in Still mode (awaiting Owner OK on Drifting and comets).
   - Edge: §1 (scaling, reduced motion)
   - Done when: [Main] sky matches; CPU measured and logged; Owner OK on Drifting and comets.
-- [ ] **P2-02 Notch.** §8. Frameless window: drag region, double-click to maximise, Windows snap layouts, resize edges, our own min/max/close on both OSes. Shields count is wired in Phase 5 (show 0 until then).
+- [x] **P2-02 Notch.** §8. Frameless window: drag region, double-click to maximise, Windows snap layouts, resize edges, our own min/max/close on both OSes. Shields count is wired in Phase 5 (show 0 until then).
   - Edge: §12
   - Done when: matches the notch in every board; window behaviour tested on both OSes.
 - [ ] **P2-03 Trail rail, collapsed.** §6. Including the **plus** in the new-tab ring (the sketch's "T" is a known flaw). Tab model holds `openerId` from the engine's new-window event.

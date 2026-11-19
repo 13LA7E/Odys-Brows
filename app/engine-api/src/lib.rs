@@ -157,6 +157,13 @@ pub trait Engine {
     fn answer_permission(&mut self, request: u64, allow: bool);
     /// Answer a [`Event::CertificateError`] (proceed only after the user chose to).
     fn answer_certificate_error(&mut self, request: u64, proceed: bool);
+
+    /// Minimize the main browser window.
+    fn minimize_window(&mut self);
+    /// Toggle maximize / restore of the main browser window.
+    fn toggle_maximize_window(&mut self);
+    /// Close the main browser window (terminates the application).
+    fn close_window(&mut self);
 }
 
 /// Where our own browser UI (the HTML in `ui/`) lives on disk.

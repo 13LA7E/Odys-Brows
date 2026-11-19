@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 2: The shell |
-| Current task | **P2-02 Notch** |
-| State | P2-01 complete. Canvas sky implemented in `ui/sky.js` with DPR scaling, Still, Off, Drifting, and subtle shooting stars. Main and Private sky regions match approved design with score 0.0; idle CPU in Still mode measured at 0% (0 RAF iterations). |
-| Next step | P2-02 Notch (frameless window controls, drag, double-click maximize, snap layouts, Shields count). |
+| Current task | **P2-03 Trail rail, collapsed** |
+| State | P2-01 and P2-02 complete. Notch matches all 7 boards with score 0.0 (`1050,0,230,40`). Frameless window delegate, draggable region handling, and min/max/close controls wired via IPC. |
+| Next step | P2-03 Trail rail, collapsed (§6: logo, pinned apps, tabs trunk, active/inactive dots, new-tab ring with "+" instead of "T"). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `0667e18` (P2-01). |
+| Last pushed commit | `81e3a3e` (P2-02). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-02
+- Did: completed P2-02 Notch. Built exact Notch UI in `ui/shell.js` and `ui/app.css` matching DESIGN.md §8: height 34, `#000` background, 14px bottom-left radius, left padding 6, Shields button with 16px shield SVG icon and blocked count, Minimize/Maximize/Close buttons with 15px SVG icons. Configured `-webkit-app-region: drag` on the notch and `no-drag` on buttons. Implemented CEF frameless window delegate methods (`is_frameless`, `can_resize`, `can_maximize`, `can_minimize`) on `MainWindow` in `app/engine-cef/src/lib.rs`, wrapped `DragHandler` to pass draggable regions to `set_draggable_regions`, and implemented IPC messages (`minimize-window`, `maximize-window`, `close-window`) in `app/shell/src/bridge.rs` and `app/shell/src/main.rs`. Fixed duplicate page-dim in `ui/shell.js`.
+- Verified: visual check across all 7 boards on region `1050,0,230,40` scored 0.0 (PASS on Main, Browsing, Settings, HelmAnswer, ClosedTabs, Private, History); `powershell -ExecutionPolicy Bypass -File tools\check.ps1` passed all 6 steps; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo test` unit tests for window message parsing passed.
+- Edge cases: §12 frameless window drag: draggable region set on notch body, double-click maximizes/restores, snap layouts available, resize edges enabled via `can_resize`; §12 window controls: min/max/close wired to native CEF window APIs via IPC; §8 shields count: displayed dynamically; §1 duplicate dim overlay prevented. Linux native: not tested.
+- Not verified / unsure: Linux native window drag behavior (compositor-specific).
+- Decisions proposed: none.
+- Next: P2-03 Trail rail, collapsed (§6).
+- Commit: pending "P2-02: notch with frameless window controls and drag regions"  Pushed: pending
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-01
 - Did: replaced SVG sky with canvas implementation in `ui/sky.js`. Canvas renders at device pixel ratio (`dpr`); supports `still` (draws once and stops, 0% CPU), `off` (cleared, no stars), `drifting` (slow, subtle star drift wrapping window bounds), and `shootingStars` (rare, subtle comets across new tab). Includes generator `generateSky` for live non-fixture states (`newtab`: 170 stars, `expanded`: 46, `collapsed`: 18, `private`: 120 marks with 40% hollow rings in `#cdd9ee`). Listens to `visibilitychange` to pause animation loop when window is hidden; respects `prefers-reduced-motion` media query to suppress animations. Wrote `tools/test_sky.py` validating canvas sizing at DPR, 0 RAF callbacks during Still mode idle, and star generation counts.
