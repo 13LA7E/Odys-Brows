@@ -57,7 +57,7 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
 - [~] **P0-05 Chrome style without Chrome's UI, and extensions.** Windows done (table under D-003); **\* LINUX PENDING \***. Confirm Chrome style lets us hide all of Chrome's own toolbar and tab strip. Then install and run these MV3 extensions: uBlock Origin Lite, Bitwarden, Dark Reader, once from the Chrome Web Store page and once from a .crx/unpacked folder. Note what works: popup, options page, content scripts, background service worker.
   - Edge: §10
   - Done when: a results table is in DECISIONS under D-003 for both OSes; D-003 is re-confirmed or a problem is written up for the owner.
-- [ ] **P0-06 DRM test.** Enable Widevine (component updater) and try a public Widevine test stream (for example the Shaka Player demo's Widevine assets or Bitmovin's DRM demo) on both OSes.
+- [~] **P0-06 DRM test.** Windows done (D-015 table); **\* LINUX PENDING \***. Enable Widevine (component updater) and try a public Widevine test stream (for example the Shaka Player demo's Widevine assets or Bitmovin's DRM demo) on both OSes.
   - Done when: D-015 records exactly what happened on each OS (works / fails with error / not tried), with no guessing.
 - [ ] **P0-07 Memory baseline.** Write `tools/bench/` with a fixed list of 10 public URLs (news, video, docs, webmail login page, a long article, a web app) and a script that opens them in a browser, waits 60 s, and records **total private memory of all the browser's processes** (Windows: sum of Private Bytes; Linux: sum of PSS from `/proc/*/smaps_rollup`) plus average CPU over 60 s idle. Run it for Chrome, Edge (Windows), Brave, Firefox and the spike.
   - Edge: §9

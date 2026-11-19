@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-06 DRM test** (Windows) |
-| State | **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-06: enable Widevine through CEF's component updater in a spike (start from `spike/p0-05-extensions`), play a public Widevine test stream (Shaka Player demo or Bitmovin DRM demo), record exactly what happens in D-015. |
+| Current task | **P0-07 Memory baseline** (Windows) |
+| State | **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-07: write `tools/bench/` (10 fixed public URLs, open them, wait 60 s, sum Private Bytes of all browser processes, average CPU over 60 s idle), run it for Chrome, Edge, Brave, Firefox (whichever are installed) and the spike; write `docs/BENCHMARKS.md`. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `fd848b3` (P0-04b); P0-05 commit follows (see the session log) |
+| Last pushed commit | `56f66b5` (P0-05); P0-06 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
@@ -25,6 +25,8 @@
 
 ## Questions for the owner
 
+- Q-08 (from P0-06): the stock CEF build plays no H.264/AAC, so H.264-only video (with or without DRM) fails. Build CEF with proprietary codecs (patent licensing to check), or accept VP9/AV1-only? Chosen meanwhile: stock CEF, decide before P9.
+
 - P0-05: installing from the Chrome Web Store works in CEF. Is that acceptable under Google's terms (Q-04)? Chosen meanwhile: keep testing with it, decide before P6.
 
 - D-009 (Proposed in P0-04): may we build the Helm and popovers as off-screen Alloy views in a layered window? If P0-04b fails, is a square-cornered Helm (overlay views) acceptable for now (Q-06)? Chosen meanwhile: continue with P0-04b, the option that keeps the design exact.
@@ -36,6 +38,7 @@
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
 - **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
+- **P0-06:** no H.264/AAC (Q-08); VMP signing for commercial streaming untested; whether Widevine arrives without a manual component check is unverified; Linux not tested.
 - **P0-05:** extension-opened tabs open a native Chrome window (must be caught; callback unverified); Chrome's registry-registered external extensions are picked up and downloaded into our profile (must be turned off; method unverified); the action popup has no button (P6-02); unpacked extensions don't persist via `--load-extension`; Linux not tested.
 - **P0-04b:** IME untested; IME candidate window placement not done; screen-reader access to the off-screen Helm unverified; input-to-paint 25–48 ms (shared-texture path untested); Linux window path not designed.
 - **P0-04:** Linux not tested. Option (a) (page off-screen) not built because CEF windowless is always Alloy style (no Chrome style extensions). Tab switching with a single Chrome style BrowserView per window is unverified (test in P1-02). Page content fixed to the bottom can sit under the Helm (decide in P2-05). The min/max resize captures show only Helm placement (PrintWindow returned stale page frames).
@@ -43,7 +46,7 @@
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux column of the P0-05 table, the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux columns of the P0-05 and P0-06 tables, the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -74,6 +77,16 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-06 (Windows)
+- Did: `spike/p0-06-drm/eme-probe.html` (MSE codecs + EME key systems) and `play.html` (Shaka Player 4.12.6 from jsDelivr, two public Widevine demo assets, Shaka's public license proxy), run in the P0-05 spike binary, served from `http://localhost:8765` (secure context). D-015 results table, new Q-08 (H.264/AAC), README.
+- Verified: fresh profile `chrome://components` lists "Widevine Content Decryption Module" 0.0.0.0 New; after "Check for update" + 60 s: 4.10.3112.0 Up-to-date, `WidevineCdm/4.10.3112.0/_platform_specific/win_x64/widevinecdm.dll` (22,970,008 bytes) + `.sig` on disk. Shaka support page: `com.widevine.alpha` with `SW_SECURE_CRYPTO`, `SW_SECURE_DECODE`, `cenc`, `cbcs`, persistentState false; PlayReady/FairPlay null. MSE: avc1 false, mp4a false, vp9/opus/av1 true. Playback: Angel One VP9 768x576 currentTime 7.3 s, Sintel VP9 1280x546 currentTime 7.5 s, both `com.widevine.alpha`, not paused (`spike/shots/p0-06-widevine-playback.png`).
+- Mistake caught: the first probe ran from `file://`, where EME is never allowed (opaque origin), so its "not available" result was discarded and the test redone over http://localhost and https.
+- Edge cases: §1 slow/no network: the CDM download needs network; offline behaviour not tested. First run (no CDM yet): handled + checked by hand (DRM pages fail until the component arrives; we should tell the user, P4-06). Linux: not tested. §4 heavy pages/full-screen video: not tested here.
+- Not verified / unsure: whether Widevine downloads without the manual click; VMP signing and HD robustness for commercial services; Linux.
+- Decisions proposed: none; Q-08 added (owner decision on proprietary codecs).
+- Next: P0-07 (memory baseline, `tools/bench/`, BENCHMARKS.md) on Windows.
+- Commit: see git log "P0-06: Widevine works with VP9 on Windows; no H.264/AAC in stock CEF"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-05 (Windows)
 - Did: `spike/p0-05-extensions` (P0-02 window + `--toolbar=` + `--then=`), `run.ps1`, `shot-main.ps1`. Fetched uBlock Origin Lite 2026.1116.1650, Bitwarden 2026.10.2 and Dark Reader 4.9.135 as CRX3 from Google's update service and unpacked them outside the repo (path-checked). Tested Chrome UI hiding, unpacked load, Web Store install, service workers, content scripts, DNR blocking, options and popup pages. Results table under D-003, README with problems, three new edge-case kinds in EDGE_CASES §10.
 - Verified: build OK (into the shared `../p0-04-helm/target`), clippy clean. `chrome://extensions` lists all three enabled (`spike/shots/p0-05-extensions-page.png`). `--toolbar=normal`/`location` show no toolbar in our window. `chrome://serviceworker-internals` shows the three workers, uBOL RUNNING. Dark Reader darkened Wikipedia. With uBOL, `pagead2.googlesyndication.com/pagead/js/adsbygoogle.js` ended on `chrome-extension://<uBOL>/strictblock.html#...`; without extensions: `ERR_ABORTED`, no extension page. Popup/options pages as tabs: `load_end status=200`. Web Store: rejected Google's consent ("Reject all"), clicked "Add to Chrome", Chrome's prompt appeared, clicked "Add extension"; `Secure Preferences` then lists Dark Reader with `location=1 from_webstore=True`, and `Default/Extensions/<id>/4.9.135_0` exists.
@@ -82,7 +95,7 @@ Copy this template for each session:
 - Not verified / unsure: Google's terms for Web Store installs (Q-04); how to stop external-extension sources; which callback catches extension-opened tabs; persisting unpacked extensions via developer mode.
 - Decisions proposed: none new (D-003 re-confirmed on Windows; table added).
 - Next: P0-06 (Widevine) on Windows.
-- Commit: see git log "P0-05: Chrome UI hidden and MV3 extensions on Windows"  Pushed: yes
+- Commit: `56f66b5` "P0-05: Chrome UI hidden and MV3 extensions on Windows"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04b (Windows)
 - Did: `spike/p0-04-helm/src/osr.rs` + `--mode=osr`: the Helm as an Alloy windowless browser (transparent background, 60 fps) painted with `UpdateLayeredWindow(ULW_ALPHA)` into a `WS_EX_LAYERED` popup owned by the main window; WndProc forwards mouse (move/leave/buttons/wheel), keys, focus and IME composition/commit; cursor via `on_cursor_change`; `WM_NCHITTEST` returns `HTTRANSPARENT` outside the pill so the shadow doesn't block the page; placement skips while the owner is minimised; Esc returns focus to the page. `ui/helm.html` gets a 48 px shadow margin and the design's shadow in this mode. `HELM_DUMP` writes the last frame so `shot-all.ps1` can composite it with real alpha. `windows-sys` 0.61.2 used directly (already in the tree through `cef`; no new crate). README section, D-009 result, PHASES `[~]`.

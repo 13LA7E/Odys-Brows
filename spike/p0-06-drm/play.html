@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>Widevine playback (P0-06)</title>
+<style>body{font:18px/1.5 system-ui,sans-serif;background:#111;color:#eee;padding:20px} video{width:640px;background:#000} .ok{color:#6ee7b7} .no{color:#ff8fa3}</style>
+<h1>Widevine playback test (P0-06)</h1>
+<video id="v" muted autoplay playsinline></video>
+<div id="out"></div>
+<!-- Shaka Player from a pinned CDN build; public Shaka demo assets and license proxy. -->
+<script src="https://cdn.jsdelivr.net/npm/shaka-player@4.12.6/dist/shaka-player.compiled.js"></script>
+<script>
+const out = document.getElementById('out');
+const say = (html) => { out.insertAdjacentHTML('beforeend', '<div>' + html + '</div>'); };
+const LICENSE = 'https://cwip-shaka-proxy.appspot.com/no_auth';
+const ASSETS = [
+  ['Angel One (multicodec, Widevine)', 'https://storage.googleapis.com/shaka-demo-assets/angel-one-widevine/dash.mpd'],
+  ['Sintel (Widevine)', 'https://storage.googleapis.com/shaka-demo-assets/sintel-widevine/dash.mpd'],
+];
+async function tryAsset(name, url) {
+  const video = document.getElementById('v');
+  const player = new shaka.Player();
+  await player.attach(video);
+  player.configure({ drm: { servers: { 'com.widevine.alpha': LICENSE } } });
+  try {
+    await player.load(url);
+    await new Promise(r => setTimeout(r, 8000));
+    const t = video.currentTime;
+    const track = player.getVariantTracks().find(x => x.active) || {};
+    const drm = player.drmInfo() || {};
+    const ok = t > 1;
+    say(`<b>${name}</b>: <span class="${ok ? 'ok' : 'no'}">${ok ? 'PLAYING' : 'NOT PLAYING'}</span> currentTime=${t.toFixed(1)}s, video codec=${track.videoCodec}, ${track.width}x${track.height}, keySystem=${drm.keySystem}, paused=${video.paused}`);
+  } catch (e) {
+    say(`<b>${name}</b>: <span class="no">ERROR</span> code=${e.code} category=${e.category} ${e.message || ''} data=${JSON.stringify(e.data || []).slice(0, 300)}`);
+  }
+  await player.destroy();
+}
+(async () => {
+  shaka.polyfill.installAll();
+  if (!shaka.Player.isBrowserSupported()) { say('<span class="no">Shaka: browser not supported</span>'); return; }
+  for (const [n, u] of ASSETS) await tryAsset(n, u);
+  document.title = 'done';
+  say('done');
+})();
+</script>

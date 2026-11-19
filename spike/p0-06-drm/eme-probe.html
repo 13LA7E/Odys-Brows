@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>EME probe</title>
+<style>body{font:20px/1.5 system-ui,sans-serif;background:#111;color:#eee;padding:24px} .ok{color:#6ee7b7} .no{color:#ff8fa3}</style>
+<h1>EME / codec probe (P0-06)</h1>
+<div id="out">running…</div>
+<script>
+// Reports what this browser build supports: codecs (MSE) and Widevine through EME.
+const out = document.getElementById('out');
+const rows = [];
+const line = (k, v, ok) => rows.push(`<div><b>${k}</b>: <span class="${ok ? 'ok' : 'no'}">${v}</span></div>`);
+const codecs = {
+  'H.264 (mp4 avc1)': 'video/mp4; codecs="avc1.42E01E"',
+  'AAC (mp4 mp4a)': 'audio/mp4; codecs="mp4a.40.2"',
+  'VP9 (webm)': 'video/webm; codecs="vp9"',
+  'Opus (webm)': 'audio/webm; codecs="opus"',
+  'AV1 (mp4)': 'video/mp4; codecs="av01.0.05M.08"',
+};
+for (const [k, t] of Object.entries(codecs)) { const ok = window.MediaSource && MediaSource.isTypeSupported(t); line('MSE ' + k, ok ? 'supported' : 'NOT supported', ok); }
+const configs = {
+  'Widevine + VP9/webm': [{ initDataTypes: ['webm'], videoCapabilities: [{ contentType: 'video/webm; codecs="vp9"' }] }],
+  'Widevine + H.264/mp4 (cenc)': [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }],
+  'ClearKey + VP9/webm': [{ initDataTypes: ['webm'], videoCapabilities: [{ contentType: 'video/webm; codecs="vp9"' }] }],
+};
+(async () => {
+  for (const [k, cfg] of Object.entries(configs)) {
+    const ks = k.startsWith('ClearKey') ? 'org.w3.clearkey' : 'com.widevine.alpha';
+    try {
+      const a = await navigator.requestMediaKeySystemAccess(ks, cfg);
+      const mk = await a.createMediaKeys();
+      line('EME ' + k, 'available (' + a.keySystem + ', MediaKeys created: ' + !!mk + ')', true);
+    } catch (e) { line('EME ' + k, 'NOT available: ' + e.name + ' ' + e.message, false); }
+  }
+  out.innerHTML = rows.join('');
+  document.title = 'EME probe done';
+})();
+</script>

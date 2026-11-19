@@ -120,6 +120,15 @@ Providers: none (default); a local server (Ollama, LM Studio, any OpenAI-compati
 - Linux was not confirmed at all.
 - Test streaming playback on both systems in P0-06 and report honestly. Licensing or signing needs for a CEF app are *unverified*.
 
+**P0-06 results (19 Nov 2026). Details: `spike/p0-06-drm/README.md`.**
+
+| | Windows 11 | Linux |
+|---|---|---|
+| Widevine CDM | **Works.** Listed in `chrome://components`; version 4.10.3112.0 downloaded into the profile after "Check for update" (no switch needed). Pages see `com.widevine.alpha` (L3: `SW_SECURE_CRYPTO`/`SW_SECURE_DECODE`, `cenc` + `cbcs`) | not tried |
+| Widevine playback | **Works with VP9**: Shaka demo assets Angel One (VP9 768x576) and Sintel (VP9 1280x546) played with Shaka's public license proxy | not tried |
+| H.264 / AAC | **Fail: not supported** by the stock CEF build (no proprietary codecs), so H.264-only streams can't play | not tried |
+| VMP signing / HD robustness for commercial services | not tried (*unverified*) | not tried |
+
 ## D-016 Agent-neutral repo. Accepted
 
 All instructions live in `AGENTS.md`, read natively by Kimi Code, OpenCode (the harness NVIDIA documents for Nemotron), Google Antigravity (Gemini) and Codex. `CLAUDE.md` contains only `@AGENTS.md`. Claude Code reads AGENTS.md on its own only when there is no CLAUDE.md, and only from v2.1.277 on, so the import keeps it working everywhere. There is no `GEMINI.md`: Antigravity gives it priority over AGENTS.md, so it would split the rules. State lives in `docs/STATUS.md`, not in any tool's memory or chat history.
@@ -137,6 +146,7 @@ All instructions live in `AGENTS.md`, read natively by Kimi Code, OpenCode (the 
 | Q-05 | Licence for this project's own code (open source or closed)? | P1 |
 | Q-06 | Fallback if the Helm can't float over the page (D-009). | after P0-04 |
 | Q-07 | Import bookmarks/passwords from other browsers? | P8 |
+| Q-08 | H.264/AAC: the stock CEF build has none (P0-06). Build CEF with proprietary codecs (patent licensing to check), or accept VP9/AV1-only video? | before P9 |
 
 ---
 
