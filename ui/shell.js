@@ -144,17 +144,39 @@ export function renderShell(root, state) {
       isPrivate: !!state.private,
       onSelectTab: (id) => {
         state.activeTab = id;
+        const current = state.tabs?.find((t) => t.id === id);
+        if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
+          state.page = 'web';
+        } else if (current?.url?.startsWith('odyssey://')) {
+          state.page = 'internal';
+        } else {
+          state.page = 'none';
+        }
         renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'show', view: id }));
+        }
       },
       onNewTab: () => {
-        const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : (state.tabCount || 1)) + 1;
-        if (state.tabs) {
-          state.tabs.push({ id: nextId, title: 'New tab' });
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
         } else {
-          state.tabCount = (state.tabCount || 1) + 1;
+          const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : (state.tabCount || 1)) + 1;
+          if (state.tabs) {
+            state.tabs.push({ id: nextId, title: 'New tab' });
+          } else {
+            state.tabCount = (state.tabCount || 1) + 1;
+          }
+          state.activeTab = nextId;
+          renderShell(root, state);
         }
-        state.activeTab = nextId;
+      },
+      onExpand: () => {
+        state.rail = 'expanded';
         renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: 264 }));
+        }
       },
       onOpenSettings: () => {
         if (typeof window.odysseyBridge === 'function') {
@@ -183,17 +205,35 @@ export function renderShell(root, state) {
       isPrivate: !!state.private,
       onSelectTab: (id) => {
         state.activeTab = id;
+        const current = state.tabs?.find((t) => t.id === id);
+        if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
+          state.page = 'web';
+        } else if (current?.url?.startsWith('odyssey://')) {
+          state.page = 'internal';
+        } else {
+          state.page = 'none';
+        }
         renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'show', view: id }));
+        }
       },
       onNewTab: () => {
-        const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : 0) + 1;
-        state.tabs.push({ id: nextId, title: 'New tab' });
-        state.activeTab = nextId;
-        renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
+        } else {
+          const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : 0) + 1;
+          state.tabs.push({ id: nextId, title: 'New tab' });
+          state.activeTab = nextId;
+          renderShell(root, state);
+        }
       },
       onCollapse: () => {
         state.rail = 'collapsed';
         renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: 56 }));
+        }
       },
       onOpenSettings: () => {
         if (typeof window.odysseyBridge === 'function') {
@@ -276,10 +316,21 @@ export function renderShell(root, state) {
 
   if (state.private && (state.page === 'none' || state.privateCopy)) {
     root.append(renderPrivateCopy(state.privateCopy || {}));
-  } else if (state.page === 'none' || state.newTab) {
+  } else if (state.page === 'none') {
     renderNewTab(root, state, (tabId) => {
       state.activeTab = tabId;
+      const current = state.tabs?.find((t) => t.id === tabId);
+      if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
+        state.page = 'web';
+      } else if (current?.url?.startsWith('odyssey://')) {
+        state.page = 'internal';
+      } else {
+        state.page = 'none';
+      }
       renderShell(root, state);
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'show', view: tabId }));
+      }
     });
   }
 
@@ -292,22 +343,28 @@ export function renderShell(root, state) {
   root.append(renderHelm(state.helm || { kind: 'empty' }, {
     onBack: () => {
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({ type: 'back' }));
+        window.odysseyBridge(JSON.stringify({ type: 'back', view: state.activeTab }));
       }
     },
     onForward: () => {
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({ type: 'forward' }));
+        window.odysseyBridge(JSON.stringify({ type: 'forward', view: state.activeTab }));
       }
     },
     onReload: () => {
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({ type: 'reload' }));
+        window.odysseyBridge(JSON.stringify({ type: 'reload', view: state.activeTab }));
       }
     },
     onNavigate: (target) => {
+      const url = typeof target === 'string' ? target : (target?.url || '');
+      if (!url) return;
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({ type: 'navigate', target }));
+        if (state.activeTab && state.page === 'web') {
+          window.odysseyBridge(JSON.stringify({ type: 'navigate', view: state.activeTab, url }));
+        } else {
+          window.odysseyBridge(JSON.stringify({ type: 'open', url }));
+        }
       }
     },
     onOpenDownloads: () => {

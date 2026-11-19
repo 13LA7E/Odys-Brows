@@ -1,7 +1,8 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { FIXTURES, SHIELDS_COUNT } from './fixtures.js';
+import { SHIELDS_COUNT } from './fixtures.js';
 import { renderShell } from './shell.js';
 import { onMessage } from './bridge.js';
+import { initPageBasicsShortcuts } from './pagebasics.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
@@ -13,19 +14,25 @@ export async function startLive() {
     sky = [];
   }
 
-  const base = FIXTURES.Main || {};
   const state = {
-    ...base,
+    rail: 'collapsed',
+    tabs: [],
+    activeTab: null,
+    page: 'none',
     sky,
     shields: SHIELDS_COUNT,
     activeSpace: 0,
+    helm: { kind: 'empty' },
   };
+
+  initPageBasicsShortcuts(() => app, () => state.activeTab);
 
   onMessage((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'view-opened') {
       if (!state.tabs) state.tabs = [];
-      if (!state.tabs.some((t) => t.id === msg.view)) {
+      const existing = state.tabs.find((t) => t.id === msg.view);
+      if (!existing) {
         state.tabs.push({ id: msg.view, title: 'New tab', parent: msg.opener });
       }
       state.activeTab = msg.view;
@@ -34,7 +41,20 @@ export async function startLive() {
       if (state.tabs) {
         state.tabs = state.tabs.filter((t) => t.id !== msg.view);
         if (state.activeTab === msg.view) {
-          state.activeTab = state.tabs[0]?.id ?? 1;
+          state.activeTab = state.tabs[state.tabs.length - 1]?.id ?? null;
+          if (state.activeTab) {
+            const current = state.tabs.find((t) => t.id === state.activeTab);
+            if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
+              state.page = 'web';
+            } else if (current?.url?.startsWith('odyssey://')) {
+              state.page = 'internal';
+            } else {
+              state.page = 'none';
+            }
+          } else {
+            state.page = 'none';
+            state.helm = { kind: 'empty' };
+          }
         }
       }
       renderShell(app, state);
@@ -43,19 +63,26 @@ export async function startLive() {
         const tab = state.tabs.find((t) => t.id === msg.view);
         if (tab) tab.url = msg.url;
       }
-      if (state.activeTab === msg.view) {
-        try {
-          const u = new URL(msg.url);
-          if (u.protocol === 'odyssey:') {
-            state.page = 'internal';
-            state.pageName = u.hostname;
-            state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
-          } else {
+      if (state.activeTab === msg.view || state.activeTab == null) {
+        state.activeTab = msg.view;
+        if (!msg.url || msg.url === 'about:blank') {
+          state.page = 'none';
+          state.helm = { kind: 'empty' };
+        } else {
+          try {
+            const u = new URL(msg.url);
+            if (u.protocol === 'odyssey:') {
+              state.page = 'internal';
+              state.pageName = u.hostname;
+              state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
+            } else {
+              state.page = 'web';
+              state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+            }
+          } catch (_) {
             state.page = 'web';
-            state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+            state.helm = { kind: 'address', address: { kind: 'web', host: msg.url, path: '' } };
           }
-        } catch (_) {
-          state.helm = { kind: 'address', address: { kind: 'web', host: msg.url, path: '' } };
         }
       }
       renderShell(app, state);
@@ -65,6 +92,12 @@ export async function startLive() {
         if (tab) tab.title = msg.title;
       }
       renderShell(app, state);
+    } else if (msg.type === 'loading') {
+      if (state.activeTab === msg.view && state.helm && state.helm.kind === 'address') {
+        state.isLoading = msg.loading;
+        state.canGoBack = msg.can_go_back;
+        state.canGoForward = msg.can_go_forward;
+      }
     } else if (msg.type === 'settings-loaded') {
       state.settings = msg.settings;
       renderShell(app, state);

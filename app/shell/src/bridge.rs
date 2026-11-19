@@ -8,38 +8,65 @@ use serde::{Deserialize, Serialize};
 /// Largest message we accept from the UI (EDGE_CASES §1: huge input).
 pub const MAX_MESSAGE_BYTES: usize = 256 * 1024;
 
+fn deserialize_url<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::String(u)) = map.get("url") {
+                Ok(u.clone())
+            } else {
+                Ok(String::new())
+            }
+        }
+        _ => Ok(String::new()),
+    }
+}
+
 /// Messages our UI sends to Rust.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FromUi {
     /// Open a new page view with this URL and show it.
     Open {
+        #[serde(deserialize_with = "deserialize_url", alias = "target")]
         url: String,
         #[serde(default)]
         opener: Option<ViewId>,
     },
     Navigate {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
+        #[serde(deserialize_with = "deserialize_url", alias = "target")]
         url: String,
     },
     Back {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     Forward {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     Reload {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     Stop {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     /// Show this view and hide the others (a tab switch).
     Show {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     Close {
-        view: ViewId,
+        #[serde(default)]
+        view: Option<ViewId>,
     },
     /// Window controls from the notch (P2-02).
     MinimizeWindow,
@@ -292,7 +319,24 @@ mod tests {
         );
         assert_eq!(
             parse(r#"{"type":"back","view":3}"#),
-            Ok(FromUi::Back { view: 3 })
+            Ok(FromUi::Back { view: Some(3) })
+        );
+        assert_eq!(parse(r#"{"type":"back"}"#), Ok(FromUi::Back { view: None }));
+        assert_eq!(
+            parse(r#"{"type":"navigate","target":"https://example.com"}"#),
+            Ok(FromUi::Navigate {
+                view: None,
+                url: "https://example.com".into()
+            })
+        );
+        assert_eq!(
+            parse(
+                r#"{"type":"navigate","target":{"kind":"search","url":"https://duckduckgo.com/?q=test"}}"#
+            ),
+            Ok(FromUi::Navigate {
+                view: None,
+                url: "https://duckduckgo.com/?q=test".into()
+            })
         );
         assert_eq!(
             parse(r#"{"type":"minimize-window"}"#),

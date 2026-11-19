@@ -333,8 +333,7 @@ impl Shell {
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
-        if self.is_private
-            || url.is_empty()
+        if url.is_empty()
             || url.starts_with("odyssey://")
             || url.starts_with("odyssey-ui://")
             || url.starts_with("about:")
@@ -342,6 +341,17 @@ impl Shell {
             return;
         }
         self.tab_urls.insert(view, url.to_string());
+        if self.shown == Some(view) {
+            engine_api::Engine::set_bounds(
+                &mut CefEngine,
+                view,
+                page_bounds(&CefEngine, self.rail_width),
+            );
+            engine_api::Engine::set_visible(&mut CefEngine, view, true);
+        }
+        if self.is_private {
+            return;
+        }
         let opener_visit_id = self
             .tabs
             .iter()
@@ -360,10 +370,10 @@ impl Shell {
     }
 
     fn on_title_changed(&mut self, view: ViewId, title: &str) {
+        self.tab_titles.insert(view, title.to_string());
         if self.is_private {
             return;
         }
-        self.tab_titles.insert(view, title.to_string());
         let visit_id = match self.tab_visit_id.get(&view).copied() {
             Some(id) => id,
             None => return,
@@ -381,8 +391,21 @@ impl Shell {
         if let Some(old) = self.shown.filter(|v| *v != view) {
             engine.set_visible(old, false);
         }
-        engine.set_bounds(view, page_bounds(engine, self.rail_width));
-        engine.set_visible(view, true);
+        let url = self
+            .tab_urls
+            .get(&view)
+            .map(|s| s.as_str())
+            .unwrap_or_default();
+        if url.is_empty()
+            || url == "about:blank"
+            || url.starts_with("odyssey://")
+            || url.starts_with("odyssey-ui://")
+        {
+            engine.set_visible(view, false);
+        } else {
+            engine.set_bounds(view, page_bounds(engine, self.rail_width));
+            engine.set_visible(view, true);
+        }
         self.shown = Some(view);
         self.persist_session();
     }
@@ -404,13 +427,61 @@ impl Shell {
                 }
                 engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
             }
-            FromUi::Navigate { view, url } if known(self, view) => engine.navigate(view, &url),
-            FromUi::Back { view } if known(self, view) => engine.go_back(view),
-            FromUi::Forward { view } if known(self, view) => engine.go_forward(view),
-            FromUi::Reload { view } if known(self, view) => engine.reload(view),
-            FromUi::Stop { view } if known(self, view) => engine.stop(view),
-            FromUi::Show { view } => self.show(engine, view),
-            FromUi::Close { view } if known(self, view) => engine.close_view(view),
+            FromUi::Navigate { view, url } => {
+                let target = view.or(self.shown);
+                if let Some(v) = target {
+                    if known(self, v) {
+                        engine.navigate(v, &url);
+                        if !url.is_empty() {
+                            self.on_url_changed(v, &url);
+                        }
+                    }
+                } else if !url.is_empty() {
+                    let new_view = engine.create_view(&url);
+                    self.tabs.push(Tab {
+                        view: new_view,
+                        opener: None,
+                        space: self.active_space,
+                        pinned: false,
+                    });
+                    self.show(engine, new_view);
+                    self.on_url_changed(new_view, &url);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+                        view: new_view,
+                        opener: None,
+                    }));
+                }
+            }
+            FromUi::Back { view } => {
+                if let Some(v) = view.or(self.shown).filter(|&v| known(self, v)) {
+                    engine.go_back(v);
+                }
+            }
+            FromUi::Forward { view } => {
+                if let Some(v) = view.or(self.shown).filter(|&v| known(self, v)) {
+                    engine.go_forward(v);
+                }
+            }
+            FromUi::Reload { view } => {
+                if let Some(v) = view.or(self.shown).filter(|&v| known(self, v)) {
+                    engine.reload(v);
+                }
+            }
+            FromUi::Stop { view } => {
+                if let Some(v) = view.or(self.shown).filter(|&v| known(self, v)) {
+                    engine.stop(v);
+                }
+            }
+            FromUi::Show { view } => {
+                if let Some(v) = view.or(self.shown) {
+                    self.show(engine, v);
+                }
+            }
+            FromUi::Close { view } => {
+                if let Some(v) = view.or(self.shown).filter(|&v| known(self, v)) {
+                    engine.close_view(v);
+                }
+            }
             FromUi::MinimizeWindow => engine.minimize_window(),
             FromUi::MaximizeWindow => engine.toggle_maximize_window(),
             FromUi::CloseWindow => engine.close_window(),
@@ -443,6 +514,24 @@ impl Shell {
                     segdl::set_connections(c as usize);
                 }
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
+                for t in &self.tabs {
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+                        view: t.view,
+                        opener: t.opener,
+                    }));
+                    if let Some(url) = self.tab_urls.get(&t.view) {
+                        engine.send_to_ui(&bridge::to_json(&ToUi::Url {
+                            view: t.view,
+                            url: url.clone(),
+                        }));
+                    }
+                    if let Some(title) = self.tab_titles.get(&t.view) {
+                        engine.send_to_ui(&bridge::to_json(&ToUi::Title {
+                            view: t.view,
+                            title: title.clone(),
+                        }));
+                    }
+                }
             }
             FromUi::DownloadControl { id, action } => {
                 if !segdl::control(&id, &action) {
@@ -607,24 +696,35 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
         }
     }
 
+    let pending_events = Rc::new(RefCell::new(Vec::new()));
+    let pending_events_sink = pending_events.clone();
     let events_shell = shell.clone();
     engine.set_event_sink(move |event| {
-        {
-            let mut s = events_shell.borrow_mut();
-            match &event {
-                engine_api::Event::Closed { view } => {
-                    s.close_tab(*view);
-                    let infos = s.closed_tab_infos();
-                    CefEngine
-                        .send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
+        let needs_shell = matches!(
+            &event,
+            engine_api::Event::Closed { .. }
+                | engine_api::Event::UrlChanged { .. }
+                | engine_api::Event::TitleChanged { .. }
+        );
+        if needs_shell {
+            if let Ok(mut s) = events_shell.try_borrow_mut() {
+                match &event {
+                    engine_api::Event::Closed { view } => {
+                        s.close_tab(*view);
+                        let infos = s.closed_tab_infos();
+                        CefEngine
+                            .send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
+                    }
+                    engine_api::Event::UrlChanged { view, url } => {
+                        s.on_url_changed(*view, url);
+                    }
+                    engine_api::Event::TitleChanged { view, title } => {
+                        s.on_title_changed(*view, title);
+                    }
+                    _ => {}
                 }
-                engine_api::Event::UrlChanged { view, url } => {
-                    s.on_url_changed(*view, url);
-                }
-                engine_api::Event::TitleChanged { view, title } => {
-                    s.on_title_changed(*view, title);
-                }
-                _ => {}
+            } else {
+                pending_events_sink.borrow_mut().push(event.clone());
             }
         }
         if let Some(message) = bridge::event_to_ui(&event) {
@@ -633,9 +733,38 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
     });
 
     let ui_shell = shell.clone();
-    engine.set_ui_message_sink(move |json| match bridge::parse(&json) {
-        Ok(message) => ui_shell.borrow_mut().handle(&mut CefEngine, message),
-        Err(reason) => eprintln!("bridge: ignored a malformed message: {reason}"),
+    let drain_pending = pending_events.clone();
+    engine.set_ui_message_sink(move |json| {
+        match bridge::parse(&json) {
+            Ok(message) => ui_shell.borrow_mut().handle(&mut CefEngine, message),
+            Err(reason) => eprintln!("bridge: ignored a malformed message: {reason}"),
+        }
+        loop {
+            let next_event = drain_pending.borrow_mut().pop();
+            match next_event {
+                Some(ev) => {
+                    if let Ok(mut s) = ui_shell.try_borrow_mut() {
+                        match &ev {
+                            engine_api::Event::Closed { view } => {
+                                s.close_tab(*view);
+                                let infos = s.closed_tab_infos();
+                                CefEngine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated {
+                                    tabs: infos,
+                                }));
+                            }
+                            engine_api::Event::UrlChanged { view, url } => {
+                                s.on_url_changed(*view, url);
+                            }
+                            engine_api::Event::TitleChanged { view, title } => {
+                                s.on_title_changed(*view, title);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                None => break,
+            }
+        }
     });
 }
 

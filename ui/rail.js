@@ -66,6 +66,7 @@ export function renderCollapsedRail(railEl, options = {}) {
     onOpenSettings,
     onSwitchSpace,
     onOpenPinnedSite,
+    onExpand,
   } = options;
 
   railEl.replaceChildren();
@@ -152,6 +153,9 @@ export function renderCollapsedRail(railEl, options = {}) {
   } else {
     logo.append(star(20, 'var(--text-strong)', false));
   }
+  logo.addEventListener('click', () => {
+    if (onExpand) onExpand();
+  });
   railEl.append(logo);
 
   if (isPrivate) {

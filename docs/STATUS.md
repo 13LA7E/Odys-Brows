@@ -8,10 +8,10 @@
 |---|---|
 | Phase | 5: Shields and efficiency |
 | Current task | **P5-01 Shields** |
-| State | Phase 4 complete (P4-01 Downloads, P4-02 History store, P4-03 History page, P4-04 Closed tabs, P4-05 Session restore, P4-06 Page basics, P4-07 Pins and spaces). All Phase 4 tasks verified and pushed. |
+| State | Live browser execution and interaction verified! Fixed re-entrant borrow panic on CEF events, wired live Helm navigation and tab switching to native engine, and eliminated dummy fixture tabs in live mode. |
 | Next step | P5-01 Shields (port shields.rs adblock engine, filter list cache, cosmetic filtering, notch count and settings panel). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 529a652 (P4-07). |
+| Last pushed commit | 7572188 (fix(ui): mount live browser UI). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,21 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: live browser navigation and interaction
+- Did:
+  - Fixed re-entrant `RefCell already borrowed` panic in `app/shell/src/main.rs:613`: synchronous CEF callbacks (e.g. `on_loading_state_change` inside `create_view` or `navigate`) now safely use `try_borrow_mut()` and queue deferred events into `drain_pending`, which are processed cleanly right after `handle()` finishes.
+  - Robust bridge message deserialization in `app/shell/src/bridge.rs`: added custom `deserialize_url` supporting both string URLs and classified target objects (`{ kind: 'search', url: '...' }`, `{ kind: 'url', url: '...' }`); made `view` optional on `Navigate`, `Back`, `Forward`, `Reload`, `Stop`, `Show`, `Close`, falling back to `self.shown` or opening new views.
+  - Wired live navigation and tab switching:
+    - In `ui/shell.js`: `onNavigate` resolves URLs/searches and calls `window.odysseyBridge` with `{ type: 'navigate', view, url }` or `{ type: 'open', url }`; `onBack`, `onForward`, `onReload` pass active view; rail tabs in collapsed and expanded modes call `{ type: 'show', view }`; new-tab buttons call `{ type: 'open', url: '' }`.
+    - In `ui/rail.js`: added `onExpand` to `renderCollapsedRail` so clicking the logo star expands the rail.
+    - In `ui/live.js`: removed static dummy fixture tabs; initialized live browser with empty tab list; wired `initPageBasicsShortcuts` (Ctrl+F, Ctrl+P, zoom, devtools); dynamically tracks real open tabs, live URLs, titles, loading state, and closed tab updates.
+  - In `app/shell/src/main.rs`: `LoadSettings` now replays all open tabs from the session to the UI so reloads or restarts restore the full live UI tree.
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (all 6/6 checks passed: formatting, clippy with 0 warnings, 39 cargo tests passing, JS syntax check, CSS token check, visual check on all boards), `target\debug\constellations.exe --ipc-selftest` passed with exit code 0, `target\debug\constellations.exe --engine-selftest` passed with exit code 0.
+- Edge cases §1 & §3: Malformed or object `target` payloads handled gracefully without bridge error; synchronous CEF callbacks never re-borrow `RefCell` mutably; navigation with no active tab opens a new tab automatically; empty or about:blank URLs show the sky constellation while live web pages show the native CEF view; all notch window controls (minimize, maximize, close) work.
+- Decisions proposed: none.
+- Next: Phase 5: Shields and efficiency (P5-01 Shields).
+- Commit: fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-07
 - Did: completed P4-07 Pins and spaces (DESIGN.md §6, PHASES.md P4-07, EDGE_CASES §6 & §9).
