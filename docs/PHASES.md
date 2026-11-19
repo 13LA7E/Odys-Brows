@@ -38,8 +38,11 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
   ```
   If `checkout` complains that untracked files would be overwritten, stop and ask: nothing in the handover should collide with the branch.
   - Done when: `git branch --show-current` prints `Constellations`; `git status` is clean; `git log origin/Constellations -1` shows the P0-00 commit; `git ls-remote origin main` shows the same hash you recorded at the start.
-- [ ] **P0-01 Toolchains.** Windows: Rust stable (MSVC), Visual Studio Build Tools (C++), CMake, Ninja, Python 3, Node LTS. Linux (Ubuntu 24.04 LTS VM or dual boot; ask the owner which): the same plus the build packages CEF needs.
-  - Done when: versions of every tool on both systems are recorded in STATUS → Environment.
+- [~] **P0-01 Toolchains — WINDOWS COMPLETE; \* LINUX PENDING \*.** Split into OS-specific subtasks at the owner's direction; the Linux subtask remains required for the full task and Phase 0 gate.
+  - [x] **P0-01a Windows toolchains.** Rust stable (MSVC), Visual Studio Build Tools (C++), CMake, Ninja, Python 3 and Node LTS are installed and verified on Windows.
+    - Done when: versions of every Windows tool are recorded in STATUS → Environment, with Windows edge-case evidence in the session log.
+  - [ ] **P0-01b Linux toolchains.** **\* LINUX PENDING \*** Ubuntu 24.04 LTS via the owner's dual boot: the same tools plus the build packages CEF needs.
+    - Done when: versions of every Linux tool and the required CEF build packages are recorded in STATUS → Environment, with Linux edge-case evidence in the session log.
 - [ ] **P0-02 CEF window on Windows.** Minimal Rust app using `tauri-apps/cef-rs`: one window that loads https://example.com. Use the Chrome runtime (D-003).
   - Edge: §1
   - Done when: it runs, a screenshot is saved to `spike/shots/p0-02.png`, and the exact cef-rs and CEF versions are recorded.
