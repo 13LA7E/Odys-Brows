@@ -152,6 +152,7 @@ pub trait Engine {
     fn wake(&mut self, view: ViewId);
 
     fn open_devtools(&mut self, view: ViewId);
+    fn print(&mut self, view: ViewId);
 
     /// Answer a [`Event::PermissionRequested`].
     fn answer_permission(&mut self, request: u64, allow: bool);

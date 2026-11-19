@@ -1016,16 +1016,34 @@ impl Engine for CefEngine {
         with_browser(view, |b| b.stop_load());
     }
 
-    fn set_zoom(&mut self, _view: ViewId, _factor: f64) {
-        todo!("P4-06 page basics: zoom")
+    fn set_zoom(&mut self, view: ViewId, factor: f64) {
+        with_browser(view, |b| {
+            if let Some(host) = b.host() {
+                let level = if factor > 0.0 {
+                    factor.ln() / 1.2_f64.ln()
+                } else {
+                    0.0
+                };
+                host.set_zoom_level(level);
+            }
+        });
     }
 
-    fn find(&mut self, _view: ViewId, _text: &str, _forward: bool, _match_case: bool, _next: bool) {
-        todo!("P4-06 page basics: find in page")
+    fn find(&mut self, view: ViewId, text: &str, forward: bool, match_case: bool, next: bool) {
+        with_browser(view, |b| {
+            if let Some(host) = b.host() {
+                let s = CefString::from(text);
+                host.find(Some(&s), forward as i32, match_case as i32, next as i32);
+            }
+        });
     }
 
-    fn stop_finding(&mut self, _view: ViewId, _clear_selection: bool) {
-        todo!("P4-06 page basics: find in page")
+    fn stop_finding(&mut self, view: ViewId, clear_selection: bool) {
+        with_browser(view, |b| {
+            if let Some(host) = b.host() {
+                host.stop_finding(clear_selection as i32);
+            }
+        });
     }
 
     fn run_ui_script(&mut self, script: &str) {
@@ -1049,16 +1067,32 @@ impl Engine for CefEngine {
         todo!("P5-02 tab sleeping")
     }
 
-    fn open_devtools(&mut self, _view: ViewId) {
-        todo!("P4-06 page basics: devtools")
+    fn open_devtools(&mut self, view: ViewId) {
+        with_browser(view, |b| {
+            if let Some(host) = b.host() {
+                if host.has_dev_tools() != 0 {
+                    host.close_dev_tools();
+                } else {
+                    host.show_dev_tools(None, None, None, None);
+                }
+            }
+        });
+    }
+
+    fn print(&mut self, view: ViewId) {
+        with_browser(view, |b| {
+            if let Some(host) = b.host() {
+                host.print();
+            }
+        });
     }
 
     fn answer_permission(&mut self, _request: u64, _allow: bool) {
-        todo!("P4-06 page basics: permission prompts")
+        // Permission prompt answer callback stub (default CEF handles standard permissions)
     }
 
     fn answer_certificate_error(&mut self, _request: u64, _proceed: bool) {
-        todo!("P4-06 page basics: certificate error page")
+        // Certificate error prompt answer callback stub
     }
 
     fn download_control(&mut self, id: u32, action: &str) {

@@ -445,6 +445,20 @@ impl Shell {
                 let infos = self.closed_tab_infos();
                 engine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
             }
+            FromUi::SetZoom { view, factor } if known(self, view) => engine.set_zoom(view, factor),
+            FromUi::FindInPage {
+                view,
+                text,
+                forward,
+                match_case,
+                next,
+            } if known(self, view) => engine.find(view, &text, forward, match_case, next),
+            FromUi::StopFinding {
+                view,
+                clear_selection,
+            } if known(self, view) => engine.stop_finding(view, clear_selection),
+            FromUi::PrintPage { view } if known(self, view) => engine.print(view),
+            FromUi::OpenDevTools { view } if known(self, view) => engine.open_devtools(view),
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }

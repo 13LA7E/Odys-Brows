@@ -92,6 +92,32 @@ pub enum FromUi {
     ForgetClosedTab {
         id: u64,
     },
+    /// Set page zoom factor (P4-06).
+    SetZoom {
+        view: ViewId,
+        factor: f64,
+    },
+    /// Find text in page (P4-06).
+    FindInPage {
+        view: ViewId,
+        text: String,
+        forward: bool,
+        match_case: bool,
+        next: bool,
+    },
+    /// Stop finding in page (P4-06).
+    StopFinding {
+        view: ViewId,
+        clear_selection: bool,
+    },
+    /// Print page (P4-06).
+    PrintPage {
+        view: ViewId,
+    },
+    /// Open devtools (P4-06).
+    OpenDevTools {
+        view: ViewId,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,

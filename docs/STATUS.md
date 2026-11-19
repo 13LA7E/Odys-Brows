@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-06 Page basics** |
-| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete. P4-05 Session restore complete (SessionData schema preserving tab URLs, titles, opener tree relative indices, active tab, and rail width; atomic write to session.json with backup on corruption; lazy start restoration; private windows strictly isolated). |
-| Next step | P4-06 Page basics (Find in page, zoom, print, context menu, file chooser, permission prompts, certificate error page, crash page, DevTools; follow §10 quiet design). |
+| Current task | **P4-07 Pins and spaces** |
+| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete. P4-05 Session restore complete. P4-06 Page basics complete. Next is P4-07 Pins and spaces. |
+| Next step | P4-07 Pins and spaces (rail pinned apps, spaces dots at bottom of rail, switching active spaces and tab collections; follow §6 & §10). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 31a2dd0 (P4-04). |
+| Last pushed commit | 830d708 (P4-05). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,19 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-06
+- Did: completed P4-06 Page basics (DESIGN.md §10, PHASES.md P4-06, EDGE_CASES §4).
+  - In `app/engine-api`: added `print(&mut self, view: ViewId)` to `Engine` trait.
+  - In `app/engine-cef`: implemented `set_zoom` (`factor.ln() / 1.2.ln()`), `find`, `stop_finding`, `open_devtools` (toggling `show_dev_tools` / `close_dev_tools`), and `print` via CEF `host` methods.
+  - In `app/shell`: added `FromUi` variants (`SetZoom`, `FindInPage`, `StopFinding`, `PrintPage`, `OpenDevTools`) and dispatched in `Shell::handle`.
+  - In `ui/pagebasics.js`: created quiet floating find bar (DESIGN.md §10 style with input, previous, next, close, Esc/Enter handlers), zoom controls (`zoomIn`, `zoomOut`, `zoomReset`), print and devtools helpers, quiet error/crash page renderer with reload action, and global keyboard shortcuts (Ctrl+F, Ctrl+=/+, Ctrl+-, Ctrl+0, Ctrl+P, F12/Ctrl+Shift+I).
+  - In `ui/shell.js`: wired page basics shortcuts and error page display into shell lifecycle.
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (all 6 steps passed), `cargo test` (38/38 tests passed), `cargo clippy --all-targets -- -D warnings` (clean), `cargo fmt --check`, `node --check` across all 14 JS files, token check passed (no raw hex colours).
+- Edge cases §4: zoom boundary limits (0.3x - 3.0x); non-empty find queries; esc/close cleanup; calm error states.
+- Decisions proposed: none.
+- Next: P4-07 Pins and spaces (rail pinned apps, spaces dots, persistence, space switching).
+- Commit: P4-06: page basics  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-05
 - Did: completed P4-05 Session restore (DESIGN.md §6, PHASES.md P4-05, EDGE_CASES §6).

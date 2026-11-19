@@ -9,6 +9,7 @@ import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js'
 import { renderSettings, applyAccent } from './settings.js';
 import { renderHistory } from './history.js';
 import { renderNewTab } from './newtab.js';
+import { initPageBasicsShortcuts, renderErrorPage } from './pagebasics.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -111,6 +112,10 @@ export function renderPrivateCopy(copy = {}) {
 
 /** Render the whole window for one state (a fixture now, live state later). */
 export function renderShell(root, state) {
+  if (!window.__pageBasicsInit) {
+    window.__pageBasicsInit = true;
+    initPageBasicsShortcuts(() => document.getElementById('app'), () => state.activeTab);
+  }
   root.replaceChildren();
   root.classList.toggle('private', !!state.private);
   if (state.settings?.accent) {
@@ -188,7 +193,13 @@ export function renderShell(root, state) {
   if (state.page !== 'none') {
     const panel = el('section', `page page-${state.page}`);
     panel.setAttribute('aria-label', 'Page');
-    if (state.page === 'web' && state.pageHtml) {
+    if (state.pageError) {
+      renderErrorPage(panel, state.pageError, () => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'reload' }));
+        }
+      });
+    } else if (state.page === 'web' && state.pageHtml) {
       // The fixture's sample website: our own file extracted from design/preview.
       const site = el('div', 'page-site');
       site.innerHTML = state.pageHtml;

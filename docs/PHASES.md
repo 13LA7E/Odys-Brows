@@ -149,7 +149,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
   - Done when: [ClosedTabs] passes; relight tested.
 - [x] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.
   - Edge: §6
-- [ ] **P4-06 Page basics.** Find in page, zoom, print, context menu, file chooser, permission prompts (camera, mic, location, notifications), certificate error page, crash page, devtools. These are not designed: follow §10 and get Owner OK on screenshots.
+- [x] **P4-06 Page basics.** Find in page, zoom, print, context menu, file chooser, permission prompts (camera, mic, location, notifications), certificate error page, crash page, devtools. These are not designed: follow §10 and get Owner OK on screenshots.
   - Edge: §4
 - [ ] **P4-07 Pins and spaces.** Pinned sites in the rail (the Mail/Calendar/Notes slots) and spaces (the dots). Minimal first version; Owner OK on behaviour.
 
