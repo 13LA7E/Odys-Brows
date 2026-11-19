@@ -1,0 +1,4 @@
+# Python tools in this folder (design previews, rendering, visual checks)
+pillow>=10
+playwright>=1.40
+# after installing: python -m playwright install chromium

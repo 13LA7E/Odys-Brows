@@ -1,0 +1,161 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Browsing.dc.html": {
+      "h": 800,
+      "title": "Reading, trail open, downloads",
+      "w": 1280,
+      "x": 1360,
+      "y": 0
+    },
+    "ClosedTabs.dc.html": {
+      "h": 800,
+      "title": "Closed tabs fade, then relight",
+      "w": 1280,
+      "x": 1392,
+      "y": 975
+    },
+    "HelmAnswer.dc.html": {
+      "h": 800,
+      "title": "Helm: ask Odysseus, answer above the bar",
+      "w": 1280,
+      "x": 0,
+      "y": 1100
+    },
+    "History.dc.html": {
+      "h": 800,
+      "title": "History drawn as a trail",
+      "w": 1280,
+      "x": 4080,
+      "y": 1100
+    },
+    "Main.dc.html": {
+      "h": 800,
+      "title": "New tab: the trail as a constellation",
+      "w": 1280,
+      "x": 0,
+      "y": 0
+    },
+    "Private.dc.html": {
+      "h": 800,
+      "title": "Private voyage",
+      "w": 1280,
+      "x": 2720,
+      "y": 1100
+    },
+    "Settings.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "Settings",
+      "w": 1280,
+      "x": 2720,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-18T20:30:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "t1",
+    "n1",
+    "n2",
+    "n3",
+    "n4",
+    "t2",
+    "m1",
+    "m2",
+    "m3",
+    "m4"
+  ],
+  "notes": {
+    "m1": {
+      "fill": "blue",
+      "text": "Helm answers. The bar grows into the question, and the answer sits right above it with its sources drawn as linked stars. It names where the answer came from.",
+      "w": 320,
+      "x": 0,
+      "y": 1950
+    },
+    "m2": {
+      "fill": "teal",
+      "text": "Closed tabs dim into faint stars below the open trail. Hover for a preview, then relight to bring the page back. They fade out after a day.",
+      "w": 320,
+      "x": 1360,
+      "y": 1950
+    },
+    "m3": {
+      "fill": "purple",
+      "text": "Private. Stars become hollow rings, the trail line turns dashed and the accent shifts to lilac, so the mode is visible without a banner.",
+      "w": 320,
+      "x": 2720,
+      "y": 1950
+    },
+    "m4": {
+      "fill": "gray",
+      "text": "History keeps the trail shape. Pages opened from another branch off it, and a page you returned to shows as a brighter star.",
+      "w": 320,
+      "x": 4080,
+      "y": 1950
+    },
+    "n1": {
+      "fill": "teal",
+      "text": "The Trail. Tabs are stars joined by a line, and tabs opened from another one branch off it. Narrow shows stars only, wide shows titles.",
+      "w": 300,
+      "x": 0,
+      "y": -230
+    },
+    "n2": {
+      "fill": "blue",
+      "text": "The Helm. One command bar at the bottom, where your thumbs rest and the page keeps its full height. Downloads show as a ring around its icon.",
+      "w": 300,
+      "x": 340,
+      "y": -230
+    },
+    "n3": {
+      "fill": "gray",
+      "text": "One sky. On a new tab the sky runs edge to edge and your trail is drawn as a constellation. On a real page it retreats to the rail.",
+      "w": 300,
+      "x": 680,
+      "y": -230
+    },
+    "n4": {
+      "fill": "orange",
+      "text": "Corner notch for Shields and window controls. The page is square against the window and rounded only where it meets the trail.",
+      "w": 300,
+      "x": 1020,
+      "y": -230
+    },
+    "t1": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "Odyssey: its own identity",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "t2": {
+      "kind": "title1",
+      "maxW": 5360,
+      "text": "Next: four more screens",
+      "w": 240,
+      "x": 0,
+      "y": 850
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Browsing.dc.html",
+    "Settings.dc.html",
+    "HelmAnswer.dc.html",
+    "ClosedTabs.dc.html",
+    "Private.dc.html",
+    "History.dc.html"
+  ],
+  "pages": [],
+  "title": "Odyssey: Arc-style design sketch"
+}

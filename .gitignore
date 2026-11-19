@@ -1,4 +1,8 @@
 /target
-/gen
+/out
+node_modules/
+__pycache__/
+spike/**/target
+*.odypart
+.env
 build-log.txt
-install-log.txt
