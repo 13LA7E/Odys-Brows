@@ -71,7 +71,7 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
 
 ## Phase 1: Skeleton
 
-- [ ] **P1-01 Project layout.** Create the Cargo workspace per D-007. Suggested crates: `app/shell` (binary: windows, tabs, IPC), `app/engine-api` (the trait, D-005), `app/engine-cef`, `app/segdl`, `app/shields`, `app/vault`, `app/ai`. UI in `ui/` (`index.html`, `tokens.css`, `app.css`, `app.js` or ES modules, `fonts/`).
+- [~] **P1-01 Project layout.** Windows done (builds, window opens); **\* LINUX PENDING \***. Create the Cargo workspace per D-007. Suggested crates: `app/shell` (binary: windows, tabs, IPC), `app/engine-api` (the trait, D-005), `app/engine-cef`, `app/segdl`, `app/shields`, `app/vault`, `app/ai`. UI in `ui/` (`index.html`, `tokens.css`, `app.css`, `app.js` or ES modules, `fonts/`).
   - Done when: `cargo build` succeeds on both OSes and an empty window opens.
 - [ ] **P1-02 Engine trait.** Define the smallest interface the browser needs: create/close a page view; set bounds and visibility; navigate, back, forward, reload, stop; events (url, title, favicon, loading, audio playing, **new window requested with the opener's view id**, download events, permission requests, certificate errors, crash); zoom; find in page; run a script in our UI view only; discard/sleep and restore; devtools.
   - Edge: §4

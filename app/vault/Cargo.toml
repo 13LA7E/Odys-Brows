@@ -1,0 +1,9 @@
+[package]
+name = "vault"
+description = "Password vault (DPAPI on Windows, Secret Service on Linux), ported in P8-02."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

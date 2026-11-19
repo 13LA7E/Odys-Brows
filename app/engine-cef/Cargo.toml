@@ -1,0 +1,12 @@
+[package]
+name = "engine-cef"
+description = "The CEF implementation of engine-api (D-003, D-005, D-007 Proposed)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+cef.workspace = true
+
+[lints]
+workspace = true

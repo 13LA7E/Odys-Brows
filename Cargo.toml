@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = [
+    "app/shell",
+    "app/engine-api",
+    "app/engine-cef",
+    "app/segdl",
+    "app/shields",
+    "app/vault",
+    "app/ai",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# Licence not decided yet (Q-05): keep the crates unpublished until it is.
+publish = false
+
+[workspace.dependencies]
+# Pinned exactly: the CEF version follows the crate version (D-003, P0-02).
+cef = { version = "=156.7.0", default-features = false }
+engine-api = { path = "app/engine-api" }
+engine-cef = { path = "app/engine-cef" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

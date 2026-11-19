@@ -1,0 +1,9 @@
+[package]
+name = "ai"
+description = "Optional AI providers (none by default; local, cloud key, Odysseus), built in P7-01."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

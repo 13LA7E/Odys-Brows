@@ -1,0 +1,9 @@
+[package]
+name = "engine-api"
+description = "The small interface the browser uses to talk to a web engine (D-005)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

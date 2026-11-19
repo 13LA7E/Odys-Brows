@@ -1,0 +1,17 @@
+[package]
+name = "shell"
+description = "The browser: windows, tabs and the bridge to our UI."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "constellations"
+path = "src/main.rs"
+
+[dependencies]
+engine-cef.workspace = true
+engine-api.workspace = true
+
+[lints]
+workspace = true

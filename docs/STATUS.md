@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-01 Project layout** |
-| State | **P0-08 done as a proposal** (D-007 plain Rust + cef-rs, Proposed). **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P1-01: create the Cargo workspace (`app/shell`, `app/engine-api`, `app/engine-cef`, `app/segdl`, `app/shields`, `app/vault`, `app/ai`) and `ui/`; `cargo build` must succeed and an empty window must open. Reuse the spike's CEF setup (manifest, Chrome page first, Alloy UI). |
+| Current task | **P1-02 Engine trait** |
+| State | **P1-01 Windows done** (workspace builds, empty window opens). **P0-08 done as a proposal** (D-007 plain Rust + cef-rs, Proposed). **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P1-02: define the engine trait in `app/engine-api` (page views, bounds, navigation, events incl. new-window with opener id, downloads, permissions, cert errors, crash, zoom, find, UI-only script, sleep/restore, devtools); implement navigate/back/forward/reload and url/title events in `engine-cef`; the rest `todo!(\"P?-??\")`. Remember: one Chrome style page view per window (swap views for tabs). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `5e5143b` (P0-07); P0-08 commit follows (see the session log) |
+| Last pushed commit | `c3e9fef` (P0-08); P1-01 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -62,7 +62,7 @@ Gate 0 is **not met**. Following the autopilot instructions, Phase 1 continues o
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux columns of the P0-05 and P0-06 tables, the Linux run of `tools/bench/bench.py` (P0-07), the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux columns of the P0-05 and P0-06 tables, the Linux run of `tools/bench/bench.py` (P0-07), the workspace build and `tools/run-dev.sh` (P1-01), the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -93,6 +93,15 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P1-01 (Windows)
+- Did: Cargo workspace at the root (`Cargo.toml`, resolver 3, edition 2024, `cef =156.7.0` pinned, clippy `all` denied): `app/shell` (binary `constellations`; `brand.rs` holds the product name; profile in `%LOCALAPPDATA%\Constellations` or `$XDG_DATA_HOME/Constellations`; Windows manifest via `build.rs`), `app/engine-api` (UI folder lookup + `file_url`, with tests; the trait comes in P1-02), `app/engine-cef` (CEF start-up, one Chrome style window with our UI as an Alloy BrowserView, load errors logged), placeholder crates `segdl`, `shields`, `vault`, `ai`. `ui/` with `index.html`, `tokens.css`, `app.css`, `app.js`, `brand.js`, `fonts/` (Familjen Grotesk + OFL). `tools/run-dev.ps1` and `tools/run-dev.sh` put the CEF runtime on the library path. Evidence `docs/shots/p1-01-window.png`.
+- Verified: `cargo build` OK (2 min first time: CEF download), `cargo clippy --all-targets -- -D warnings` clean, `cargo fmt`, `cargo test` 2 passed (file URLs with spaces/Unicode/`\\?\` prefix; UI folder lookup incl. missing). `tools/run-dev.ps1`: window titled "odyssey", 1280x800 DIP, black, 6 processes; `CloseMainWindow` → 0 processes left after 4 s; profile folder created.
+- Edge cases (§1): missing UI files: handled + tested (lookup returns None; the window then shows a message, not a blank page). Paths with spaces / non-ASCII: handled + tested in `file_url`. Minimum window 800x600: set (exercised in P0-04). Closing: handled + tested. Two copies: CEF refuses the shared profile and the app exits with a message (single-instance hand-off is still a known gap). Corrupt settings, migrations: no settings yet. Linux: not built (pending).
+- Not verified / unsure: Linux build; `tools/run-dev.sh` untested.
+- Decisions proposed: none.
+- Next: P1-02 engine trait.
+- Commit: see git log "P1-01: Cargo workspace, shell opens an empty window"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-08 and Gate 0
 - Did: proposed D-007 (plain Rust + cef-rs) and the D-013 path (cargo-packager + cargo-packager-updater) in DECISIONS with reasons from P0-02 to P0-07. Checked Gate 0 (section above). P0-08 left [~] (needs the owner's acceptance).
 - Verified: `cargo info cargo-packager` 0.11.8 and `cargo-packager-updater` 0.2.3 (Apache-2.0 OR MIT); cargo-packager README lists NSIS, WiX MSI, deb, AppImage, pacman. Web search on Tauri's CEF runtime found the Tauri v3.0.0-alpha.0 notes (`tauri_runtime_cef`, unstable runtime API) and a March 2026 issue about missing navigation controls; nothing newer found (marked unverified).
@@ -100,7 +109,7 @@ Copy this template for each session:
 - Not verified / unsure: whether cargo-packager can ship CEF's runtime files and whether its updater verifies signatures; current Tauri CEF status.
 - Decisions proposed: D-007 (Proposed), D-013 detail (Proposed).
 - Next: P1-01 project layout on the Proposed D-007.
-- Commit: see git log "P0-08: propose plain Rust + cef-rs (D-007) and packaging path; Gate 0 check"  Pushed: yes
+- Commit: `c3e9fef` "P0-08: propose plain Rust + cef-rs (D-007) and packaging path; Gate 0 check"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-07 (Windows)
 - Did: `tools/bench/bench.py` (stdlib only; Windows Private Bytes + CPU via `Win32_Process`, Linux PSS + `/proc/<pid>/stat`, process tree + profile match, fresh temp profile deleted afterwards) and `tools/bench/urls.txt` (10 fixed public URLs). The P0-05 spike gained `--urls-file` (one window per URL) and `--profile-dir`; built in release. `docs/BENCHMARKS.md` with method, machine, versions, date and table.

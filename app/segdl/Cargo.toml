@@ -1,0 +1,9 @@
+[package]
+name = "segdl"
+description = "Segmented (multi-connection) downloader, ported from Odyssey in P4-01."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
