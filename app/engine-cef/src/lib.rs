@@ -73,13 +73,14 @@ struct State {
 }
 
 type Sink = Box<dyn FnMut(Event)>;
+type Ready = Box<dyn FnOnce(CefEngine)>;
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
     static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
     static QUEUE: RefCell<VecDeque<Event>> = const { RefCell::new(VecDeque::new()) };
     static DISPATCHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static ON_READY: RefCell<Option<Box<dyn FnOnce(CefEngine)>>> = const { RefCell::new(None) };
+    static ON_READY: RefCell<Option<Ready>> = const { RefCell::new(None) };
 }
 
 /// Deliver an event to the shell. Events raised while the shell is handling one (because it

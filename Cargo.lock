@@ -323,6 +323,7 @@ name = "engine-cef"
 version = "0.1.0"
 dependencies = [
  "cef",
+ "engine-api",
 ]
 
 [[package]]
