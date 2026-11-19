@@ -1,0 +1,21 @@
+# P0-07 fixed URL list (public pages, no sign-in). Keep the order; results depend on it.
+# news
+https://www.bbc.com/news
+# video
+https://www.youtube.com/watch?v=aqz-KE-bpKQ
+# docs
+https://developer.mozilla.org/en-US/docs/Web/JavaScript
+# webmail login page
+https://accounts.google.com/ServiceLogin?service=mail
+# long article
+https://en.wikipedia.org/wiki/World_War_II
+# web app
+https://excalidraw.com/
+# news 2
+https://www.theguardian.com/international
+# docs 2
+https://doc.rust-lang.org/book/
+# forum
+https://news.ycombinator.com/
+# map web app
+https://www.openstreetmap.org/

@@ -157,20 +157,37 @@ wrap_browser_process_handler! {
             let url = CefString::from(&command_line.switch_value(Some(&CefString::from("url"))))
                 .to_string();
             let url = if url.is_empty() { "https://example.com/".to_string() } else { url };
-            let url = CefString::from(url.as_str());
+            // P0-07 benchmark: `--urls-file=<path>` opens one window per line (a Chrome style
+            // window hosts one Chrome style page, so no tabs in the spike).
+            let file = CefString::from(&command_line.switch_value(Some(&CefString::from("urls-file"))))
+                .to_string();
+            let urls: Vec<String> = if file.is_empty() {
+                vec![url]
+            } else {
+                std::fs::read_to_string(&file)
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(String::from)
+                    .collect()
+            };
 
-            let mut client = SpikeClient::new();
-            let mut bv_delegate = SpikeBrowserViewDelegate::new();
-            let browser_view = browser_view_create(
-                Some(&mut client),
-                Some(&url),
-                Some(&BrowserSettings::default()),
-                None,
-                None,
-                Some(&mut bv_delegate),
-            );
-            let mut win_delegate = SpikeWindowDelegate::new(RefCell::new(browser_view));
-            window_create_top_level(Some(&mut win_delegate));
+            for url in urls {
+                let url = CefString::from(url.as_str());
+                let mut client = SpikeClient::new();
+                let mut bv_delegate = SpikeBrowserViewDelegate::new();
+                let browser_view = browser_view_create(
+                    Some(&mut client),
+                    Some(&url),
+                    Some(&BrowserSettings::default()),
+                    None,
+                    None,
+                    Some(&mut bv_delegate),
+                );
+                let mut win_delegate = SpikeWindowDelegate::new(RefCell::new(browser_view));
+                window_create_top_level(Some(&mut win_delegate));
+            }
         }
     }
 }
@@ -202,12 +219,19 @@ fn main() {
     }
 
     // Profile under the user's local data dir; paths with spaces/non-ASCII are passed as CefString (UTF-16).
-    let root = std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("XDG_CACHE_HOME"))
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("constellations-spike")
-        .join("p0-05");
+    // `--profile-dir=<path>` (P0-07 benchmark) uses a clean profile somewhere else.
+    let profile =
+        CefString::from(&cmd_line.switch_value(Some(&CefString::from("profile-dir")))).to_string();
+    let root = if !profile.is_empty() {
+        std::path::PathBuf::from(profile)
+    } else {
+        std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("XDG_CACHE_HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("constellations-spike")
+            .join("p0-05")
+    };
     let _ = std::fs::create_dir_all(&root);
     let root = CefString::from(root.to_string_lossy().as_ref());
 

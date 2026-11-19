@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-07 Memory baseline** (Windows) |
-| State | **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-07: write `tools/bench/` (10 fixed public URLs, open them, wait 60 s, sum Private Bytes of all browser processes, average CPU over 60 s idle), run it for Chrome, Edge, Brave, Firefox (whichever are installed) and the spike; write `docs/BENCHMARKS.md`. |
+| Current task | **P0-08 Shell decision** (propose D-007 and the D-013 path) |
+| State | **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-08: from P0-02 to P0-06 evidence, propose D-007 (Tauri+CEF vs plain Rust+cef-rs) with reasons and the matching installer/updater path for D-013; mark Proposed and list for the owner. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `56f66b5` (P0-05); P0-06 commit follows (see the session log) |
+| Last pushed commit | `5d3008b` (P0-06); P0-07 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
@@ -24,6 +24,8 @@
 - **P0-04b:** the off-screen Helm works on Windows (`spike/shots/p0-04b-osr.png`, numbers in `spike/p0-04-helm/README.md`). Needs: the owner's OK on the look and the 25–48 ms input-to-paint, and an IME test by someone with a Chinese/Japanese/Korean IME (`run.ps1 -AppArgs "--mode=osr"`, click the Helm, type with the IME). Left `[~]`.
 
 ## Questions for the owner
+
+- P0-07: Chrome, Brave and Firefox are not installed on this PC, so they are missing from `docs/BENCHMARKS.md`. Install them (or say which) and run `python tools/bench/bench.py chrome brave firefox --out out/bench/p0-07.jsonl`? Chosen meanwhile: nothing installed; Edge and the spike measured.
 
 - Q-08 (from P0-06): the stock CEF build plays no H.264/AAC, so H.264-only video (with or without DRM) fails. Build CEF with proprietary codecs (patent licensing to check), or accept VP9/AV1-only? Chosen meanwhile: stock CEF, decide before P9.
 
@@ -38,6 +40,7 @@
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
 - **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
+- **P0-07:** Chrome, Brave, Firefox not measured (not installed); Linux bench path untested; spike opens windows, not tabs.
 - **P0-06:** no H.264/AAC (Q-08); VMP signing for commercial streaming untested; whether Widevine arrives without a manual component check is unverified; Linux not tested.
 - **P0-05:** extension-opened tabs open a native Chrome window (must be caught; callback unverified); Chrome's registry-registered external extensions are picked up and downloaded into our profile (must be turned off; method unverified); the action popup has no button (P6-02); unpacked extensions don't persist via `--load-extension`; Linux not tested.
 - **P0-04b:** IME untested; IME candidate window placement not done; screen-reader access to the off-screen Helm unverified; input-to-paint 25–48 ms (shared-texture path untested); Linux window path not designed.
@@ -46,7 +49,7 @@
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux columns of the P0-05 and P0-06 tables, the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux columns of the P0-05 and P0-06 tables, the Linux run of `tools/bench/bench.py` (P0-07), the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -77,6 +80,15 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-07 (Windows)
+- Did: `tools/bench/bench.py` (stdlib only; Windows Private Bytes + CPU via `Win32_Process`, Linux PSS + `/proc/<pid>/stat`, process tree + profile match, fresh temp profile deleted afterwards) and `tools/bench/urls.txt` (10 fixed public URLs). The P0-05 spike gained `--urls-file` (one window per URL) and `--profile-dir`; built in release. `docs/BENCHMARKS.md` with method, machine, versions, date and table.
+- Verified: `python tools/bench/bench.py --list` finds Edge 157.0.4341.60 and the spike; Chrome, Brave, Firefox not installed (also checked the registry App Paths). Two rounds (60 s wait + 60 s idle each): Edge 10 tabs 1073.6 / 1028.8 MB, 6.4 / 4.1 % of one core; Edge 10 windows 1390.9 / 1377.0 MB, 3.1 / 4.0 %; spike 10 windows 974.6 / 934.2 MB, 1.6 / 3.0 %. A first spike run measured 0 processes: the script's glob put the CEF tarball on PATH instead of the CEF folder, so the spike couldn't start; fixed (pick the folder containing libcef) and rerun.
+- Edge cases (§9 and §1): the bench never touches the owner's real browser profiles (fresh `--user-data-dir`/`-profile` in %TEMP%, deleted after); only processes in the launched tree or naming that profile are measured and killed (an already running Edge is left alone). Slow network: pages may still be loading at 60 s (same for every browser; noted). Paths with spaces: Program Files paths handled (passed as argv). Linux path written but untested.
+- Not verified / unsure: Chrome, Brave, Firefox numbers; Linux; whether 10 windows vs 10 tabs is a fair proxy (both Edge layouts recorded to show the gap).
+- Decisions proposed: none.
+- Next: P0-08 (shell decision D-007 and D-013 path) on the evidence from P0-02 to P0-06.
+- Commit: see git log "P0-07: memory/CPU benchmark script and Windows baseline"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-06 (Windows)
 - Did: `spike/p0-06-drm/eme-probe.html` (MSE codecs + EME key systems) and `play.html` (Shaka Player 4.12.6 from jsDelivr, two public Widevine demo assets, Shaka's public license proxy), run in the P0-05 spike binary, served from `http://localhost:8765` (secure context). D-015 results table, new Q-08 (H.264/AAC), README.
 - Verified: fresh profile `chrome://components` lists "Widevine Content Decryption Module" 0.0.0.0 New; after "Check for update" + 60 s: 4.10.3112.0 Up-to-date, `WidevineCdm/4.10.3112.0/_platform_specific/win_x64/widevinecdm.dll` (22,970,008 bytes) + `.sig` on disk. Shaka support page: `com.widevine.alpha` with `SW_SECURE_CRYPTO`, `SW_SECURE_DECODE`, `cenc`, `cbcs`, persistentState false; PlayReady/FairPlay null. MSE: avc1 false, mp4a false, vp9/opus/av1 true. Playback: Angel One VP9 768x576 currentTime 7.3 s, Sintel VP9 1280x546 currentTime 7.5 s, both `com.widevine.alpha`, not paused (`spike/shots/p0-06-widevine-playback.png`).
@@ -85,7 +97,7 @@ Copy this template for each session:
 - Not verified / unsure: whether Widevine downloads without the manual click; VMP signing and HD robustness for commercial services; Linux.
 - Decisions proposed: none; Q-08 added (owner decision on proprietary codecs).
 - Next: P0-07 (memory baseline, `tools/bench/`, BENCHMARKS.md) on Windows.
-- Commit: see git log "P0-06: Widevine works with VP9 on Windows; no H.264/AAC in stock CEF"  Pushed: yes
+- Commit: `5d3008b` "P0-06: Widevine works with VP9 on Windows; no H.264/AAC in stock CEF"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-05 (Windows)
 - Did: `spike/p0-05-extensions` (P0-02 window + `--toolbar=` + `--then=`), `run.ps1`, `shot-main.ps1`. Fetched uBlock Origin Lite 2026.1116.1650, Bitwarden 2026.10.2 and Dark Reader 4.9.135 as CRX3 from Google's update service and unpacked them outside the repo (path-checked). Tested Chrome UI hiding, unpacked load, Web Store install, service workers, content scripts, DNR blocking, options and popup pages. Results table under D-003, README with problems, three new edge-case kinds in EDGE_CASES §10.
