@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-05 Session restore** |
-| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete (closed_tabs VecDeque in Shell with 24-hour expiry; bridge RelightClosedTab and ForgetClosedTab; "Closed earlier" list with dot fading in expanded rail; hover preview card with Relight and Forget actions; z-index popover layering; private windows never record closed tabs; passes visual check on rail region with score 2.2). |
-| Next step | P4-05 Session restore (save/restore open tabs, opener tree and active tab to session.json; lazy restore; private isolation). |
+| Current task | **P4-06 Page basics** |
+| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete. P4-04 Closed tabs complete. P4-05 Session restore complete (SessionData schema preserving tab URLs, titles, opener tree relative indices, active tab, and rail width; atomic write to session.json with backup on corruption; lazy start restoration; private windows strictly isolated). |
+| Next step | P4-06 Page basics (Find in page, zoom, print, context menu, file chooser, permission prompts, certificate error page, crash page, DevTools; follow §10 quiet design). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 2d76816 (P4-03). |
+| Last pushed commit | 31a2dd0 (P4-04). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,19 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-05
+- Did: completed P4-05 Session restore (DESIGN.md §6, PHASES.md P4-05, EDGE_CASES §6).
+  - In `app/shell`: implemented `SessionData` and `SavedTab` (`url`, `title`, relative `opener_index`).
+  - Added atomic session persistence (`save_session_atomic` via `.tmp` rename) and recovery (`load_session_or_default` with `.bak` on corrupted JSON).
+  - Wired into `Shell`: automatic session snapshots on tab open, URL change, title change, active tab switch, tab close, and rail width changes.
+  - Startup restoration: recreates saved views, restores parent-child opener relations via relative index, displays active tab, and restores rail width.
+  - Private windows strictly isolated: private mode never writes `session.json` to disk.
+- Verified: unit tests in `app/shell` (`save_and_load_session_round_trip`, `corrupted_session_recovers_gracefully_and_makes_backup`, `preserves_tab_tree_hierarchy_across_session_restore`, `private_mode_leaves_no_files_on_disk`), `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- Edge cases §6: Private windows never write session data (handled + tested); corrupted session recovers gracefully and backs up broken file (handled + tested); tab tree opener relations preserved across process restarts (handled + tested).
+- Decisions proposed: none.
+- Next: P4-06 Page basics (Find in page, zoom, print, context menu, file chooser, permission prompts, certificate error page, crash page, DevTools).
+- Commit: P4-05: session restore  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-04
 - Did: completed P4-04 Closed tabs (DESIGN.md §6, PHASES.md P4-04, EDGE_CASES §6).

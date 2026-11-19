@@ -147,7 +147,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P4-04 Closed tabs.** §6 Closed tabs: "Closed earlier" list with fading, hover preview with a real snapshot, Relight restores the tab (url, scroll, history stack where the engine allows), Forget removes it, gone after 24 h.
   - Edge: §6
   - Done when: [ClosedTabs] passes; relight tested.
-- [ ] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.
+- [x] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.
   - Edge: §6
 - [ ] **P4-06 Page basics.** Find in page, zoom, print, context menu, file chooser, permission prompts (camera, mic, location, notifications), certificate error page, crash page, devtools. These are not designed: follow §10 and get Owner OK on screenshots.
   - Edge: §4

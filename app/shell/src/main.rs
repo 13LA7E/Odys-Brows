@@ -14,6 +14,7 @@ use bridge::{FromUi, ToUi};
 use engine_api::{Engine, Rect, ViewId};
 use engine_cef::CefEngine;
 use history::HistoryStore;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -176,6 +177,7 @@ impl Shell {
         // 24 hour expiry (86,400 seconds)
         self.closed_tabs.retain(|c| now - c.closed_at < 86400);
 
+        self.persist_session();
         Some(record)
     }
 
@@ -212,6 +214,46 @@ impl Shell {
             .collect()
     }
 
+    fn persist_session(&self) {
+        if self.is_private {
+            return;
+        }
+        let session = self.to_session_data();
+        let dir = profile_dir();
+        if let Err(e) = save_session_atomic(&dir, &session) {
+            eprintln!("Failed to persist session: {e}");
+        }
+    }
+
+    fn to_session_data(&self) -> SessionData {
+        let tabs = self
+            .tabs
+            .iter()
+            .map(|t| {
+                let url = self.tab_urls.get(&t.view).cloned().unwrap_or_default();
+                let title = self.tab_titles.get(&t.view).cloned().unwrap_or_default();
+                let opener_index = t
+                    .opener
+                    .and_then(|op| self.tabs.iter().position(|other| other.view == op));
+                SavedTab {
+                    url,
+                    title,
+                    opener_index,
+                }
+            })
+            .collect();
+
+        let active_tab_index = self
+            .shown
+            .and_then(|v| self.tabs.iter().position(|t| t.view == v));
+
+        SessionData {
+            tabs,
+            active_tab_index,
+            rail_width: self.rail_width,
+        }
+    }
+
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
         if self.is_private
             || url.is_empty()
@@ -236,6 +278,7 @@ impl Shell {
                 Err(e) => eprintln!("Failed to record history visit: {e}"),
             }
         }
+        self.persist_session();
     }
 
     fn on_title_changed(&mut self, view: ViewId, title: &str) {
@@ -250,6 +293,7 @@ impl Shell {
         if let Some(h) = &self.history {
             let _ = h.update_title(visit_id, title);
         }
+        self.persist_session();
     }
 
     fn show(&mut self, engine: &mut CefEngine, view: ViewId) {
@@ -262,6 +306,7 @@ impl Shell {
         engine.set_bounds(view, page_bounds(engine, self.rail_width));
         engine.set_visible(view, true);
         self.shown = Some(view);
+        self.persist_session();
     }
 
     fn handle(&mut self, engine: &mut CefEngine, message: FromUi) {
@@ -291,6 +336,7 @@ impl Shell {
                 if let Some(view) = self.shown {
                     engine.set_bounds(view, page_bounds(engine, self.rail_width));
                 }
+                self.persist_session();
             }
             FromUi::SaveSettings { settings } => {
                 if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
@@ -405,17 +451,51 @@ impl Shell {
     }
 }
 
-fn connect(engine: CefEngine, is_private: bool) {
+fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
     let history_store = if is_private {
         None
     } else {
         HistoryStore::open(&profile_dir().join("history.db")).ok()
     };
+    let saved_session = if is_private || any_selftest {
+        SessionData::default()
+    } else {
+        load_session_or_default(&profile_dir())
+    };
     let shell = Rc::new(RefCell::new(Shell {
         is_private,
         history: history_store,
+        rail_width: saved_session.rail_width,
         ..Shell::default()
     }));
+
+    if !saved_session.tabs.is_empty() {
+        let mut s = shell.borrow_mut();
+        let mut created_views = Vec::new();
+        for tab in &saved_session.tabs {
+            let view = CefEngine.create_view(&tab.url);
+            created_views.push(view);
+            s.tabs.push(Tab { view, opener: None });
+            s.tab_urls.insert(view, tab.url.clone());
+            s.tab_titles.insert(view, tab.title.clone());
+        }
+        for (i, t) in s.tabs.iter_mut().enumerate() {
+            if let Some(op_idx) = saved_session.tabs[i]
+                .opener_index
+                .filter(|&idx| idx < created_views.len())
+            {
+                t.opener = Some(created_views[op_idx]);
+            }
+        }
+        if let Some(active_idx) = saved_session
+            .active_tab_index
+            .filter(|&idx| idx < created_views.len())
+        {
+            s.show(&mut CefEngine, created_views[active_idx]);
+        } else if let Some(&first) = created_views.first() {
+            s.show(&mut CefEngine, first);
+        }
+    }
 
     let events_shell = shell.clone();
     engine.set_event_sink(move |event| {
@@ -485,7 +565,7 @@ fn main() {
             if engine_selftest {
                 selftest::start(engine);
             } else {
-                connect(engine, is_private);
+                connect(engine, is_private, any_selftest);
                 if ipc_selftest {
                     selftest::ipc_timeout(engine);
                 }
@@ -552,6 +632,64 @@ pub fn load_settings_or_default(dir: &Path) -> serde_json::Value {
             }
         },
         Err(_) => default_settings(),
+    }
+}
+
+/// A tab saved in session restore (P4-05).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedTab {
+    pub url: String,
+    pub title: String,
+    pub opener_index: Option<usize>,
+}
+
+/// The session state preserved across restarts or crashes (P4-05).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionData {
+    pub tabs: Vec<SavedTab>,
+    pub active_tab_index: Option<usize>,
+    pub rail_width: i32,
+}
+
+impl Default for SessionData {
+    fn default() -> Self {
+        Self {
+            tabs: Vec::new(),
+            active_tab_index: None,
+            rail_width: RAIL_WIDTH,
+        }
+    }
+}
+
+/// Atomically write session data to disk (EDGE_CASES §1 & §6).
+pub fn save_session_atomic(dir: &Path, session: &SessionData) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let target = dir.join("session.json");
+    let tmp = dir.join("session.json.tmp");
+    let content = serde_json::to_string_pretty(session)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(&tmp, &target)?;
+    Ok(())
+}
+
+/// Load session data or fall back to defaults, creating a backup if corrupted (EDGE_CASES §1).
+pub fn load_session_or_default(dir: &Path) -> SessionData {
+    let target = dir.join("session.json");
+    if !target.exists() {
+        return SessionData::default();
+    }
+    match std::fs::read_to_string(&target) {
+        Ok(text) => match serde_json::from_str::<SessionData>(&text) {
+            Ok(session) => session,
+            Err(e) => {
+                eprintln!("Warning: session.json corrupted ({e}), creating backup");
+                let bak = dir.join("session.json.bak");
+                let _ = std::fs::rename(&target, &bak);
+                SessionData::default()
+            }
+        },
+        Err(_) => SessionData::default(),
     }
 }
 
@@ -816,5 +954,85 @@ mod tests {
         let closed = shell.close_tab(20);
         assert!(closed.is_none());
         assert!(shell.closed_tabs.is_empty());
+    }
+
+    #[test]
+    fn save_and_load_session_round_trip() {
+        let tmp_dir = std::env::temp_dir().join(format!("ody_test_session_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
+        let session = SessionData {
+            tabs: vec![
+                SavedTab {
+                    url: "https://example.com".into(),
+                    title: "Example Domain".into(),
+                    opener_index: None,
+                },
+                SavedTab {
+                    url: "https://sub.example.com".into(),
+                    title: "Sub Page".into(),
+                    opener_index: Some(0),
+                },
+            ],
+            active_tab_index: Some(1),
+            rail_width: 264,
+        };
+
+        assert!(save_session_atomic(&tmp_dir, &session).is_ok());
+        let loaded = load_session_or_default(&tmp_dir);
+        assert_eq!(loaded, session);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn corrupted_session_recovers_gracefully_and_makes_backup() {
+        let tmp_dir =
+            std::env::temp_dir().join(format!("ody_test_corrupt_sess_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+
+        let target = tmp_dir.join("session.json");
+        std::fs::write(&target, "{ corrupted session content ...").unwrap();
+
+        let loaded = load_session_or_default(&tmp_dir);
+        assert_eq!(loaded, SessionData::default());
+
+        let bak = tmp_dir.join("session.json.bak");
+        assert!(bak.exists(), "session.json.bak should be created");
+        assert_eq!(
+            std::fs::read_to_string(&bak).unwrap(),
+            "{ corrupted session content ..."
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn preserves_tab_tree_hierarchy_across_session_restore() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab {
+            view: 100,
+            opener: None,
+        });
+        shell.tab_urls.insert(100, "https://root.com".into());
+        shell.tab_titles.insert(100, "Root".into());
+
+        shell.tabs.push(Tab {
+            view: 101,
+            opener: Some(100),
+        });
+        shell.tab_urls.insert(101, "https://child.com".into());
+        shell.tab_titles.insert(101, "Child".into());
+
+        shell.shown = Some(101);
+        shell.rail_width = 264;
+
+        let session = shell.to_session_data();
+        assert_eq!(session.tabs.len(), 2);
+        assert_eq!(session.tabs[0].opener_index, None);
+        assert_eq!(session.tabs[1].opener_index, Some(0));
+        assert_eq!(session.active_tab_index, Some(1));
+        assert_eq!(session.rail_width, 264);
     }
 }
