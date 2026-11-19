@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-07 CI** |
-| State | P1-01..P1-06 done on Windows. `tools/check.ps1` and `tools/check.sh` created, verified passing on Windows and Git Bash, with clear failure messages. |
-| Next step | P1-07 (GitHub Actions CI workflow on `Constellations` branch). |
+| Phase | 1: Skeleton complete (Gate 1 met on Windows; Linux native app test deferred to dual boot) |
+| Current task | **P2-01 Sky** (Phase 2: The shell) |
+| State | P1-01..P1-07 complete. CI workflow (`.github/workflows/ci.yml`) set up for Windows and Ubuntu runners on the `Constellations` branch. |
+| Next step | P2-01 Sky (canvas render of stars at device pixel ratio, Still/Drifting modes, shooting stars). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `48a3f02` (P1-06). |
+| Last pushed commit | `1d44bdd` (P1-07). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -117,6 +117,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-07
+- Did: created GitHub Actions CI workflow in `.github/workflows/ci.yml`. Runs on both `windows-latest` and `ubuntu-latest` on pushes to the `Constellations` branch only. Executes `tools/check.ps1` on Windows and `tools/check.sh` on Ubuntu (with playwright chromium installation and system dependencies). Also made `tools/check.sh` and `tools/run-dev.sh` executable in Git index and added atomic directory counter to `engine-api` unit tests.
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs all 6 steps and exits 0; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean; workflow YAML validated.
+- Edge cases: §1 CI restricted strictly to `Constellations` branch (`main` unaffected); both Windows and Ubuntu runner definitions with required toolchains and dependencies; handles non-interactive headless testing.
+- Not verified / unsure: remote GitHub Actions run status until push completes; whether GitHub Actions is enabled on the remote repository.
+- Decisions proposed: none.
+- Next: Phase 2, P2-01 Sky (`ui/sky.js` / canvas rendering of the sky).
+- Commit: `1d44bdd` "P1-07: CI workflow for Constellations on Windows and Ubuntu"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-06
 - Did: created `tools/check.ps1` (PowerShell) and `tools/check.sh` (POSIX/Bash) implementing the unified verify command. Checks include: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, JS syntax validation (`node --check` across `ui/*.js`), token verification (no raw hex outside `ui/tokens.css`), and visual check (`tools/visual_check.py --report-only`). Also fixed race condition in `app/engine-cef/src/ui_scheme.rs` test suite by using an atomic counter for temporary directories (`TEST_DIR_COUNTER`).

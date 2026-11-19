@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - Constellations
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          pip install playwright pillow
+          python -m playwright install chromium
+
+      - name: Run check script
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools\check.ps1
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libx11-dev libxcomposite-dev libxdamage-dev libxext-dev libxfixes-dev libxrandr-dev libxtst-dev libpango1.0-dev libcairo2-dev libatk1.0-dev libgdk-pixbuf2.0-dev libgtk-3-dev libnss3-dev || true
+
+      - name: Install Python dependencies
+        run: |
+          pip install playwright pillow
+          python3 -m playwright install --with-deps chromium
+
+      - name: Run check script
+        run: bash tools/check.sh

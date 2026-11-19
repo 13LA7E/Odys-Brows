@@ -192,6 +192,9 @@ pub fn file_url(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn file_urls_encode_spaces_and_unicode() {
@@ -211,7 +214,9 @@ mod tests {
 
     #[test]
     fn ui_dir_prefers_installed_copy_and_handles_missing() {
-        let tmp = std::env::temp_dir().join(format!("engine-api-test-{}", std::process::id()));
+        let n = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp =
+            std::env::temp_dir().join(format!("engine-api-test-{}-{}", std::process::id(), n));
         let installed = tmp.join("bin");
         let source = tmp.join("src-ui");
         std::fs::create_dir_all(installed.join("ui")).unwrap();
