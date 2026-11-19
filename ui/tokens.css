@@ -48,6 +48,11 @@
   --w-progress-track: rgba(255, 255, 255, .10);
   --w-ring-track: rgba(255, 255, 255, .14);
 
+  /* Accent at opacity (DESIGN.md §3) */
+  --accent-ring: color-mix(in srgb, var(--accent) 40%, transparent);
+  --accent-ring-private: color-mix(in srgb, var(--accent) 45%, transparent);
+  --accent-ring-hover: color-mix(in srgb, var(--accent) 50%, transparent);
+
   /* Page dim behind a Helm answer */
   --page-dim: rgba(0, 0, 0, .5);
 
@@ -61,7 +66,10 @@
   --r-search: 12px;
   --r-track: 10px;
   --r-row: 8px;
+  --r-chip: 8px;
   --r-segment: 7px;
+  --r-page: 16px 0 0 16px;
+  --r-notch: 0 0 0 14px;
 
   /* Depth */
   --shadow-helm: 0 12px 32px rgba(0, 0, 0, .5);

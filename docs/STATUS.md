@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-05 Tokens and fonts** |
-| State | P1-01..P1-04 done on Windows. P1-04 fixture mode verified (all 7 boards load without JS errors; visual check baseline scores recorded). |
-| Next step | P1-05 (tokens grep check), then P1-06 (check scripts), P1-07 (CI). |
+| Current task | **P1-06 One verify command** |
+| State | P1-01..P1-05 done on Windows. P1-05 tokens verified (all DESIGN.md §3 tokens in tokens.css, @font-face for bundled Familjen Grotesk, 0 raw hex colours outside tokens.css). |
+| Next step | P1-06 (one verify command: `tools/check.ps1` and `tools/check.sh`), then P1-07 (CI). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `0d7b5d0` (P1-04). |
+| Last pushed commit | `48b5ec6` (P1-05). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -117,6 +117,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-05
+- Did: completed P1-05 tokens and fonts. Added missing DESIGN.md §3 tokens to `ui/tokens.css` (accent rings at opacity: `--accent-ring`, `--accent-ring-private`, `--accent-ring-hover`; radii: `--r-page`, `--r-notch`, `--r-chip`). Replaced hardcoded radius literals in `ui/app.css` with token variables. Verified all 4 Familjen Grotesk font weights (400, 500, 600, 700) and OFL.txt in `ui/fonts/`.
+- Verified: grep check across `ui/*.css` outside `ui/tokens.css` finds 0 raw hex colours; `cargo build` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; `cargo test` (10 passed); `node --check` on all `ui/*.js` passed; `tools\run-dev.ps1 --engine-selftest` passed; `tools\run-dev.ps1 --ipc-selftest` passed; `visual_check.py --report-only` all 7 boards pass without JS errors.
+- Edge cases: §1 tokens and styling: zero raw hex colours outside tokens.css; fallback font chain (`Familjen Grotesk, system-ui, sans-serif`); private window theme overrides; opacity overlays mapped. Linux: not tested.
+- Not verified / unsure: Linux.
+- Decisions proposed: none.
+- Next: P1-06 One verify command (`tools/check.ps1` and `tools/check.sh`).
+- Commit: `48b5ec6` "P1-05: tokens and fonts"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-04
 - Did: completed P1-04 fixture mode. Installed Playwright chromium; verified `tools/visual_check.py --report-only` against all 7 boards (`Main`, `Browsing`, `Settings`, `HelmAnswer`, `ClosedTabs`, `Private`, `History`). All boards load in headless chromium with 0 JS/console errors.
