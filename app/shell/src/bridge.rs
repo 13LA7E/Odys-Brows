@@ -45,6 +45,10 @@ pub enum FromUi {
     MinimizeWindow,
     MaximizeWindow,
     CloseWindow,
+    /// Rail width change from collapse/expand (P2-05).
+    SetRailWidth {
+        width: i32,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -180,6 +184,10 @@ mod tests {
             Ok(FromUi::MaximizeWindow)
         );
         assert_eq!(parse(r#"{"type":"close-window"}"#), Ok(FromUi::CloseWindow));
+        assert_eq!(
+            parse(r#"{"type":"set-rail-width","width":264}"#),
+            Ok(FromUi::SetRailWidth { width: 264 })
+        );
     }
 
     #[test]

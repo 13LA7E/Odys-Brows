@@ -93,6 +93,9 @@ export function renderShell(root, state) {
   root.classList.toggle('private', !!state.private);
   const railWidth = state.rail === 'expanded' ? 264 : 56;
   root.style.setProperty('--rail', `${railWidth}px`);
+  if (typeof window.odysseyBridge === 'function') {
+    window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: railWidth }));
+  }
 
   createSky(root, {
     stars: state.sky,

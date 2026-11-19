@@ -108,7 +108,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P2-04 Trail rail, expanded, with branches.** §6. Narrow/Wide setting and the collapse button. Tabs opened from another tab appear as its children; closing a parent re-attaches its children to the parent's parent.
   - Edge: §2
   - Done when: [Browsing] rail region passes; branching tested with a page that opens links in new tabs.
-- [ ] **P2-05 Page panel and layout.** §4. Page area starts at the rail's edge with `16 0 0 16` radius; the page view is sized to it; the Helm overlay follows D-009; window resizing keeps the Helm centred in the page area.
+- [x] **P2-05 Page panel and layout.** §4. Page area starts at the rail's edge with `16 0 0 16` radius; the page view is sized to it; the Helm overlay follows D-009; window resizing keeps the Helm centred in the page area.
   - Edge: §1 (sizes, scaling), §4 (full screen)
   - Done when: resize from 900 to 2560 px wide looks right (screenshots at 1280 and 1920 logged).
 - [ ] **P2-06 Helm: navigation and address.** §7 frame, back/forward/reload, the three address formats, typing a URL or search, `odyssey://settings` and `odyssey://history` internal pages, keyboard (Ctrl+L focuses the Helm, Esc leaves it). The Assistant button opens ask mode in Phase 7; disabled until then.

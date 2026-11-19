@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 2: The shell |
-| Current task | **P2-05 Page panel and layout** |
-| State | P2-04 complete. Expanded rail implemented in `ui/rail.js`. Browsing (0.0) and ClosedTabs (0.0) pass visual check. Tree hierarchy, quadratic curve branches, collapse toggle, and child re-attachment on parent close verified in automated tests. |
-| Next step | P2-05 Page panel and layout (§4: page area starts at rail edge with `16 0 0 16` radius, page view sized to it, Helm overlay follows D-009, resize keeps Helm centered in page area). |
+| Current task | **P2-06 Helm: navigation and address** |
+| State | P2-05 complete. Page panel radius `16 0 0 16` and sizing verified. Helm centering across window widths (900px to 2560px) verified in automated tests. Screenshots logged at 1280px and 1920px. |
+| Next step | P2-06 Helm: navigation and address (§7: 560x52 frame, back/forward/reload, address display formats, typing/navigation, odyssey://settings and odyssey://history routing, keyboard Ctrl+L/Esc). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `e586ab2` (P2-04). |
+| Last pushed commit | `0960456` (P2-05). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-05
+- Did: completed P2-05 Page panel and layout (§4). Configured page panel styling (`.page` starts at `left: var(--rail)`, full window height, rounded `16 0 0 16` via `--r-page`). Centered Helm horizontally in page area using dynamic calc (`calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2)`), seated 28px above bottom edge (`--helm-bottom`). Added `FromUi::SetRailWidth` to message bridge and implemented `Shell::rail_width` in `app/shell/src/main.rs` to dynamically position and resize the page view to client bounds (`(c.width - b.x)`). Created `tools/test_layout.py` exercising window resizing from 900px to 2560px, verifying exact Helm centering (equal left and right page area margins), page radius, and new-tab sky passthrough. Captured layout screenshots at 1280px and 1920px in `docs/shots/`.
+- Verified: `python tools/test_layout.py` passed across 900, 1280, 1920, and 2560px viewports; screenshots saved: `docs/shots/p2-05-layout-1280.png` and `docs/shots/p2-05-layout-1920.png`; `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test` clean.
+- Edge cases: §1 window resizing: tested from 900px up to 2560px wide, Helm stays centered in page area regardless of rail state (collapsed 56px or expanded 264px); §4 page panel radius: exact `16 0 0 16` radius on left corners; §4 new tab sky passthrough: verified no `.page` panel renders on new tab. Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: none.
+- Next: P2-06 Helm: navigation and address (§7).
+- Commit: `0960456` "P2-05: page panel and layout"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-04
 - Did: completed P2-04 Trail rail, expanded, with branches. Implemented `renderExpandedRail` in `ui/rail.js` (§6): 264px wide rail with star logo at (12, 18), "odyssey" wordmark at (44, 17), collapse button (32x32 button with sidebar icon) at (220, 12), single row of 6 pinned apps at top 68 (Mail, Calendar, Notes, Files, Maps, Odysseus with accent star 16), tab tree with quadratic curve branches (`M28 py Vcy-8 Q28 cy 36 cy H46`), active row highlight (`--w-active-row`, active circle r 12 + star 16), inactive row dots (r 3.5 `#5b656f`), new tab row with dashed ring and plus, Home/spaces bottom row, and sliders settings button at (220, 748). Implemented ClosedTabs board faded rows with dotted trunk and hover preview card. Implemented `reattachChildrenOnClose` in `ui/rail.js` and `Shell::close_tab` in Rust `app/shell/src/main.rs`. Created `tools/test_expanded_rail.py` testing branches, collapse toggle, and child re-attachment.

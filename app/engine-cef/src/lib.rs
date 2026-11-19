@@ -138,8 +138,8 @@ fn place(id: ViewId) {
         win.set_bounds(Some(&Rect {
             x: c.x + b.x,
             y: c.y + b.y,
-            width: b.width.max(1),
-            height: b.height.max(1),
+            width: (c.width - b.x).max(1),
+            height: c.height.max(1),
         }));
         if page.visible {
             win.show();

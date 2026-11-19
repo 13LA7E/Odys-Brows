@@ -49,12 +49,12 @@ fn ui_dir() -> Option<PathBuf> {
 }
 
 /// The page area: right of the rail, full height (DESIGN.md §4).
-fn page_bounds(engine: &CefEngine) -> Rect {
+fn page_bounds(engine: &CefEngine, rail_width: i32) -> Rect {
     let (w, h) = engine.client_size();
     Rect {
-        x: RAIL_WIDTH,
+        x: rail_width,
         y: 0,
-        width: (w - RAIL_WIDTH).max(1),
+        width: (w - rail_width).max(1),
         height: h.max(1),
     }
 }
@@ -65,10 +65,21 @@ pub struct Tab {
     pub opener: Option<ViewId>,
 }
 
-#[derive(Default)]
+#[derive(Debug)]
 struct Shell {
     tabs: Vec<Tab>,
     shown: Option<ViewId>,
+    rail_width: i32,
+}
+
+impl Default for Shell {
+    fn default() -> Self {
+        Self {
+            tabs: Vec::new(),
+            shown: None,
+            rail_width: RAIL_WIDTH,
+        }
+    }
 }
 
 impl Shell {
@@ -100,7 +111,7 @@ impl Shell {
         if let Some(old) = self.shown.filter(|v| *v != view) {
             engine.set_visible(old, false);
         }
-        engine.set_bounds(view, page_bounds(engine));
+        engine.set_bounds(view, page_bounds(engine, self.rail_width));
         engine.set_visible(view, true);
         self.shown = Some(view);
     }
@@ -124,6 +135,12 @@ impl Shell {
             FromUi::MinimizeWindow => engine.minimize_window(),
             FromUi::MaximizeWindow => engine.toggle_maximize_window(),
             FromUi::CloseWindow => engine.close_window(),
+            FromUi::SetRailWidth { width } => {
+                self.rail_width = width;
+                if let Some(view) = self.shown {
+                    engine.set_bounds(view, page_bounds(engine, self.rail_width));
+                }
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
