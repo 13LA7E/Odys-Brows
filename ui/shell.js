@@ -7,6 +7,7 @@ import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
+import { renderHistory } from './history.js';
 import { renderNewTab } from './newtab.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -194,7 +195,30 @@ export function renderShell(root, state) {
       panel.append(site);
     } else if (state.page === 'internal') {
       const pageName = state.pageName || state.helm?.address?.name;
-      if (pageName === 'settings' || state.settings) {
+      if (pageName === 'history' || state.history) {
+        renderHistory(panel, state.history, {
+          onSearch: (q) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'search-history', query: q }));
+            }
+          },
+          onOpen: (url) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'open', url }));
+            }
+          },
+          onForget: (id) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'forget-visit', id }));
+            }
+          },
+          onClearDay: (dayStart) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'clear-history-day', day_start_secs: dayStart }));
+            }
+          },
+        });
+      } else if (pageName === 'settings' || state.settings) {
         renderSettings(panel, state, (field, val) => {
           if (field === 'stars') {
             state.starsMode = val.toLowerCase();

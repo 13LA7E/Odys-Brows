@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 4: Everyday browsing |
-| Current task | **P4-03 History page** |
-| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete (app/history with rusqlite visits table, branch links, came_back detection, day grouping, search, forget with branch re-parenting, clear_day, clear_all; bridge messages wired to app/shell; private windows strictly isolated). 7 unit tests in app/history, unit test in app/shell. All tests, clippy, check.ps1, --ipc-selftest, and --engine-selftest passed. |
-| Next step | P4-03 History page (odyssey://history page rendering in ui/history.js, search, day groups, branch curves, mini constellation side panel, visual_check on History board). |
+| Current task | **P4-04 Closed tabs** |
+| State | Phase 4 in progress: P4-01 Downloads complete. P4-02 History store complete. P4-03 History page complete (ui/history.js rendering odyssey://history with search, day groups, trunk lines, curved branches, active tab accent star, came-back bright white star, hover actions Open/Forget, and side panel mini-constellation; visual check on History board passes with score 0.6). |
+| Next step | P4-04 Closed tabs (§6 Closed tabs: "Closed earlier" list with fading, hover preview with snapshot, Relight restores tab, Forget removes, 24h expiry; pass visual check on ClosedTabs board). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | efb8884 (P4-01). |
+| Last pushed commit | d2a2010 (P4-02). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,17 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-03
+- Did: completed P4-03 History page (DESIGN.md §9, PHASES.md P4-03, EDGE_CASES §6).
+  - Implemented `ui/history.js` with `renderHistory`: title (32/600), search bar (660x46, radius 12, token `var(--w-field)`, search SVG icon), day groups ("Today", "Yesterday") with "Clear this day" actions, SVG trail with vertical trunk (`stroke-opacity .16`), curved branch path to child tab, current tab accent star ring, came-back bright white r 5 dot (`opacity .95`), hover state with `var(--w-hover-row)` and "Open" / "Forget" buttons, side panel at (880, 236) with summary and 5-point mini constellation.
+  - Implemented `formatDayGroups` to map live Rust `DayGroup` messages to UI row format with 24-hour tabular times.
+  - Wired into `ui/shell.js` for internal page rendering on `odyssey://history`.
+- Verified: `python tools/visual_check.py History` passed with score 0.6 (limit 5.0, 0.02% pixels diff), `node --check ui/history.js`, `node --check ui/shell.js`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- Edge cases §6: History rendering on empty/cleared days; long title/host truncation with `white-space: nowrap`; tabular numbers for aligned timestamps; branch indentations properly positioned.
+- Decisions proposed: none.
+- Next: P4-04 Closed tabs ("Closed earlier" list in expanded rail, fading, hover preview card with snapshot, Relight and Forget actions, 24h expiration; pass visual check on ClosedTabs board).
+- Commit: P4-03: history page  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-02
 - Did: completed P4-02 History store (SQLite history store with visits, branch links, came_back detection, day grouping, search, forget, clear_day, and private isolation; EDGE_CASES §6).

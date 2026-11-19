@@ -141,7 +141,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P4-02 History store.** SQLite (rusqlite) with visits, opener links (for branches) and a "came back" flag. Not written in private windows.
   - Edge: §6
   - Done when: unit tests for record, query by day, search, forget and clear day.
-- [ ] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.
+- [x] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.
   - Edge: §6
   - Done when: [History] passes with the fixture and works with real data.
 - [ ] **P4-04 Closed tabs.** §6 Closed tabs: "Closed earlier" list with fading, hover preview with a real snapshot, Relight restores the tab (url, scroll, history stack where the engine allows), Forget removes it, gone after 24 h.
