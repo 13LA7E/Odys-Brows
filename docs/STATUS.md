@@ -6,19 +6,32 @@
 
 | | |
 |---|---|
-| Phase | 0: Spike |
-| Current task | **P0-08 Shell decision** (propose D-007 and the D-013 path) |
-| State | **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-08: from P0-02 to P0-06 evidence, propose D-007 (Tauri+CEF vs plain Rust+cef-rs) with reasons and the matching installer/updater path for D-013; mark Proposed and list for the owner. |
+| Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
+| Current task | **P1-01 Project layout** |
+| State | **P0-08 done as a proposal** (D-007 plain Rust + cef-rs, Proposed). **P0-07 Windows baseline done** (Edge + spike; others not installed). **P0-06 Windows part done** (Widevine plays VP9; no H.264/AAC in stock CEF, Q-08). **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P1-01: create the Cargo workspace (`app/shell`, `app/engine-api`, `app/engine-cef`, `app/segdl`, `app/shields`, `app/vault`, `app/ai`) and `ui/`; `cargo build` must succeed and an empty window must open. Reuse the spike's CEF setup (manifest, Chrome page first, Alloy UI). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `5d3008b` (P0-06); P0-07 commit follows (see the session log) |
+| Last pushed commit | `5e5143b` (P0-07); P0-08 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
+
+## Gate 0 check (19 Nov 2026, autopilot)
+
+Gate 0 needs: D-003, D-007 and D-009 Accepted, D-015 with results, BENCHMARKS.md with a baseline.
+- D-003: Accepted earlier; re-confirmed on Windows in P0-05 (problems written up). Linux not tested. **Met for Windows.**
+- D-007: **Proposed** (plain Rust + cef-rs), not Accepted. **Not met** (owner).
+- D-009: **Proposed** (off-screen Helm in a layered window, P0-04b), not Accepted. **Not met** (owner).
+- D-015: results recorded for Windows. **Met for Windows**; Linux not tried.
+- BENCHMARKS.md: baseline for Edge and the spike on Windows. **Partly met** (Chrome, Brave, Firefox, Linux missing).
+
+Gate 0 is **not met**. Following the autopilot instructions, Phase 1 continues on the Proposed D-007 and D-009; anything built on them may change when the owner decides.
 
 ## Blockers
 
 - **\* LINUX PENDING \*** P0-01b needs the deferred Ubuntu toolchain setup and version record. P0-03 (P0-02 on Linux) also waits for it. Windows work can continue, but the full P0-01 task and Phase 0 gate remain open.
 
 ## Awaiting Owner OK
+
+- **P0-08 / D-007:** plain Rust + cef-rs (reasons in DECISIONS), and the D-013 packaging path (cargo-packager). Phase 1 is being built on this.
 
 - **P0-04 / D-009:** the Helm-over-page approach. Evidence: `spike/p0-04-helm/README.md`, `spike/shots/p0-04-overlay-win.png` (overlay: square corners), `spike/shots/p0-04-window.png` (owned window: rounded but aliased, no shadow). Proposal: off-screen Helm in a layered window (P0-04b); interim fallback square corners (Q-06). Left `[~]` in PHASES.
 - **P0-04b:** the off-screen Helm works on Windows (`spike/shots/p0-04b-osr.png`, numbers in `spike/p0-04-helm/README.md`). Needs: the owner's OK on the look and the 25–48 ms input-to-paint, and an IME test by someone with a Chinese/Japanese/Korean IME (`run.ps1 -AppArgs "--mode=osr"`, click the Helm, type with the IME). Left `[~]`.
@@ -80,6 +93,15 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-08 and Gate 0
+- Did: proposed D-007 (plain Rust + cef-rs) and the D-013 path (cargo-packager + cargo-packager-updater) in DECISIONS with reasons from P0-02 to P0-07. Checked Gate 0 (section above). P0-08 left [~] (needs the owner's acceptance).
+- Verified: `cargo info cargo-packager` 0.11.8 and `cargo-packager-updater` 0.2.3 (Apache-2.0 OR MIT); cargo-packager README lists NSIS, WiX MSI, deb, AppImage, pacman. Web search on Tauri's CEF runtime found the Tauri v3.0.0-alpha.0 notes (`tauri_runtime_cef`, unstable runtime API) and a March 2026 issue about missing navigation controls; nothing newer found (marked unverified).
+- Edge cases: not applicable (decision record only).
+- Not verified / unsure: whether cargo-packager can ship CEF's runtime files and whether its updater verifies signatures; current Tauri CEF status.
+- Decisions proposed: D-007 (Proposed), D-013 detail (Proposed).
+- Next: P1-01 project layout on the Proposed D-007.
+- Commit: see git log "P0-08: propose plain Rust + cef-rs (D-007) and packaging path; Gate 0 check"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-07 (Windows)
 - Did: `tools/bench/bench.py` (stdlib only; Windows Private Bytes + CPU via `Win32_Process`, Linux PSS + `/proc/<pid>/stat`, process tree + profile match, fresh temp profile deleted afterwards) and `tools/bench/urls.txt` (10 fixed public URLs). The P0-05 spike gained `--urls-file` (one window per URL) and `--profile-dir`; built in release. `docs/BENCHMARKS.md` with method, machine, versions, date and table.
 - Verified: `python tools/bench/bench.py --list` finds Edge 157.0.4341.60 and the spike; Chrome, Brave, Firefox not installed (also checked the registry App Paths). Two rounds (60 s wait + 60 s idle each): Edge 10 tabs 1073.6 / 1028.8 MB, 6.4 / 4.1 % of one core; Edge 10 windows 1390.9 / 1377.0 MB, 3.1 / 4.0 %; spike 10 windows 974.6 / 934.2 MB, 1.6 / 3.0 %. A first spike run measured 0 processes: the script's glob put the CEF tarball on PATH instead of the CEF folder, so the spike couldn't start; fixed (pick the folder containing libcef) and rerun.
@@ -87,7 +109,7 @@ Copy this template for each session:
 - Not verified / unsure: Chrome, Brave, Firefox numbers; Linux; whether 10 windows vs 10 tabs is a fair proxy (both Edge layouts recorded to show the gap).
 - Decisions proposed: none.
 - Next: P0-08 (shell decision D-007 and D-013 path) on the evidence from P0-02 to P0-06.
-- Commit: see git log "P0-07: memory/CPU benchmark script and Windows baseline"  Pushed: yes
+- Commit: `5e5143b` "P0-07: memory/CPU benchmark script and Windows baseline"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-06 (Windows)
 - Did: `spike/p0-06-drm/eme-probe.html` (MSE codecs + EME key systems) and `play.html` (Shaka Player 4.12.6 from jsDelivr, two public Widevine demo assets, Shaka's public license proxy), run in the P0-05 spike binary, served from `http://localhost:8765` (secure context). D-015 results table, new Q-08 (H.264/AAC), README.

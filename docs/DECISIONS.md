@@ -64,6 +64,12 @@ Keeps Odyssey's Rust code (segmented downloader, Shields/adblock, vault logic) a
 - Plain Rust + cef-rs: more of our own window and packaging code, fewer moving parts we don't control.
 - This also decides installers and the auto-updater (see D-013).
 
+**Proposed (P0-08, 19 Nov 2026): plain Rust + cef-rs.** Needs the owner's OK. Reasons, from the Phase 0 spikes:
+- Every spike needed direct control of CEF Views that a Tauri runtime layer hides: the order in which Chrome and Alloy style BrowserViews are added (P0-04), overlay views and box layouts, `ChromeToolbarType` (P0-05), windowless rendering into a layered window we own (P0-04b), Chrome commands and popup callbacks for extension-opened tabs (P0-05). All of this works today with the `cef` crate alone (P0-02 to P0-07 are built on it).
+- Tauri's CEF runtime (`tauri-runtime-cef`) appeared with Tauri v3.0.0-alpha; its runtime API is documented as unstable, and a March 2026 issue said CEF webviews lacked back/forward/reload/stop in Tauri's API. Current state not rechecked beyond that (*unverified*). We'd depend on an alpha for the core of the product.
+- What Tauri would add (windowing, IPC to a webview UI, bundling) we already have in CEF Views and CEF's own process messages; the bundling part is covered by a Tauri-independent packager (D-013).
+- Cost: we write our own window, IPC bridge and packaging glue. The spikes show that is small (a few hundred lines each).
+
 ## D-008 UI technology: HTML/CSS/JS for the browser chrome. Accepted
 
 Same approach as Odyssey, and the design boards are already HTML, so tokens and markup carry straight over. Rules: one CSS token file from DESIGN.md §3; no entrance animations on elements that re-render; the UI never gets secrets.
@@ -108,6 +114,7 @@ Port from Odyssey (`adblock` crate, Brave's engine). Hook it into CEF's request 
 - Linux: AppImage and .deb first; rpm/Flatpak later.
 - Built in CI on a Windows runner and an Ubuntu runner (Linux bundles need Linux toolchains).
 - Code signing on Windows (Q-02). Without it, SmartScreen warns, and even signed apps build reputation over weeks.
+- **Proposed with D-007 (P0-08):** package with `cargo-packager` (CrabNebula, Tauri-independent; 0.11.8 on crates.io; formats per its README: NSIS `.exe` and WiX `.msi` on Windows, `.deb`, AppImage and pacman on Linux; no rpm) and update with `cargo-packager-updater` (0.2.3). Still to check in P9-01: that it can ship CEF's runtime files (DLLs/.so, .pak, locales) and that the updater verifies signatures (*unverified*: its README doesn't say). Fallback: a hand-written NSIS script and our own signed-manifest updater.
 
 ## D-014 AI: off by default, provider setting, browser works without it. Accepted
 

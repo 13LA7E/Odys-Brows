@@ -62,7 +62,7 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
 - [~] **P0-07 Memory baseline.** Windows: Edge + spike measured (`docs/BENCHMARKS.md`); Chrome, Brave, Firefox not installed (owner question); **\* LINUX PENDING \***. Write `tools/bench/` with a fixed list of 10 public URLs (news, video, docs, webmail login page, a long article, a web app) and a script that opens them in a browser, waits 60 s, and records **total private memory of all the browser's processes** (Windows: sum of Private Bytes; Linux: sum of PSS from `/proc/*/smaps_rollup`) plus average CPU over 60 s idle. Run it for Chrome, Edge (Windows), Brave, Firefox and the spike.
   - Edge: §9
   - Done when: `docs/BENCHMARKS.md` exists with the method, machine, versions, date and a table; the script is committed.
-- [ ] **P0-08 Shell decision.** Using P0-02 to P0-06, propose D-007 (Tauri+CEF or plain Rust+cef-rs) with reasons, and the matching installer/updater path for D-013.
+- [~] **P0-08 Shell decision.** D-007 Proposed: plain Rust + cef-rs; D-013 path Proposed (cargo-packager); awaiting Owner OK. Using P0-02 to P0-06, propose D-007 (Tauri+CEF or plain Rust+cef-rs) with reasons, and the matching installer/updater path for D-013.
   - Done when: D-007 is Accepted by the owner.
 
 **Gate 0:** D-003, D-007 and D-009 are Accepted, D-015 has results, and BENCHMARKS.md has a baseline.
