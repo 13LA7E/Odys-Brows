@@ -140,6 +140,18 @@ Providers: none (default); a local server (Ollama, LM Studio, any OpenAI-compati
 
 All instructions live in `AGENTS.md`, read natively by Kimi Code, OpenCode (the harness NVIDIA documents for Nemotron), Google Antigravity (Gemini) and Codex. `CLAUDE.md` contains only `@AGENTS.md`. Claude Code reads AGENTS.md on its own only when there is no CLAUDE.md, and only from v2.1.277 on, so the import keeps it working everywhere. There is no `GEMINI.md`: Antigravity gives it priority over AGENTS.md, so it would split the rules. State lives in `docs/STATUS.md`, not in any tool's memory or chat history.
 
+## D-017 Each tab is its own owned Chrome style window. Proposed (P1-02)
+
+Found in P1-02 (spike `spike/p0-04-helm --swap`): after the first page view is removed from the main window, CEF refuses a new Chrome style BrowserView there ("Cannot add multiple Chrome style BrowserViews"), because the window keeps a theme profile once any BrowserView was added (`browser_view_impl.cc` AddedToWidget). Moving a view whose browser was created in a hidden helper window was tried too; the app exited without a clear error, so that path was dropped.
+
+So each page view (tab) lives in its **own frameless Chrome style CEF window, owned by the main window** (`WindowDelegate::parent_window`) and placed over the page area in screen DIP. Switching tabs shows one page window and hides the rest. The main window holds only our Alloy style UI. Implemented in `app/engine-cef` and checked by `constellations --engine-selftest` (navigate, back, forward, reload, second view, visibility swap, close).
+
+Consequences to handle:
+- Z-order: page windows and the off-screen Helm window (D-009 proposal) are all owned by the main window; the Helm must be kept above the active page window (re-raise it when a page window activates).
+- Activation: clicking a page activates its window, not the main window. Keyboard shortcuts must work in both (P2-06).
+- Linux/Wayland: apps can't place top-level windows themselves; owned page windows may not work there. Test in P0-03/P1 on Linux; the fallback there may be one CEF window per tab without our overlay UI (owner decision). *Unverified.*
+- Memory: one more native window per tab (small); measured again in P5-04.
+
 ---
 
 ## Open questions for the owner

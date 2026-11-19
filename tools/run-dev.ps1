@@ -8,3 +8,4 @@ $lib = Get-ChildItem (Join-Path $root "target\$profileName\build") -Recurse -Fil
 if (-not $lib) { Write-Error "CEF runtime not found. Run: cargo build$(if ($Release) { ' --release' })"; exit 1 }
 $env:PATH = "$($lib.DirectoryName);$env:PATH"
 & (Join-Path $root "target\$profileName\constellations.exe") @Rest
+exit $LASTEXITCODE

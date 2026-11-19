@@ -7,6 +7,7 @@
 )]
 
 mod brand;
+mod selftest;
 
 use std::path::{Path, PathBuf};
 
@@ -46,14 +47,35 @@ fn ui_url() -> String {
 }
 
 fn main() {
-    let result = engine_cef::run(|| engine_cef::StartOptions {
-        profile_dir: profile_dir(),
-        ui_url: ui_url(),
-        title: brand::NAME.to_string(),
-    });
+    let selftest = std::env::args().any(|a| a == "--engine-selftest");
+    let result = engine_cef::run(
+        || engine_cef::StartOptions {
+            // The self-test uses its own throwaway profile so it never touches real data.
+            profile_dir: if selftest {
+                std::env::temp_dir().join(format!("{}-selftest", brand::DATA_DIR))
+            } else {
+                profile_dir()
+            },
+            ui_url: ui_url(),
+            title: brand::NAME.to_string(),
+        },
+        move |engine| {
+            if selftest {
+                selftest::start(engine);
+            }
+        },
+    );
     match result {
         Ok(engine_cef::Role::Helper(code)) => std::process::exit(code),
-        Ok(engine_cef::Role::BrowserFinished) => {}
+        Ok(engine_cef::Role::BrowserFinished) => {
+            if selftest {
+                std::process::exit(if selftest::result() == Some(true) {
+                    0
+                } else {
+                    1
+                });
+            }
+        }
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);

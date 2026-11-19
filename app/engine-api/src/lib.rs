@@ -1,14 +1,169 @@
 //! The engine interface (D-005). All browser code talks to the web engine through this crate,
-//! never to CEF directly. P1-02 defines the trait; P1-01 only sets up the crate.
+//! never to CEF directly. Keep it small: only what the browser uses.
+//!
+//! Model: the engine owns *page views* (one per tab). Each has bounds in the main window's
+//! client area (DIP) and can be shown or hidden. Our own UI is not a page view; the engine hosts
+//! it separately and only it can receive scripts from Rust ([`Engine::run_ui_script`]).
+//! Web pages never get a bridge to Rust (AGENTS.md, "Web content never gets IPC").
+
+use std::path::{Path, PathBuf};
+
+/// Identifies one page view (one tab). Never reused within a run.
+pub type ViewId = u64;
+
+/// A rectangle in device-independent pixels, relative to the main window's client area.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// How a page asked for a new window (from `window.open`, a link with a target, or the user).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewWindowKind {
+    /// A new foreground tab (the default for links with `target=_blank`).
+    ForegroundTab,
+    /// A new background tab (middle click, Ctrl+click).
+    BackgroundTab,
+    /// A popup with its own size (`window.open` with features).
+    Popup,
+    /// A new top-level window (Shift+click).
+    Window,
+}
+
+/// What a page asks permission for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PermissionKind {
+    Camera,
+    Microphone,
+    Location,
+    Notifications,
+    Clipboard,
+    Other,
+}
+
+/// A download's state, reported as it changes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DownloadInfo {
+    /// Engine id of the download, unique within a run.
+    pub id: u32,
+    pub view: Option<ViewId>,
+    pub url: String,
+    /// Suggested file name (from Content-Disposition or the URL).
+    pub file_name: String,
+    pub received_bytes: i64,
+    /// `None` when the server didn't say how big the file is.
+    pub total_bytes: Option<i64>,
+    pub bytes_per_second: i64,
+    pub complete: bool,
+    pub cancelled: bool,
+    pub interrupted: bool,
+}
+
+/// Something that happened in a page view. Delivered on the UI thread, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Event {
+    /// The main frame's URL changed (navigation, history, fragment).
+    UrlChanged { view: ViewId, url: String },
+    /// The page title changed. Empty when the page has none (show the host instead).
+    TitleChanged { view: ViewId, title: String },
+    /// The page's favicon URL changed (`None`: no favicon).
+    FaviconChanged { view: ViewId, url: Option<String> },
+    /// Loading started or stopped; also whether back/forward are possible now.
+    LoadingChanged {
+        view: ViewId,
+        loading: bool,
+        can_go_back: bool,
+        can_go_forward: bool,
+    },
+    /// A page failed to load (DNS, TLS, offline, ...). `code` is the engine's error code.
+    LoadFailed {
+        view: ViewId,
+        url: String,
+        code: i32,
+        text: String,
+    },
+    /// The page started or stopped playing audio.
+    AudioChanged { view: ViewId, playing: bool },
+    /// The page wants a new window or tab. The engine did *not* open it: the browser decides
+    /// (and keeps `opener` to draw the Trail's branch). `user_gesture` is false for pop-ups the
+    /// user didn't ask for (EDGE_CASES §2).
+    NewWindowRequested {
+        opener: ViewId,
+        url: String,
+        kind: NewWindowKind,
+        user_gesture: bool,
+    },
+    /// A download started or changed.
+    Download(DownloadInfo),
+    /// A page asks for a permission. Answer with [`Engine::answer_permission`].
+    PermissionRequested {
+        view: ViewId,
+        request: u64,
+        origin: String,
+        kind: PermissionKind,
+    },
+    /// A certificate error on a navigation. Answer with [`Engine::answer_certificate_error`].
+    CertificateError {
+        view: ViewId,
+        request: u64,
+        url: String,
+        error: String,
+    },
+    /// The page's renderer process crashed or was killed.
+    Crashed { view: ViewId, reason: String },
+    /// The view finished closing; its id is now invalid.
+    Closed { view: ViewId },
+}
+
+/// The web engine, as the browser sees it. All methods are called on the UI thread.
+/// Calls with an unknown or closed [`ViewId`] are ignored (never a crash).
+pub trait Engine {
+    /// Create a hidden page view loading `url`. Show it with [`Engine::set_visible`].
+    fn create_view(&mut self, url: &str) -> ViewId;
+    /// Close a page view (runs the page's `beforeunload`; [`Event::Closed`] follows).
+    fn close_view(&mut self, view: ViewId);
+    /// Place a page view in the main window's client area.
+    fn set_bounds(&mut self, view: ViewId, bounds: Rect);
+    /// Show or hide a page view. Hidden views keep running unless put to sleep.
+    fn set_visible(&mut self, view: ViewId, visible: bool);
+
+    /// Load a URL (already decided by the browser: URL vs search, blocked schemes, EDGE §3).
+    fn navigate(&mut self, view: ViewId, url: &str);
+    fn go_back(&mut self, view: ViewId);
+    fn go_forward(&mut self, view: ViewId);
+    fn reload(&mut self, view: ViewId);
+    fn stop(&mut self, view: ViewId);
+
+    /// Zoom level as a factor (1.0 = 100%).
+    fn set_zoom(&mut self, view: ViewId, factor: f64);
+    /// Find text in the page; `forward` picks the direction, `next` continues a search.
+    fn find(&mut self, view: ViewId, text: &str, forward: bool, match_case: bool, next: bool);
+    fn stop_finding(&mut self, view: ViewId, clear_selection: bool);
+
+    /// Run a script in **our UI** only. There is deliberately no way to run a script in a
+    /// web page from here.
+    fn run_ui_script(&mut self, script: &str);
+
+    /// Put a background tab to sleep (free its renderer) and wake it again at the same URL.
+    fn sleep(&mut self, view: ViewId);
+    fn wake(&mut self, view: ViewId);
+
+    fn open_devtools(&mut self, view: ViewId);
+
+    /// Answer a [`Event::PermissionRequested`].
+    fn answer_permission(&mut self, request: u64, allow: bool);
+    /// Answer a [`Event::CertificateError`] (proceed only after the user chose to).
+    fn answer_certificate_error(&mut self, request: u64, proceed: bool);
+}
 
 /// Where our own browser UI (the HTML in `ui/`) lives on disk.
 ///
 /// Looked up next to the executable first (installed builds), then in the source tree
 /// (development builds).
-pub fn find_ui_dir(
-    exe_dir: &std::path::Path,
-    source_ui: &std::path::Path,
-) -> Option<std::path::PathBuf> {
+pub fn find_ui_dir(exe_dir: &Path, source_ui: &Path) -> Option<PathBuf> {
     [exe_dir.join("ui"), source_ui.to_path_buf()]
         .into_iter()
         .find(|d| d.join("index.html").is_file())
@@ -16,7 +171,7 @@ pub fn find_ui_dir(
 
 /// A `file://` URL for a local path. Every byte outside a small safe set is percent-encoded,
 /// so paths with spaces and non-ASCII user names work (EDGE_CASES §1).
-pub fn file_url(path: &std::path::Path) -> String {
+pub fn file_url(path: &Path) -> String {
     let s = path.to_string_lossy().replace('\\', "/");
     let s = s.trim_start_matches("//?/");
     let mut out = String::from(if s.starts_with('/') {
@@ -37,7 +192,6 @@ pub fn file_url(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn file_urls_encode_spaces_and_unicode() {
@@ -68,5 +222,12 @@ mod tests {
         std::fs::write(installed.join("ui").join("index.html"), "x").unwrap();
         assert_eq!(find_ui_dir(&installed, &source), Some(installed.join("ui")));
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The trait must stay object-safe so the shell can hold `Box<dyn Engine>` (D-005).
+    #[test]
+    fn engine_is_object_safe() {
+        fn takes(_: Option<Box<dyn Engine>>) {}
+        takes(None);
     }
 }

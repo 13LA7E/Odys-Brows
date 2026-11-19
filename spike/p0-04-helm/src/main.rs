@@ -461,6 +461,105 @@ function f(t) { iv.push(t - last); last = t; scrollBy(0, 6);
 requestAnimationFrame(t => { last = t; requestAnimationFrame(f); }); }, 2500);
 "#;
 
+thread_local! {
+    static SWAP_STARTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static PARKED: RefCell<Option<BrowserView>> = const { RefCell::new(None) };
+    static SECOND: RefCell<Option<BrowserView>> = const { RefCell::new(None) };
+}
+
+fn flex(window: &Window, view: &mut View) {
+    if let Some(l) = window.get_layout().and_then(|l| l.as_box_layout()) {
+        l.set_flex_for_view(Some(view), 1);
+    }
+    window.layout();
+}
+
+thread_local! {
+    static TEMP_WIN: RefCell<Option<Window>> = const { RefCell::new(None) };
+}
+
+// A hidden helper window: a new tab's browser is created here, then the view moves to the main
+// window (CEF only refuses Chrome style views whose browser doesn't exist yet).
+wrap_window_delegate! {
+    struct TempWin { view: RefCell<Option<BrowserView>> }
+    impl ViewDelegate {}
+    impl PanelDelegate {}
+    impl WindowDelegate {
+        fn on_window_created(&self, window: Option<&mut Window>) {
+            let Some(window) = window else { return };
+            if let Some(v) = self.view.borrow().as_ref() {
+                window.add_child_view(Some(&mut View::from(v)));
+            }
+            TEMP_WIN.with(|t| *t.borrow_mut() = Some(window.clone()));
+            window.show();
+        }
+        fn initial_show_state(&self, _w: Option<&mut Window>) -> ShowState {
+            ShowState::MINIMIZED
+        }
+        fn window_runtime_style(&self) -> RuntimeStyle {
+            RuntimeStyle::CHROME
+        }
+    }
+}
+
+wrap_task! {
+    struct SwapStep { step: u32 }
+    impl Task {
+        fn execute(&self) {
+            let Some(window) = ST.with(|s| s.borrow().window.clone()) else { return };
+            let next = |n: u32, ms: i64| {
+                let mut t = SwapStep::new(n);
+                post_delayed_task(ThreadId::UI, Some(&mut t), ms);
+            };
+            match self.step {
+                1 => {
+                    let Some(mut page) = ST.with(|s| s.borrow().page.clone()) else { return };
+                    let Some(first) = browser_view_get_for_browser(Some(&mut page)) else { return };
+                    window.remove_child_view(Some(&mut View::from(&first)));
+                    println!("swap1: parked first page view; browser alive={}", first.browser().is_some());
+                    PARKED.with(|p| *p.borrow_mut() = Some(first));
+                    let second = make_view(Role::Page, "https://example.com/", 0xFFFFFFFF);
+                    SECOND.with(|p| *p.borrow_mut() = second.clone());
+                    let mut d = TempWin::new(RefCell::new(second));
+                    window_create_top_level(Some(&mut d));
+                    println!("swap1: second page view placed in a minimised helper window");
+                    next(2, 4000);
+                }
+                2 => {
+                    let Some(second) = SECOND.with(|p| p.borrow().clone()) else { return };
+                    println!("swap2: second browser exists={}", second.browser().is_some());
+                    if let Some(t) = TEMP_WIN.with(|t| t.borrow().clone()) {
+                        t.remove_child_view(Some(&mut View::from(&second)));
+                    }
+                    let mut v = View::from(&second);
+                    window.add_child_view(Some(&mut v));
+                    flex(&window, &mut v);
+                    let url = second.browser().and_then(|b| b.main_frame()).map(|f| CefString::from(&f.url()).to_string());
+                    println!("swap2: moved second into the main window; url={url:?}");
+                    next(3, 5000);
+                }
+                3 => {
+                    if let Some(second) = SECOND.with(|p| p.borrow().clone()) {
+                        window.remove_child_view(Some(&mut View::from(&second)));
+                        println!("swap3: parked second; browser alive={}", second.browser().is_some());
+                    }
+                    if let Some(first) = PARKED.with(|p| p.borrow().clone()) {
+                        let mut v = View::from(&first);
+                        window.add_child_view(Some(&mut v));
+                        flex(&window, &mut v);
+                        let url = first.browser().and_then(|b| b.main_frame()).map(|f| CefString::from(&f.url()).to_string());
+                        println!("swap3: re-added first; url={url:?}");
+                    }
+                    if let Some(t) = TEMP_WIN.with(|t| t.borrow_mut().take()) {
+                        t.close();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 wrap_load_handler! {
     struct Load { role: Role }
     impl LoadHandler {
@@ -472,7 +571,12 @@ wrap_load_handler! {
             if f.is_main() == 0 {
                 return;
             }
-            println!("page load_end status={status}");
+            println!("page load_end status={status} url={}", CefString::from(&f.url()));
+            // P1-02 question: can the single Chrome style page view be swapped for another?
+            if std::env::args().any(|a| a == "--swap") && !SWAP_STARTED.with(|d| d.replace(true)) {
+                let mut t = SwapStep::new(1);
+                post_delayed_task(ThreadId::UI, Some(&mut t), 2000);
+            }
             // Click-through check: log clicks that reach the page.
             run_js(b, "addEventListener('pointerdown', e => console.log('METRIC pagepointer ' + e.clientX + ',' + e.clientY), true);");
             if std::env::args().any(|a| a == "--probe") {
