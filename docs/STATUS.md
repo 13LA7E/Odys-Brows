@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 3: New tab and private windows |
-| Current task | **P3-01 New tab** |
-| State | Phase 2 complete (Gate 2 met). Settings page shell (§9) implemented with nav, working controls (Stars, Shooting stars, Accent swatches, Trail, Faster downloads), dynamic accent recoloring, and atomic file persistence with corrupted settings recovery in Rust. Settings board visual check score 3.1 (limit 5.0). All Phase 2 tasks complete. |
-| Next step | P3-01 New tab (§9 New tab: greeting by time of day, clock, date, hint, and constellation built from the tab tree). |
+| Current task | **P3-02 Private windows** |
+| State | P3-01 complete. New tab greeting by time of day, clock, date, hint, and deterministic tab constellation layout implemented in `ui/newtab.js`. Tested with 1, 6, 20, and 100+ tabs with branches; older tabs fade in 100+ mode. Main visual check score 0.0. Screenshots logged at `docs/shots/p3-01-newtab-*.png`. |
+| Next step | P3-02 Private windows (§9 Private: separate in-memory profile, lilac accent, private sky, rail, copy). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `d89c704` (P2-07). |
+| Last pushed commit | `4e205a2` (P3-01). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P3-01
+- Did: completed P3-01 New tab (§9). Created `ui/newtab.js` with `renderNewTab`, `layoutConstellation`, `getGreeting`, `formatClock`, and `formatDate`. Built top-left greeting block (15px muted greeting by time of day, 84px clock with -3px tracking, 15px date "Wednesday, 18 November"), hint text at (120, 262), and deterministic constellation layout generated from the tab tree. Layout rules: deterministic from tab IDs (no jumping stars), meandering celestial serpentine trail with branches for child tabs, safely bounded in `[500..1140, 200..600]`, clear of clock, hint, rail, and Helm. Active tab gets accent ring r 14 and accent star 20; other tabs get white dots (r 2.8 - 3.6, opacity .92). Handled Edge §2 (100+ tabs): older tabs fade gracefully in opacity down to .22 while recent and active tabs shine brightly; labels shown for active and top 16 tabs to prevent overlap clutter, while all stars remain interactive click targets. Wired into `ui/shell.js`. Created `tools/test_newtab.py` validating determinism, formatting, and captured screenshots with 1, 6, 20, and 100 tabs into `docs/shots/`.
+- Verified: `python tools/visual_check.py Main` passed with score 0.0 (limit 5.0, 0.00% pixels); `python tools/test_newtab.py` passed all assertions; screenshots verified in `docs/shots/p3-01-newtab-{1tab,6tabs,20tabs,100tabs}.png`; `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` clean.
+- Edge cases: §2 100+ tabs: handled + tested (serpentine trail, older stars fade down to .22 opacity, labels displayed cleanly without overlap, instant deterministic layout); §2 tab branches: handled + tested (child tabs branch cleanly from parent node); §2 star click: handled + tested (clicking star switches active tab); §1 time & date: handled + tested (morning/afternoon/evening/night transitions, zero-padding); §1 determinism: handled + tested (zero jumping across re-renders). Linux native: not tested.
+- Not verified / unsure: Owner OK on screenshots with 1, 6, and 20 real tabs (saved to `docs/shots/`).
+- Decisions proposed: none.
+- Next: P3-02 Private windows (§9 Private: separate in-memory profile, lilac accent, private sky, rail, copy).
+- Commit: `4e205a2` "P3-01: new tab constellation and clock"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-07
 - Did: completed P2-07 Settings page shell (§9). Created `ui/settings.js` with `renderSettings`, `loadSettings`, `saveSettings`, `applyAccent`, and `DEFAULT_SETTINGS`. Built left navigation list (9 items, 36px buttons, 8px radius, selected highlight) and Appearance section controls: Stars segmented control (Off, Still, Drifting), Shooting stars switch (42x24, role="switch", accent fill on active), Accent swatches (5 colors: Sea, Mint, Lilac, Amber, Rose, with double-ring selection outline), Trail segmented control (Narrow / Wide), and Faster downloads select (1 / 4 / 8 / 16 connections). Clicking any swatch updates `--accent` dynamically across the document, immediately recoloring all active stars, rings, focus outlines, and switches. Wired settings persistence via `localStorage` and IPC messages `save-settings` / `load-settings`. In `app/shell`, implemented `save_settings_atomic` (atomic writes via tmp file + rename) and `load_settings_or_default` with automatic corrupted file recovery (creates `.bak` file and safely returns defaults per EDGE_CASES §1). Created `tools/test_settings.py` testing interactive control state updates, accent recoloring, section switching, and persistence across page reload/restart.

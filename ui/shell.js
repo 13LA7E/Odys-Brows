@@ -7,6 +7,7 @@ import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
+import { renderNewTab } from './newtab.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -174,6 +175,13 @@ export function renderShell(root, state) {
     if (state.dimPage && !state.pageHtml?.includes('rgba(0,0,0,.5)')) {
       root.append(el('div', 'page-dim'));
     }
+  }
+
+  if (state.page === 'none' || state.newTab) {
+    renderNewTab(root, state, (tabId) => {
+      state.activeTab = tabId;
+      renderShell(root, state);
+    });
   }
 
   // Answer card (HelmAnswer board, DESIGN.md §7)

@@ -124,7 +124,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 
 ## Phase 3: New tab and private windows
 
-- [ ] **P3-01 New tab.** §9 New tab: greeting by time of day, clock, date, hint, and the constellation built from the tab tree. Layout rules: deterministic from tab ids (no jumping between visits), branches stay branches, keep clear of the clock/hint block, the Helm and the rail, and keep labels from overlapping. Selecting a star switches tab.
+- [x] **P3-01 New tab.** §9 New tab: greeting by time of day, clock, date, hint, and the constellation built from the tab tree. Layout rules: deterministic from tab ids (no jumping between visits), branches stay branches, keep clear of the clock/hint block, the Helm and the rail, and keep labels from overlapping. Selecting a star switches tab.
   - Edge: §2 (100+ tabs)
   - Done when: [Main] passes with the fixture; with 1, 6 and 20 real tabs the layout is readable (screenshots logged); Owner OK.
 - [ ] **P3-02 Private windows.** Separate in-memory profile (no history, cookies and storage gone on close, Shields on), lilac accent, private sky, rail and copy as §9 Private.
