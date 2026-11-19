@@ -11,7 +11,7 @@
 | State | **P0-01a Windows toolchains complete.** **\* LINUX PENDING \*** Linux setup and testing are deferred to the owner's Ubuntu dual boot; the full P0-01 task and Phase 0 gate remain open. |
 | Next step | Read P0-02 and its edge cases, then build the Windows CEF spike. Keep P0-01b and other Linux verification explicitly pending. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `054e3ed` (P0-01a Windows toolchains; completion record pending) |
+| Last pushed commit | `054e3ed` (P0-01a Windows toolchains; completion record `587eba6`) |
 | Last agent | Copilot SDK in VS Code |
 
 ## Blockers
@@ -68,7 +68,7 @@ Copy this template for each session:
 - Not verified / unsure: every Linux toolchain entry is unverified. PowerShell blocks `npm.ps1` under its current execution policy; `npm.cmd` is verified and no security setting was changed. No application build exists yet, so no build/test suite applies.
 - Decisions proposed: none; the owner directed Windows-first work with Linux testing later.
 - Next: read P0-02 and its edge cases, then build the Windows CEF spike. Resume P0-01b on the owner's Ubuntu dual boot later; the full P0-01 task and Phase 0 gate remain open.
-- Commit: `054e3ed` "P0-01a: record Windows toolchains"  Pushed: yes. This completion record is a separate same-task commit so the pushed hash is preserved.
+- Commit: `054e3ed` "P0-01a: record Windows toolchains"  Pushed: yes. Completion record: `587eba6` "P0-01a: record completion"  Pushed: yes.
 
 ### 2026-11-19: Copilot SDK in VS Code: P0-00
 - Did: initialized this checkout, recorded `origin/main` as `755c7e574bea0514effccee60893ba99b18cf820`, verified `origin/Constellations` started at `755c7e5`, checked out `Constellations`, removed Odyssey's 22 tracked files from this branch only, and added the handover, design, tools, `.gitattributes` and `.gitignore`.
