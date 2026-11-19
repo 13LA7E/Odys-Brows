@@ -7,16 +7,16 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-02 CEF window on Windows** (next Windows task; P0-01b Linux pending) |
-| State | **P0-01a Windows toolchains complete.** **\* LINUX PENDING \*** Linux setup and testing are deferred to the owner's Ubuntu dual boot; the full P0-01 task and Phase 0 gate remain open. |
-| Next step | Read P0-02 and its edge cases, then build the Windows CEF spike. Keep P0-01b and other Linux verification explicitly pending. |
+| Current task | **P0-04 Our UI plus a page, and the floating Helm** (Windows part; P0-03 is Linux and pending) |
+| State | **P0-02 done** (CEF 156 window on Windows, `spike/p0-02-cef-window`). **\* LINUX PENDING \*** P0-01b and P0-03 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-04 on Windows: try (a) CEF off-screen rendering under our UI, (b) a borderless always-on-top Helm window, (c) other CEF options; measure each. Start from `spike/p0-02-cef-window`. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
 | Last pushed commit | `054e3ed` (P0-01a Windows toolchains; completion record `587eba6`) |
-| Last agent | Copilot SDK in VS Code |
+| Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
 
-- **\* LINUX PENDING \*** P0-01b needs the deferred Ubuntu toolchain setup and version record. Windows work can continue, but the full P0-01 task and Phase 0 gate remain open.
+- **\* LINUX PENDING \*** P0-01b needs the deferred Ubuntu toolchain setup and version record. P0-03 (P0-02 on Linux) also waits for it. Windows work can continue, but the full P0-01 task and Phase 0 gate remain open.
 
 ## Questions for the owner
 
@@ -26,11 +26,12 @@
 ## Known gaps (edge cases not handled yet)
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
+- **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
 - PowerShell's current execution policy blocks `npm.ps1`; use the verified `npm.cmd` shim. No execution-policy setting was changed.
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -42,7 +43,7 @@
 | CMake / Ninja | 3.31.6-msvc6 / 1.12.1 (VS Build Tools copies added to user PATH) | Pending |
 | Python | 3.14.6 | Pending |
 | Node | Node 26.13.1 LTS; npm 11.20.0 via `npm.cmd` | Pending |
-| CEF / cef-rs version | P0-02; not installed | P0-02; not installed |
+| CEF / cef-rs version | CEF 156.0.31+ge603d97+chromium-156.0.8078.100 (minimal distribution); `cef` crate =156.7.0+156.0.31 | Pending (P0-03) |
 
 ---
 
@@ -60,6 +61,17 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-02
+- Did: `spike/p0-02-cef-window`: a minimal Rust app on the `cef` crate (=156.7.0+156.0.31, tauri-apps/cef-rs) with one CEF Views window, `RuntimeStyle::CHROME`, 1280x800 preferred, 800x600 minimum, loading https://example.com (`--url=` overrides). Sandbox off. Profile in `%LOCALAPPDATA%\constellations-spike\p0-02`. `build.rs` embeds `app.manifest` (Windows 10/11 supportedOS, PerMonitorV2, longPathAware) through the MSVC linker; no extra crate. `shot.ps1` screenshots one process's window with `PrintWindow`. Findings are in the spike README.
+- Verified: `cargo build` OK (the `cef-dll-sys` build script downloaded `cef_binary_156.0.31+ge603d97+chromium-156.0.8078.100_windows64_minimal`). `cef_version.h` gives `CEF_VERSION "156.0.31+ge603d97+chromium-156.0.8078.100"`. Ran the exe with the CEF folder on PATH: example.com renders, screenshot `spike/shots/p0-02.png` (1600x1000 = 1280x800 at 125% scaling). No Chrome toolbar or tab strip appears with Views + Chrome style. `cargo clippy -- -D warnings` and `cargo fmt --check` clean.
+- Edge cases (§1): no network / unknown host: handled + tested (`--url=https://does-not-exist.invalid/` shows Chrome's error page with Reload, `on_load_error` logs ERR_NAME_NOT_RESOLVED; `spike/shots/p0-02-bad-url.png`). Window closed: handled + tested (WM_CLOSE: all CEF processes gone in 283 ms). Two copies: handled + tested to the spike level (the second copy's `initialize` fails, it prints a message and exits with code 2); URL hand-off to the running copy is a known gap. Display scaling: checked at 125% only (PerMonitorV2 manifest). Minimum window size: set to 800x600, not exercised by hand. Engine errors: logged to stderr. Paths with spaces / non-ASCII user names: not tested (profile path is passed as a UTF-16 CefString; unverified). Linux: not handled (P0-03, pending). Empty data, long text, huge counts, keyboard, settings: not applicable to a one-window spike.
+- Found: without the manifest the GPU process crashed on start (exit 0x80000003) and Chromium fell back to software; with it, no GPU errors. Harmless log: Chrome style reads `Software\Google\Chrome\Extensions` registry keys of an installed Chrome.
+- Privacy note: a first screenshot helper used CopyFromScreen and one capture caught another window on the desktop; that file was deleted before any commit and the helper now uses PrintWindow (this window only).
+- Not verified / unsure: sandbox mode (cef-rs needs its bootstrap.exe layout on Windows); the cloned cef-rs `export-cef-dir` tool was not run (the harness refused to run code from a cloned repo), so CEF lives in the build folder rather than a shared CEF_PATH.
+- Decisions proposed: none.
+- Next: P0-03 is Linux (pending). Go on to P0-04 on Windows.
+- Commit: see the next entry or git log, "P0-02: CEF window spike on Windows"  Pushed: yes
 
 ### 2026-11-19: Copilot SDK in VS Code: P0-01a (Windows toolchains)
 - Did: inspected the Windows toolchain; installed the official `OpenJS.NodeJS.LTS` winget package because Node/npm were missing; reused the CMake and Ninja copies already bundled with Visual Studio Build Tools and added their directories to the user PATH; recorded all Windows versions in `docs/STATUS.md`. At the owner's direction, split P0-01 into P0-01a (Windows, ticked) and P0-01b (Linux, pending) in `docs/PHASES.md`, with a prominent `* LINUX PENDING *` marker. No application code or project dependencies changed.

@@ -43,10 +43,10 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
     - Done when: versions of every Windows tool are recorded in STATUS → Environment, with Windows edge-case evidence in the session log.
   - [ ] **P0-01b Linux toolchains.** **\* LINUX PENDING \*** Ubuntu 24.04 LTS via the owner's dual boot: the same tools plus the build packages CEF needs.
     - Done when: versions of every Linux tool and the required CEF build packages are recorded in STATUS → Environment, with Linux edge-case evidence in the session log.
-- [ ] **P0-02 CEF window on Windows.** Minimal Rust app using `tauri-apps/cef-rs`: one window that loads https://example.com. Use the Chrome runtime (D-003).
+- [x] **P0-02 CEF window on Windows.** Minimal Rust app using `tauri-apps/cef-rs`: one window that loads https://example.com. Use the Chrome runtime (D-003).
   - Edge: §1
   - Done when: it runs, a screenshot is saved to `spike/shots/p0-02.png`, and the exact cef-rs and CEF versions are recorded.
-- [ ] **P0-03 Same on Linux.**
+- [!] **P0-03 Same on Linux.** *** LINUX PENDING *** Blocked until the owner's Ubuntu dual boot exists (needs P0-01b).
   - Done when: as P0-02, plus the list of system packages that were needed.
 - [ ] **P0-04 Our UI plus a page, and the floating Helm.** One window with our own HTML UI (a 56 px rail on the left, a 560×52 bar near the bottom) and a real web page in the area to the right. The bar must sit **over** the page, page visible behind it. Try in this order and record each result on both OSes: (a) CEF off-screen rendering for the page composited under our UI, (b) a separate borderless always-on-top window for the bar that follows the main window, (c) whatever else the CEF docs suggest. Measure scrolling smoothness and input latency for each.
   - Edge: §1, §4, §12
