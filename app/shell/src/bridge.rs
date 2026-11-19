@@ -153,6 +153,15 @@ pub enum FromUi {
     OpenPinnedSite {
         name: String,
     },
+    /// Toggle ad/tracker blocking exception for host (P5-01).
+    ToggleShieldsException {
+        host: String,
+    },
+    /// Request current shields status for a view or active tab (P5-01).
+    GetShieldsStatus {
+        #[serde(default)]
+        view: Option<ViewId>,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -221,6 +230,12 @@ pub enum ToUi {
     SpaceChanged {
         space: usize,
     },
+    /// Shields status update (P5-01).
+    ShieldsStatus {
+        view: ViewId,
+        count: u64,
+        enabled: bool,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -279,6 +294,11 @@ pub fn event_to_ui(e: &Event) -> Option<ToUi> {
             user_gesture,
         },
         Event::Closed { view } => ToUi::Closed { view },
+        Event::ShieldsCountChanged { view, count } => ToUi::ShieldsStatus {
+            view,
+            count,
+            enabled: true,
+        },
         Event::Download(info) => ToUi::DownloadProgress {
             id: info.id,
             url: info.url,

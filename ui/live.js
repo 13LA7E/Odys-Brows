@@ -36,6 +36,28 @@ export async function startLive() {
         state.tabs.push({ id: msg.view, title: 'New tab', parent: msg.opener });
       }
       state.activeTab = msg.view;
+      const tab = state.tabs.find((t) => t.id === msg.view);
+      if (tab?.url && tab.url !== 'about:blank' && !tab.url.startsWith('odyssey://')) {
+        state.page = 'web';
+        try {
+          const u = new URL(tab.url);
+          state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+        } catch (_) {
+          state.helm = { kind: 'address', address: { kind: 'web', host: tab.url, path: '' } };
+        }
+      } else if (tab?.url?.startsWith('odyssey://')) {
+        state.page = 'internal';
+        try {
+          const u = new URL(tab.url);
+          state.pageName = u.hostname;
+          state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
+        } catch (_) {
+          state.helm = { kind: 'empty' };
+        }
+      } else {
+        state.page = 'none';
+        state.helm = { kind: 'empty' };
+      }
       renderShell(app, state);
     } else if (msg.type === 'closed') {
       if (state.tabs) {
@@ -46,10 +68,24 @@ export async function startLive() {
             const current = state.tabs.find((t) => t.id === state.activeTab);
             if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
               state.page = 'web';
+              try {
+                const u = new URL(current.url);
+                state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+              } catch (_) {
+                state.helm = { kind: 'address', address: { kind: 'web', host: current.url, path: '' } };
+              }
             } else if (current?.url?.startsWith('odyssey://')) {
               state.page = 'internal';
+              try {
+                const u = new URL(current.url);
+                state.pageName = u.hostname;
+                state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
+              } catch (_) {
+                state.helm = { kind: 'empty' };
+              }
             } else {
               state.page = 'none';
+              state.helm = { kind: 'empty' };
             }
           } else {
             state.page = 'none';
@@ -110,6 +146,12 @@ export async function startLive() {
     } else if (msg.type === 'closed-tabs-updated') {
       state.closed = msg.tabs;
       renderShell(app, state);
+    } else if (msg.type === 'shields-status') {
+      if (state.activeTab === msg.view || state.activeTab == null) {
+        state.shields = msg.count;
+        state.shieldsEnabled = msg.enabled;
+        renderShell(app, state);
+      }
     }
   });
 

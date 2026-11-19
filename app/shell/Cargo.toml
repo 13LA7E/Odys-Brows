@@ -14,6 +14,7 @@ engine-cef.workspace = true
 engine-api.workspace = true
 segdl.workspace = true
 history.workspace = true
+shields.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

@@ -9,6 +9,8 @@ publish.workspace = true
 cef.workspace = true
 engine-api.workspace = true
 segdl.workspace = true
+shields.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

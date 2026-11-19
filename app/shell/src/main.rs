@@ -638,6 +638,36 @@ impl Shell {
             FromUi::OpenDevTools { view } if known(self, view) => engine.open_devtools(view),
             FromUi::SwitchSpace { space } => self.switch_space(engine, space),
             FromUi::OpenPinnedSite { name } => self.open_pinned_site(engine, &name),
+            FromUi::ToggleShieldsException { host } => {
+                let active = engine.toggle_shields_exception(&host);
+                if let Some(v) = self.shown {
+                    let count = engine.shields_count(v);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ShieldsStatus {
+                        view: v,
+                        count,
+                        enabled: active,
+                    }));
+                }
+            }
+            FromUi::GetShieldsStatus { view } => {
+                if let Some(v) = view.or(self.shown) {
+                    let url = self.tab_urls.get(&v).cloned().unwrap_or_default();
+                    let host = url
+                        .strip_prefix("https://")
+                        .or_else(|| url.strip_prefix("http://"))
+                        .unwrap_or(&url)
+                        .split(['/', ':', '?', '#'])
+                        .next()
+                        .unwrap_or("");
+                    let active = engine.is_shields_active_for(host);
+                    let count = engine.shields_count(v);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ShieldsStatus {
+                        view: v,
+                        count,
+                        enabled: active,
+                    }));
+                }
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }

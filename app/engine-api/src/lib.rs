@@ -116,6 +116,8 @@ pub enum Event {
     Crashed { view: ViewId, reason: String },
     /// The view finished closing; its id is now invalid.
     Closed { view: ViewId },
+    /// Count of ads and trackers blocked for this view changed (P5-01).
+    ShieldsCountChanged { view: ViewId, count: u64 },
 }
 
 /// The web engine, as the browser sees it. All methods are called on the UI thread.
@@ -168,6 +170,21 @@ pub trait Engine {
     fn toggle_maximize_window(&mut self);
     /// Close the main browser window (terminates the application).
     fn close_window(&mut self);
+
+    /// Toggle ad/tracker blocking exception for `host` (P5-01). Returns true if shields are now active.
+    fn toggle_shields_exception(&mut self, _host: &str) -> bool {
+        true
+    }
+
+    /// Whether shields are active for `host` (P5-01).
+    fn is_shields_active_for(&self, _host: &str) -> bool {
+        true
+    }
+
+    /// Number of items blocked for `view` (P5-01).
+    fn shields_count(&self, _view: ViewId) -> u64 {
+        0
+    }
 }
 
 /// Where our own browser UI (the HTML in `ui/`) lives on disk.

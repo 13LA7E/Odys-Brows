@@ -26,10 +26,13 @@ function svg(tag, attrs) {
   return e;
 }
 
-function notch(count) {
+function notch(count, onToggleShields) {
   const n = el('div', 'notch');
   const shields = el('button', 'notch-shields');
   shields.setAttribute('aria-label', `Shields, ${count} blocked`);
+  shields.addEventListener('click', () => {
+    if (typeof onToggleShields === 'function') onToggleShields();
+  });
   const shieldIcon = svg('svg', {
     width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
     stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round',
@@ -147,10 +150,24 @@ export function renderShell(root, state) {
         const current = state.tabs?.find((t) => t.id === id);
         if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
           state.page = 'web';
+          try {
+            const u = new URL(current.url);
+            state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+          } catch (_) {
+            state.helm = { kind: 'address', address: { kind: 'web', host: current.url, path: '' } };
+          }
         } else if (current?.url?.startsWith('odyssey://')) {
           state.page = 'internal';
+          try {
+            const u = new URL(current.url);
+            state.pageName = u.hostname;
+            state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
+          } catch (_) {
+            state.helm = { kind: 'empty' };
+          }
         } else {
           state.page = 'none';
+          state.helm = { kind: 'empty' };
         }
         renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
@@ -158,6 +175,8 @@ export function renderShell(root, state) {
         }
       },
       onNewTab: () => {
+        state.page = 'none';
+        state.helm = { kind: 'empty' };
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
         } else {
@@ -208,10 +227,24 @@ export function renderShell(root, state) {
         const current = state.tabs?.find((t) => t.id === id);
         if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
           state.page = 'web';
+          try {
+            const u = new URL(current.url);
+            state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+          } catch (_) {
+            state.helm = { kind: 'address', address: { kind: 'web', host: current.url, path: '' } };
+          }
         } else if (current?.url?.startsWith('odyssey://')) {
           state.page = 'internal';
+          try {
+            const u = new URL(current.url);
+            state.pageName = u.hostname;
+            state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
+          } catch (_) {
+            state.helm = { kind: 'empty' };
+          }
         } else {
           state.page = 'none';
+          state.helm = { kind: 'empty' };
         }
         renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
@@ -219,6 +252,8 @@ export function renderShell(root, state) {
         }
       },
       onNewTab: () => {
+        state.page = 'none';
+        state.helm = { kind: 'empty' };
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
         } else {
@@ -360,7 +395,7 @@ export function renderShell(root, state) {
       const url = typeof target === 'string' ? target : (target?.url || '');
       if (!url) return;
       if (typeof window.odysseyBridge === 'function') {
-        if (state.activeTab && state.page === 'web') {
+        if (state.activeTab) {
           window.odysseyBridge(JSON.stringify({ type: 'navigate', view: state.activeTab, url }));
         } else {
           window.odysseyBridge(JSON.stringify({ type: 'open', url }));
@@ -389,5 +424,63 @@ export function renderShell(root, state) {
     }));
   }
 
-  root.append(notch(state.shields ?? 0));
+  root.append(notch(state.shields ?? 0, () => {
+    state.shieldsOpen = !state.shieldsOpen;
+    renderShell(root, state);
+  }));
+
+  if (state.shieldsOpen) {
+    root.append(renderShieldsPanel(state, () => {
+      state.shieldsOpen = false;
+      renderShell(root, state);
+    }));
+  }
+}
+
+export function renderShieldsPanel(state, onClose) {
+  const panel = el('div', 'shields-popover');
+  panel.style.cssText = 'position:absolute;top:42px;right:12px;width:280px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);padding:16px;z-index:200;display:flex;flex-direction:column;gap:12px;';
+
+  const header = el('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+  const title = el('div', null, 'Shields');
+  title.style.cssText = 'font-size:15px;font-weight:600;color:var(--text-strong);';
+  const close = el('button', null, '✕');
+  close.style.cssText = 'color:var(--text-soft);cursor:pointer;font-size:13px;';
+  close.addEventListener('click', onClose);
+  header.append(title, close);
+
+  const blockedRow = el('div');
+  blockedRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--w-field);';
+  const countText = el('div', null, `${state.shields ?? 0} ads & trackers blocked`);
+  countText.style.cssText = 'font-size:13.5px;color:var(--text);';
+  blockedRow.append(countText);
+
+  const host = state.helm?.address?.host || 'this site';
+  const toggleRow = el('div');
+  toggleRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;';
+  const label = el('div');
+  label.style.cssText = 'font-size:13.5px;color:var(--text-soft);';
+  label.textContent = `Shields for ${host}`;
+
+  const switchBtn = el('button', 'shields-toggle-btn');
+  const isEnabled = state.shieldsEnabled !== false;
+  switchBtn.style.cssText = `width:42px;height:24px;border-radius:12px;background:${isEnabled ? 'var(--accent)' : 'var(--w-toggle-off)'};position:relative;cursor:pointer;transition:background 0.15s;`;
+  const knob = el('span');
+  knob.style.cssText = `position:absolute;top:3px;${isEnabled ? 'right:3px;' : 'left:3px;'}width:18px;height:18px;border-radius:9px;background:var(--white);transition:all 0.15s;display:block;`;
+  switchBtn.append(knob);
+  switchBtn.addEventListener('click', () => {
+    state.shieldsEnabled = !isEnabled;
+    if (typeof window.odysseyBridge === 'function') {
+      window.odysseyBridge(JSON.stringify({ type: 'toggle-shields-exception', host }));
+    }
+    onClose();
+  });
+  toggleRow.append(label, switchBtn);
+
+  const footer = el('div', null, 'EasyList & EasyPrivacy active');
+  footer.style.cssText = 'font-size:12px;color:var(--text-muted);border-top:1px solid var(--w-trail);padding-top:8px;';
+
+  panel.append(header, blockedRow, toggleRow, footer);
+  return panel;
 }

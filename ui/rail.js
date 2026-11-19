@@ -95,11 +95,10 @@ export function renderCollapsedRail(railEl, options = {}) {
       cx: 28, cy: plusCy, r: 10, fill: 'var(--bg)',
       stroke: 'var(--private-ink)', 'stroke-opacity': '.3', 'stroke-dasharray': '2.5 3',
     }));
-    // Centered plus
+    // Centered plus (DESIGN.md §6)
     bgSvg.append(svg('path', {
-      d: `M24.5 ${plusCy} h7 M28 ${plusCy} v7`,
+      d: `M24.5 ${plusCy} h7 M28 ${plusCy - 3.5} v7`,
       stroke: 'var(--text-soft)', 'stroke-width': '1.4', 'stroke-linecap': 'round',
-      transform: 'translate(0,-3.5)',
     }));
 
     // Private tab nodes in SVG
@@ -132,9 +131,8 @@ export function renderCollapsedRail(railEl, options = {}) {
       stroke: 'var(--w-newtab-ring)', 'stroke-dasharray': '2.5 3',
     }));
     bgSvg.append(svg('path', {
-      d: `M24.5 ${plusCy} h7 M28 ${plusCy} v7`,
+      d: `M24.5 ${plusCy} h7 M28 ${plusCy - 3.5} v7`,
       stroke: 'var(--text-soft)', 'stroke-width': '1.4', 'stroke-linecap': 'round',
-      transform: 'translate(0,-3.5)',
     }));
   }
 

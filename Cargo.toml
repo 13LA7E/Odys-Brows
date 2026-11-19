@@ -30,6 +30,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
+adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+shields = { path = "app/shields" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

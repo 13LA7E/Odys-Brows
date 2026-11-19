@@ -80,6 +80,7 @@ struct State {
     cef_downloads: HashMap<u32, DownloadItemCallback>,
     /// URL prefix of our UI folder; only frames under it get the bridge (P1-03).
     ui_prefix: String,
+    shields: Option<Arc<shields::Shields>>,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -127,6 +128,68 @@ fn maybe_quit() {
     }
 }
 
+#[cfg(windows)]
+mod win32 {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        pub fn SetWindowRgn(h: isize, rgn: isize, redraw: i32) -> i32;
+        pub fn GetDpiForWindow(h: isize) -> u32;
+    }
+    #[link(name = "gdi32")]
+    unsafe extern "system" {
+        pub fn CreateRectRgn(x1: i32, y1: i32, x2: i32, y2: i32) -> isize;
+        pub fn CreateRoundRectRgn(x1: i32, y1: i32, x2: i32, y2: i32, w: i32, h: i32) -> isize;
+        pub fn CombineRgn(dst: isize, src1: isize, src2: isize, mode: i32) -> i32;
+        pub fn DeleteObject(ho: isize) -> i32;
+    }
+    pub const RGN_DIFF: i32 = 4;
+}
+
+#[cfg(windows)]
+fn update_page_window_region(win: &Window, width: i32, height: i32) {
+    unsafe {
+        let h = win.window_handle().0 as isize;
+        if h == 0 {
+            return;
+        }
+        let dpi = win32::GetDpiForWindow(h).max(96) as f32 / 96.0;
+        let w = (width as f32 * dpi).round() as i32;
+        let h_px = (height as f32 * dpi).round() as i32;
+
+        let base_rgn = win32::CreateRectRgn(0, 0, w, h_px);
+
+        // Notch in top-right corner: height 34 DIP, width 192 DIP.
+        // Cutting out the notch leaves the main window's notch controls (shields, minimize,
+        // maximize, close) visible and interactive.
+        let notch_w = (192.0 * dpi).round() as i32;
+        let notch_h = (34.0 * dpi).round() as i32;
+        let notch_rgn = win32::CreateRectRgn((w - notch_w).max(0), 0, w, notch_h);
+        win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
+        win32::DeleteObject(notch_rgn);
+
+        // Helm at bottom: 560 DIP wide, 52 DIP high, 28 DIP from bottom, centered in page area.
+        let helm_w = (560.0 * dpi).round() as i32;
+        let helm_h = (52.0 * dpi).round() as i32;
+        let helm_bottom = (28.0 * dpi).round() as i32;
+        let helm_x = ((w - helm_w) / 2).max(0);
+        let helm_y = h_px - helm_bottom - helm_h;
+        if helm_y > 0 && w >= helm_w {
+            let helm_rgn = win32::CreateRoundRectRgn(
+                helm_x,
+                helm_y,
+                helm_x + helm_w,
+                helm_y + helm_h,
+                helm_h,
+                helm_h,
+            );
+            win32::CombineRgn(base_rgn, base_rgn, helm_rgn, win32::RGN_DIFF);
+            win32::DeleteObject(helm_rgn);
+        }
+
+        win32::SetWindowRgn(h, base_rgn, 1);
+    }
+}
+
 /// Put a page window where the shell wants it: client-area DIP → screen DIP.
 fn place(id: ViewId) {
     STATE.with(|s| {
@@ -139,13 +202,17 @@ fn place(id: ViewId) {
         };
         let c = main.client_area_bounds_in_screen();
         let b = page.bounds;
+        let pw = (c.width - b.x).max(1);
+        let ph = c.height.max(1);
         win.set_bounds(Some(&Rect {
             x: c.x + b.x,
             y: c.y + b.y,
-            width: (c.width - b.x).max(1),
-            height: c.height.max(1),
+            width: pw,
+            height: ph,
         }));
         if page.visible {
+            #[cfg(windows)]
+            update_page_window_region(win, pw, ph);
             win.show();
         } else {
             win.hide();
@@ -622,6 +689,25 @@ wrap_load_handler! {
             });
         }
 
+        fn on_load_end(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, _http_status_code: i32) {
+            let Some(f) = frame else { return };
+            if f.is_main() == 0 {
+                return;
+            }
+            let url_str = CefString::from(&f.url()).to_string();
+            let shields = STATE.with(|s| s.borrow().shields.clone());
+            if let Some(sh) = shields {
+                let css = sh.cosmetic_css(&url_str);
+                if !css.is_empty() {
+                    let script = format!(
+                        "(function(){{try{{var s=document.createElement('style');s.setAttribute('data-constellations','shields');s.textContent={};(document.head||document.documentElement).appendChild(s);}}catch(e){{}}}})();",
+                        serde_json::to_string(&css).unwrap_or_else(|_| "''".into())
+                    );
+                    f.execute_java_script(Some(&CefString::from(script.as_str())), None, 0);
+                }
+            }
+        }
+
         fn on_load_error(
             &self,
             _browser: Option<&mut Browser>,
@@ -844,6 +930,89 @@ wrap_download_handler! {
     }
 }
 
+wrap_request_handler! {
+    struct PageRequest { id: ViewId }
+
+    impl RequestHandler {
+        fn resource_request_handler(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _request: Option<&mut Request>,
+            _is_navigation: i32,
+            _is_download: i32,
+            _request_initiator: Option<&CefString>,
+            _disable_default_handling: Option<&mut i32>,
+        ) -> Option<ResourceRequestHandler> {
+            Some(PageResourceRequest::new(self.id))
+        }
+    }
+}
+
+wrap_resource_request_handler! {
+    struct PageResourceRequest { id: ViewId }
+
+    impl ResourceRequestHandler {
+        fn on_before_resource_load(
+            &self,
+            _browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>,
+            request: Option<&mut Request>,
+            _callback: Option<&mut Callback>,
+        ) -> ReturnValue {
+            let Some(req) = request else {
+                return ReturnValue::CONTINUE;
+            };
+            let url_str = CefString::from(&req.url()).to_string();
+            if url_str.is_empty() || url_str.starts_with("odyssey-ui://") || url_str.starts_with("data:") {
+                return ReturnValue::CONTINUE;
+            }
+
+            let source_url = frame
+                .map(|f| CefString::from(&f.url()).to_string())
+                .unwrap_or_default();
+
+            let res_type = match req.resource_type() {
+                ResourceType::MAIN_FRAME => "main_frame",
+                ResourceType::SUB_FRAME => "subdocument",
+                ResourceType::STYLESHEET => "stylesheet",
+                ResourceType::SCRIPT => "script",
+                ResourceType::IMAGE => "image",
+                ResourceType::FONT_RESOURCE => "font",
+                ResourceType::SUB_RESOURCE => "sub_resource",
+                ResourceType::OBJECT => "object",
+                ResourceType::MEDIA => "media",
+                ResourceType::XHR => "xmlhttprequest",
+                ResourceType::PING => "ping",
+                ResourceType::CSP_REPORT => "csp_report",
+                _ => "other",
+            };
+            let method = CefString::from(&req.method()).to_string();
+
+            let shields = STATE.with(|s| s.borrow().shields.clone());
+            if let Some(sh) = shields {
+                let should_block = sh.check_network_request(
+                    &url_str,
+                    &source_url,
+                    res_type,
+                    &method,
+                    self.id,
+                );
+                if should_block {
+                    let count = sh.blocked_count_for_tab(self.id);
+                    emit(Event::ShieldsCountChanged {
+                        view: self.id,
+                        count,
+                    });
+                    return ReturnValue::CANCEL;
+                }
+            }
+
+            ReturnValue::CONTINUE
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient { id: ViewId }
 
@@ -859,6 +1028,9 @@ wrap_client! {
         }
         fn download_handler(&self) -> Option<DownloadHandler> {
             Some(PageDownload::new(self.id))
+        }
+        fn request_handler(&self) -> Option<RequestHandler> {
+            Some(PageRequest::new(self.id))
         }
     }
 }
@@ -1132,6 +1304,36 @@ impl Engine for CefEngine {
     fn close_window(&mut self) {
         self.quit();
     }
+
+    fn toggle_shields_exception(&mut self, host: &str) -> bool {
+        STATE.with(|s| {
+            s.borrow()
+                .shields
+                .as_ref()
+                .map(|sh| sh.toggle_exception(host))
+                .unwrap_or(true)
+        })
+    }
+
+    fn is_shields_active_for(&self, host: &str) -> bool {
+        STATE.with(|s| {
+            s.borrow()
+                .shields
+                .as_ref()
+                .map(|sh| !sh.is_host_exempt(host))
+                .unwrap_or(true)
+        })
+    }
+
+    fn shields_count(&self, view: ViewId) -> u64 {
+        STATE.with(|s| {
+            s.borrow()
+                .shields
+                .as_ref()
+                .map(|sh| sh.blocked_count_for_tab(view))
+                .unwrap_or(0)
+        })
+    }
 }
 
 // ---- start-up -----------------------------------------------------------------------------
@@ -1242,9 +1444,18 @@ pub fn run(
         },
         ..Default::default()
     };
+    let shields_dir = if options.profile_dir.as_os_str().is_empty() {
+        std::env::temp_dir().join("constellations-shields")
+    } else {
+        options.profile_dir.join("shields")
+    };
+    let shields = Arc::new(shields::Shields::new(shields_dir));
+    shields.clone().update_filters_background();
+
     STATE.with(|s| {
         let mut s = s.borrow_mut();
         s.ui_prefix = ui_scheme::prefix();
+        s.shields = Some(shields);
         s.options = Some(options);
     });
     ON_READY.with(|r| *r.borrow_mut() = Some(Box::new(on_ready)));

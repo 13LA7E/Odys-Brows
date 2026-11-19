@@ -7,9 +7,9 @@
 | | |
 |---|---|
 | Phase | 5: Shields and efficiency |
-| Current task | **P5-01 Shields** |
-| State | Live browser execution and interaction verified! Fixed re-entrant borrow panic on CEF events, wired live Helm navigation and tab switching to native engine, and eliminated dummy fixture tabs in live mode. |
-| Next step | P5-01 Shields (port shields.rs adblock engine, filter list cache, cosmetic filtering, notch count and settings panel). |
+| Current task | **P5-02 Tab sleeping** |
+| State | P5-01 Shields complete! Added `app/shields` with `adblock` 0.13, network interception, cosmetic CSS injection, per-site exception management, and live notch count + popover. Also fixed user-reported issues: (1) new tab "+" icon centered/symmetric, (2) window notch & Helm visible above web content via Win32 `SetWindowRgn` clipping, (3) active tab navigation & live sync. |
+| Next step | P5-02 Tab sleeping (idle timeout background tab sleeping, restoring on wake, excluding audio/pinned/download tabs). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
 | Last pushed commit | bc76fc6 (fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
@@ -119,6 +119,23 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P5-01 Shields and UI fixes
+- Did: completed P5-01 Shields and addressed user-reported UI issues.
+  - UI bug fixes:
+    - In `ui/rail.js`: fixed new tab button SVG plus path (`M24.5 ${plusCy} h7 M28 ${plusCy - 3.5} v7`) so it renders an exact symmetric `+` instead of a "T".
+    - In `app/engine-cef/src/lib.rs`: implemented Win32 window clipping using `SetWindowRgn` (`RGN_DIFF`) on `PageWindow`. The top-right notch (192x34 DIP) and floating Helm (560x52 DIP) are cut out from the native page window so the main HTML window's notch (minimize, maximize, close buttons, shields indicator) and the floating Helm remain 100% visible and interactive over web pages.
+    - In `ui/shell.js` and `ui/live.js`: ensured `onNavigate` navigates the active tab directly and keeps Helm text and page state synchronized.
+  - Shields implementation:
+    - Added `app/shields`: adblock engine using `adblock 0.13`, background filter list downloading (EasyList, EasyPrivacy, uBO-filters, Peter Lowe), fallback baseline rules, per-site exception allowlisting (`shields_allowlist.json`), network request checking (`check_network_request`), cosmetic filtering CSS injection (`cosmetic_css`), and per-tab counter tracking.
+    - In `app/engine-cef`: wired `RequestHandler` and `ResourceRequestHandler` (`on_before_resource_load`) blocking canceled resources and emitting `Event::ShieldsCountChanged`; wired cosmetic CSS injection on `on_load_end`.
+    - In `app/shell`: added bridge messages `ToggleShieldsException`, `GetShieldsStatus`, and `ShieldsStatus`.
+    - In `ui/shell.js`: built quiet Shields popover panel on clicking notch shield icon, displaying blocked count and site exception toggle switch.
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (all 6/6 checks passed: formatting, clippy with 0 warnings, 42 cargo tests passing, JS syntax check, CSS token check, visual check on all boards), `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --engine-selftest` printed PASSED, `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --ipc-selftest` printed PASSED.
+- Edge cases §8: Filter lists fall back cleanly to baseline tracker rules if network offline; per-site exceptions immediately allow requests and persist; counter resets per tab and never goes negative; cosmetic rules hide intrusive ad elements.
+- Decisions proposed: none.
+- Next: P5-02 Tab sleeping.
+- Commit: P5-01: ad and tracker shields  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: live browser navigation and interaction
 - Did:
