@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 2: The shell |
-| Current task | **P2-03 Trail rail, collapsed** |
-| State | P2-01 and P2-02 complete. Notch matches all 7 boards with score 0.0 (`1050,0,230,40`). Frameless window delegate, draggable region handling, and min/max/close controls wired via IPC. |
-| Next step | P2-03 Trail rail, collapsed (§6: logo, pinned apps, tabs trunk, active/inactive dots, new-tab ring with "+" instead of "T"). |
+| Current task | **P2-04 Trail rail, expanded, with branches** |
+| State | P2-03 complete. Collapsed rail implemented in `ui/rail.js`, matching Main (0.0), Settings (0.0), HelmAnswer (0.0), and History (0.0). Tab switching and new tab ring verified in automated tests. Tab model holds `openerId`. |
+| Next step | P2-04 Trail rail, expanded, with branches (§6: 264px wide, wordmark, collapse button, single row pinned apps, tab tree with quadratic curves, new tab row, Home/spaces). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `81e3a3e` (P2-02). |
+| Last pushed commit | `43182be` (P2-03). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -120,6 +120,15 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-03
+- Did: completed P2-03 Trail rail, collapsed. Created `ui/rail.js` with `renderCollapsedRail`. Implemented 56px collapsed rail (§6): logo star 20 at (12, 14), pinned apps (Mail, Calendar, Notes at top 68, 104, 140), tabs trunk with 1px line at x 28, active tab (r 13 circle with accent stroke .4 and accent star 18), inactive tabs (7px dot in `#5b656f`), new-tab dashed ring (r 10, dash 2.5 3) with centered plus (`M24.5 cy h7 M28 cy-3.5 v7` correcting sketch's "T" flaw), spaces column at left 21, top height - 122, and settings sliders button at left 12, top height - 52. Updated `ui/shell.js` to render collapsed rail and handle tab selection and new-tab creation. Updated Rust `app/shell/src/main.rs` and `bridge.rs` so `Shell` holds `Tab { view, opener }`, `FromUi::Open { url, opener }` accepts `opener`, and `ToUi::ViewOpened { view, opener }` returns it. Created `tools/test_collapsed_rail.py` verifying tab switching and new-tab ring creation via Playwright.
+- Verified: `python tools/visual_check.py Main Settings --region 0,0,56,800` scored 0.0 on both Main and Settings (and also 0.0 on HelmAnswer and History); `python tools/test_collapsed_rail.py` PASSED; `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `cargo test` clean.
+- Edge cases: §2 tab switching: handled + tested (clicking dot switches active state in UI and sends show/navigate); §2 new tab: handled + tested (clicking new-tab ring appends new tab and activates it); §2 opener tracking: handled + tested in Rust `Tab` model; §1 tokens: no raw hex outside `tokens.css`. Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: none.
+- Next: P2-04 Trail rail, expanded, with branches (§6).
+- Commit: `43182be` "P2-03: collapsed trail rail"  Pushed: yes
+
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-02
 - Did: completed P2-02 Notch. Built exact Notch UI in `ui/shell.js` and `ui/app.css` matching DESIGN.md §8: height 34, `#000` background, 14px bottom-left radius, left padding 6, Shields button with 16px shield SVG icon and blocked count, Minimize/Maximize/Close buttons with 15px SVG icons. Configured `-webkit-app-region: drag` on the notch and `no-drag` on buttons. Implemented CEF frameless window delegate methods (`is_frameless`, `can_resize`, `can_maximize`, `can_minimize`) on `MainWindow` in `app/engine-cef/src/lib.rs`, wrapped `DragHandler` to pass draggable regions to `set_draggable_regions`, and implemented IPC messages (`minimize-window`, `maximize-window`, `close-window`) in `app/shell/src/bridge.rs` and `app/shell/src/main.rs`. Fixed duplicate page-dim in `ui/shell.js`.
 - Verified: visual check across all 7 boards on region `1050,0,230,40` scored 0.0 (PASS on Main, Browsing, Settings, HelmAnswer, ClosedTabs, Private, History); `powershell -ExecutionPolicy Bypass -File tools\check.ps1` passed all 6 steps; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo test` unit tests for window message parsing passed.
@@ -127,7 +136,7 @@ Copy this template for each session:
 - Not verified / unsure: Linux native window drag behavior (compositor-specific).
 - Decisions proposed: none.
 - Next: P2-03 Trail rail, collapsed (§6).
-- Commit: pending "P2-02: notch with frameless window controls and drag regions"  Pushed: pending
+- Commit: `a5b3326` "P2-02: notch with frameless window controls and drag regions"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-01
 - Did: replaced SVG sky with canvas implementation in `ui/sky.js`. Canvas renders at device pixel ratio (`dpr`); supports `still` (draws once and stops, 0% CPU), `off` (cleared, no stars), `drifting` (slow, subtle star drift wrapping window bounds), and `shootingStars` (rare, subtle comets across new tab). Includes generator `generateSky` for live non-fixture states (`newtab`: 170 stars, `expanded`: 46, `collapsed`: 18, `private`: 120 marks with 40% hollow rings in `#cdd9ee`). Listens to `visibilitychange` to pause animation loop when window is hidden; respects `prefers-reduced-motion` media query to suppress animations. Wrote `tools/test_sky.py` validating canvas sizing at DPR, 0 RAF callbacks during Still mode idle, and star generation counts.

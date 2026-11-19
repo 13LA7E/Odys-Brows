@@ -4,6 +4,7 @@
 // file from design/preview.
 
 import { createSky } from './sky.js';
+import { renderCollapsedRail } from './rail.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -101,6 +102,33 @@ export function renderShell(root, state) {
   });
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
+  if (state.rail === 'collapsed') {
+    const tabs = state.tabs || Array.from({ length: state.tabCount || 1 }, (_, i) => ({ id: i + 1 }));
+    renderCollapsedRail(rail, {
+      tabs,
+      activeTab: state.activeTab ?? 1,
+      isPrivate: !!state.private,
+      onSelectTab: (id) => {
+        state.activeTab = id;
+        renderShell(root, state);
+      },
+      onNewTab: () => {
+        const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : (state.tabCount || 1)) + 1;
+        if (state.tabs) {
+          state.tabs.push({ id: nextId, title: 'New tab' });
+        } else {
+          state.tabCount = (state.tabCount || 1) + 1;
+        }
+        state.activeTab = nextId;
+        renderShell(root, state);
+      },
+      onOpenSettings: () => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
+        }
+      },
+    });
+  }
   root.append(rail);
 
   if (state.page !== 'none') {

@@ -15,6 +15,8 @@ pub enum FromUi {
     /// Open a new page view with this URL and show it.
     Open {
         url: String,
+        #[serde(default)]
+        opener: Option<ViewId>,
     },
     Navigate {
         view: ViewId,
@@ -56,6 +58,8 @@ pub enum FromUi {
 pub enum ToUi {
     ViewOpened {
         view: ViewId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        opener: Option<ViewId>,
     },
     Url {
         view: ViewId,
@@ -152,7 +156,15 @@ mod tests {
         assert_eq!(
             parse(r#"{"type":"open","url":"https://example.com"}"#),
             Ok(FromUi::Open {
-                url: "https://example.com".into()
+                url: "https://example.com".into(),
+                opener: None,
+            })
+        );
+        assert_eq!(
+            parse(r#"{"type":"open","url":"https://example.com","opener":42}"#),
+            Ok(FromUi::Open {
+                url: "https://example.com".into(),
+                opener: Some(42),
             })
         );
         assert_eq!(

@@ -59,15 +59,25 @@ fn page_bounds(engine: &CefEngine) -> Rect {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tab {
+    pub view: ViewId,
+    pub opener: Option<ViewId>,
+}
+
 #[derive(Default)]
 struct Shell {
-    views: Vec<ViewId>,
+    tabs: Vec<Tab>,
     shown: Option<ViewId>,
 }
 
 impl Shell {
+    fn contains(&self, view: ViewId) -> bool {
+        self.tabs.iter().any(|t| t.view == view)
+    }
+
     fn show(&mut self, engine: &mut CefEngine, view: ViewId) {
-        if !self.views.contains(&view) {
+        if !self.contains(view) {
             return;
         }
         if let Some(old) = self.shown.filter(|v| *v != view) {
@@ -79,13 +89,13 @@ impl Shell {
     }
 
     fn handle(&mut self, engine: &mut CefEngine, message: FromUi) {
-        let known = |s: &Shell, v: ViewId| s.views.contains(&v);
+        let known = |s: &Shell, v: ViewId| s.contains(v);
         match message {
-            FromUi::Open { url } => {
+            FromUi::Open { url, opener } => {
                 let view = engine.create_view(&url);
-                self.views.push(view);
+                self.tabs.push(Tab { view, opener });
                 self.show(engine, view);
-                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view }));
+                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
             }
             FromUi::Navigate { view, url } if known(self, view) => engine.navigate(view, &url),
             FromUi::Back { view } if known(self, view) => engine.go_back(view),
@@ -110,7 +120,7 @@ fn connect(engine: CefEngine) {
     engine.set_event_sink(move |event| {
         if let engine_api::Event::Closed { view } = &event {
             let mut s = events_shell.borrow_mut();
-            s.views.retain(|v| v != view);
+            s.tabs.retain(|t| t.view != *view);
             if s.shown == Some(*view) {
                 s.shown = None;
             }

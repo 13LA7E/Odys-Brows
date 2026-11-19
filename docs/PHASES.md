@@ -102,7 +102,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P2-02 Notch.** §8. Frameless window: drag region, double-click to maximise, Windows snap layouts, resize edges, our own min/max/close on both OSes. Shields count is wired in Phase 5 (show 0 until then).
   - Edge: §12
   - Done when: matches the notch in every board; window behaviour tested on both OSes.
-- [ ] **P2-03 Trail rail, collapsed.** §6. Including the **plus** in the new-tab ring (the sketch's "T" is a known flaw). Tab model holds `openerId` from the engine's new-window event.
+- [x] **P2-03 Trail rail, collapsed.** §6. Including the **plus** in the new-tab ring (the sketch's "T" is a known flaw). Tab model holds `openerId` from the engine's new-window event.
   - Edge: §2
   - Done when: [Main] and [Settings] rail regions pass; clicking a dot switches tab; the new-tab ring opens a new tab.
 - [ ] **P2-04 Trail rail, expanded, with branches.** §6. Narrow/Wide setting and the collapse button. Tabs opened from another tab appear as its children; closing a parent re-attaches its children to the parent's parent.

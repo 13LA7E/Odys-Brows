@@ -26,7 +26,7 @@ export const FIXTURES = {
   Main: {
     rail: 'collapsed',
     tabs: TABS_NEWTAB,
-    activeTab: 6,
+    activeTab: 1,
     page: 'none',
     newTab: {
       greeting: 'Good evening',
@@ -56,7 +56,7 @@ export const FIXTURES = {
   Settings: {
     rail: 'collapsed',
     tabCount: 4,
-    activeTab: 4,
+    activeTab: 2,
     page: 'internal',
     helm: { kind: 'address', address: { kind: 'internal', name: 'settings' } },
     settings: {
