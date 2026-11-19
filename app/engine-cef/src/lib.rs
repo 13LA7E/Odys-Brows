@@ -67,6 +67,8 @@ struct Page {
     browser: Option<Browser>,
     bounds: ViewRect,
     visible: bool,
+    sleeping: bool,
+    saved_url: Option<String>,
 }
 
 #[derive(Default)]
@@ -1088,6 +1090,14 @@ impl CefEngine {
         let mut task = Later::new(std::rc::Rc::new(RefCell::new(Some(Box::new(f)))));
         post_delayed_task(ThreadId::UI, Some(&mut task), delay_ms);
     }
+
+    /// Post a closure from any thread to execute on the UI thread.
+    pub fn post_ui(&self, f: impl FnOnce() + Send + 'static) {
+        let mut task = SendTask::new(std::sync::Arc::new(std::sync::Mutex::new(Some(Box::new(
+            f,
+        )))));
+        post_task(ThreadId::UI, Some(&mut task));
+    }
 }
 
 type Job = Box<dyn FnOnce()>;
@@ -1098,6 +1108,22 @@ wrap_task! {
     impl Task {
         fn execute(&self) {
             if let Some(job) = self.job.borrow_mut().take() {
+                job();
+            }
+        }
+    }
+}
+
+type SendJob = std::sync::Arc<std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>>;
+
+wrap_task! {
+    struct SendTask { job: SendJob }
+
+    impl Task {
+        fn execute(&self) {
+            if let Ok(mut lock) = self.job.lock()
+                && let Some(job) = lock.take()
+            {
                 job();
             }
         }
@@ -1117,6 +1143,8 @@ impl Engine for CefEngine {
                     browser: None,
                     bounds: ViewRect::default(),
                     visible: false,
+                    sleeping: false,
+                    saved_url: None,
                 },
             );
             id
@@ -1156,6 +1184,9 @@ impl Engine for CefEngine {
     }
 
     fn set_visible(&mut self, view: ViewId, visible: bool) {
+        if visible {
+            self.wake(view);
+        }
         STATE.with(|s| {
             if let Some(p) = s.borrow_mut().pages.get_mut(&view) {
                 p.visible = visible;
@@ -1229,14 +1260,6 @@ impl Engine for CefEngine {
         if let Some(f) = frame {
             f.execute_java_script(Some(&CefString::from(script)), None, 0);
         }
-    }
-
-    fn sleep(&mut self, _view: ViewId) {
-        todo!("P5-02 tab sleeping")
-    }
-
-    fn wake(&mut self, _view: ViewId) {
-        todo!("P5-02 tab sleeping")
     }
 
     fn open_devtools(&mut self, view: ViewId) {
@@ -1334,6 +1357,56 @@ impl Engine for CefEngine {
                 .unwrap_or(0)
         })
     }
+
+    fn sleep(&mut self, view: ViewId) {
+        STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            let Some(page) = s.pages.get_mut(&view) else {
+                return;
+            };
+            if page.visible || page.sleeping {
+                return;
+            }
+            if let Some(frame) = page.browser.as_ref().and_then(|b| b.main_frame()) {
+                let url = CefString::from(&frame.url()).to_string();
+                if !url.is_empty() && url != "about:blank" {
+                    page.saved_url = Some(url);
+                }
+                frame.load_url(Some(&CefString::from("about:blank")));
+            }
+            page.sleeping = true;
+        });
+    }
+
+    fn wake(&mut self, view: ViewId) {
+        let saved_url = STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            let page = s.pages.get_mut(&view)?;
+            if page.sleeping {
+                page.sleeping = false;
+                page.saved_url.take()
+            } else {
+                None
+            }
+        });
+        if let Some(url) = saved_url {
+            with_browser(view, |b| {
+                if let Some(f) = b.main_frame() {
+                    f.load_url(Some(&CefString::from(url.as_str())));
+                }
+            });
+        }
+    }
+
+    fn is_sleeping(&self, view: ViewId) -> bool {
+        STATE.with(|s| {
+            s.borrow()
+                .pages
+                .get(&view)
+                .map(|p| p.sleeping)
+                .unwrap_or(false)
+        })
+    }
 }
 
 // ---- start-up -----------------------------------------------------------------------------
@@ -1391,6 +1464,27 @@ wrap_app! {
     struct EngineApp;
 
     impl App {
+        fn on_before_command_line_processing(
+            &self,
+            _process_type: Option<&CefString>,
+            command_line: Option<&mut CommandLine>,
+        ) {
+            if let Some(cmd) = command_line {
+                // P5-03: Process and cache tuning (documented Chromium flags)
+                cmd.append_switch_with_value(
+                    Some(&CefString::from("disk-cache-size")),
+                    Some(&CefString::from("268435456")),
+                );
+                cmd.append_switch_with_value(
+                    Some(&CefString::from("enable-features")),
+                    Some(&CefString::from("IntensiveWakeUpThrottling,WebContentsDiscard")),
+                );
+                cmd.append_switch_with_value(
+                    Some(&CefString::from("js-flags")),
+                    Some(&CefString::from("--max_old_space_size=512")),
+                );
+            }
+        }
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
             Some(Process::new())
         }

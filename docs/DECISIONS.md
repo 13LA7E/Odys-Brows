@@ -160,6 +160,47 @@ In accordance with EDGE_CASES §7 ("Several private windows at once: decide whet
 - When all private windows close, the in-memory session is discarded completely.
 - No history, session restore, settings, cookies, or cache files are written to disk.
 
+## D-019 Sleeping tab visual representation. Proposed (P5-02)
+
+- In accordance with PHASES.md P5-02 ("The visual for sleeping tabs is not designed: propose one, Owner OK"):
+  - Collapsed rail: inactive awake tabs show a solid 7px dot (`var(--node)`). Sleeping tabs show a hollow 7px ring (`border: 1px solid var(--node); background: transparent; opacity: 0.4`) with tooltip "Sleeping tab (click to wake)".
+  - Expanded rail: sleeping tab rows use `color: var(--text-muted); opacity: 0.6;` with tooltip "Sleeping tab (click to wake)".
+  - Clicking or activating the tab awakens the tab immediately, restores its URL, and brings it back to full brightness.
+
+## D-020 Extension toolbar and action placement. Proposed (P6-02)
+
+- In accordance with PHASES.md P6-02 / DESIGN.md §10:
+  - Extension action button resides in the floating top-right Notch immediately to the left of the Shields button.
+  - Clicking opens the `odyssey://extensions` manager page.
+  - The Extensions page displays all installed Manifest V3 extensions, shows exact memory and CPU costs per extension (P6-03), provides permission breakdowns, a quick enable/disable toggle, and an 'Unpack extension' loader.
+
+## D-021 AI architecture and Helm ask mode. Proposed (P7-01, P7-02, P7-03)
+
+- Implemented in `app/ai`:
+  - Off by default; browser works completely offline without any AI configured.
+  - Providers: `None` (default), `Local` (Ollama/LM Studio/OpenAI-compatible), `Cloud` (OpenAI & Anthropic), `Odysseus` (owner's server).
+  - Background streaming executed via Tokio thread pool and delivered to the UI thread via `CefEngine::post_ui`.
+  - Keys stored securely in the native OS profile without secrets ever reaching the UI frame.
+  - Helm Assistant button toggles asking mode; streams answer card with source chips and dims the page.
+
+## D-022 Password vault and comprehensive settings. Proposed (P8-01, P8-02, P8-03)
+
+- Implemented in `app/vault` and `ui/settings.js`:
+  - Password entries individually encrypted with Windows DPAPI (`CryptProtectData`), tied to current Windows login, no master password needed. Cross-platform fallback for Linux builds.
+  - Plaintext password credentials never touch disk and only cross bridge when explicitly revealed.
+  - All 9 settings sections completed with design-token-only styling: General, Appearance, New tab, Shields, AI, Passwords, Privacy, Shortcuts, About.
+  - Keyboard navigation and visible focus accessibility verified across all interactive controls.
+
+## D-023 Packaging, auto-updater and release pipeline. Proposed (P9-01 through P9-05)
+
+- Windows user-level installer configured via NSIS (`tools/installer/installer.nsi`) requiring no admin privileges.
+- Linux AppImage and `.deb` package generation scripts in `tools/installer/build_linux.sh`.
+- Auto-update manifest schema and verification guide documented in `docs/UPDATES.md` and `tools/updater`.
+- Automated CEF version monitoring in `.github/workflows/cef_check.yml`.
+- Standard release checklist and verification procedures documented in `docs/RELEASE_CHECKLIST.md`.
+
+
+
 ---
 
 ## Open questions for the owner

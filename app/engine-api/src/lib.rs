@@ -185,6 +185,11 @@ pub trait Engine {
     fn shields_count(&self, _view: ViewId) -> u64 {
         0
     }
+
+    /// Return whether a tab is currently sleeping (P5-02).
+    fn is_sleeping(&self, _view: ViewId) -> bool {
+        false
+    }
 }
 
 /// Where our own browser UI (the HTML in `ui/`) lives on disk.

@@ -27,11 +27,15 @@ history = { path = "app/history" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", features = ["stream", "json", "multipart"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
 adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 shields = { path = "app/shields" }
+ai = { path = "app/ai" }
+vault = { path = "app/vault" }
+base64 = "0.22"
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

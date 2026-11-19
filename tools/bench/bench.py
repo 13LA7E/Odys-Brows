@@ -83,11 +83,34 @@ def spike_exe():
     return first_existing([ROOT / 'spike/p0-04-helm/target/release/p0-05-extensions'])
 
 
+def constellations_exe():
+    if IS_WIN:
+        return first_existing([
+            ROOT / 'target/release/constellations.exe',
+            ROOT / 'target/debug/constellations.exe',
+        ])
+    return first_existing([
+        ROOT / 'target/release/constellations',
+        ROOT / 'target/debug/constellations',
+    ])
+
+
 def spike_env():
     env = dict(os.environ)
     # The folder that holds the CEF runtime (not the downloaded cef_binary_*.tar.bz2 next to it).
     lib = 'libcef.dll' if IS_WIN else 'libcef.so'
     builds = sorted(p.parent for p in (ROOT / 'spike/p0-04-helm/target/release/build').glob(f'cef-dll-sys*/*/out/cef_*/{lib}'))
+    if builds:
+        sep = ';' if IS_WIN else ':'
+        key = 'PATH' if IS_WIN else 'LD_LIBRARY_PATH'
+        env[key] = str(builds[0]) + sep + env.get(key, '')
+    return env
+
+
+def constellations_env():
+    env = dict(os.environ)
+    lib = 'libcef.dll' if IS_WIN else 'libcef.so'
+    builds = sorted(p.parent for p in (ROOT / 'target').glob(f'**/cef_windows*/{lib}'))
     if builds:
         sep = ';' if IS_WIN else ':'
         key = 'PATH' if IS_WIN else 'LD_LIBRARY_PATH'
@@ -111,6 +134,7 @@ BROWSERS = {
                                         env_path('ProgramFiles(x86)', 'Mozilla Firefox/firefox.exe'),
                                         '/usr/bin/firefox']), firefox_cmd, False),
     'spike': (spike_exe, spike_cmd, True),
+    'constellations': (constellations_exe, spike_cmd, True),
 }
 
 
@@ -180,7 +204,7 @@ def run_one(name, wait, idle):
         return dict(browser=name, error='not installed')
     profile = Path(tempfile.mkdtemp(prefix=f'constellations-bench-{name}-'))
     us = urls()
-    env = spike_env() if name == 'spike' else None
+    env = constellations_env() if name == 'constellations' else (spike_env() if name == 'spike' else None)
     roots = []
     try:
         for i, cmd in enumerate(build(exe, profile, us, windows)):

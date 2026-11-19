@@ -251,56 +251,62 @@ impl Shields {
 
     /// Asynchronously fetch updated filter lists and re-initialize engine.
     pub fn update_filters_background(self: Arc<Self>) {
-        tokio::spawn(async move {
-            let _ = std::fs::create_dir_all(&self.cache_dir);
-            let client = match reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Constellations/0.1")
+        std::thread::spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
                 .build()
-            {
-                Ok(c) => c,
-                Err(_) => return,
+            else {
+                return;
             };
-
-            let mut filter_texts = Vec::new();
-            for (name, url) in LIST_SOURCES {
-                let cache_file = self.cache_dir.join(format!("{name}.txt"));
-                let is_fresh = std::fs::metadata(&cache_file)
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| SystemTime::now().duration_since(t).ok())
-                    .map(|age| age < REFRESH_AFTER)
-                    .unwrap_or(false);
-
-                if is_fresh && cache_file.exists() {
-                    let text = std::fs::read_to_string(&cache_file).unwrap_or_default();
-                    if !text.is_empty() {
-                        filter_texts.push(text);
-                        continue;
-                    }
-                }
-
-                let maybe_resp = match client.get(*url).send().await {
-                    Ok(r) if r.status().is_success() => Some(r),
-                    _ => None,
+            rt.block_on(async move {
+                let _ = std::fs::create_dir_all(&self.cache_dir);
+                let client = match reqwest::Client::builder()
+                    .timeout(Duration::from_secs(30))
+                    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Constellations/0.1")
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(_) => return,
                 };
-                if let Some(resp) = maybe_resp {
-                    let text = resp.text().await.unwrap_or_default();
-                    if text.len() > 500 {
-                        let _ = std::fs::write(&cache_file, &text);
-                        filter_texts.push(text);
-                        continue;
+
+                let mut filter_texts = Vec::new();
+                for (name, url) in LIST_SOURCES {
+                    let cache_file = self.cache_dir.join(format!("{name}.txt"));
+                    let is_fresh = std::fs::metadata(&cache_file)
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| SystemTime::now().duration_since(t).ok())
+                        .map(|age| age < REFRESH_AFTER)
+                        .unwrap_or(false);
+
+                    if is_fresh && cache_file.exists() {
+                        let text = std::fs::read_to_string(&cache_file).unwrap_or_default();
+                        if !text.is_empty() {
+                            filter_texts.push(text);
+                            continue;
+                        }
+                    }
+
+                    let maybe_resp = match client.get(*url).send().await {
+                        Ok(r) if r.status().is_success() => Some(r),
+                        _ => None,
+                    };
+                    if let Some(resp) = maybe_resp {
+                        let text = resp.text().await.unwrap_or_default();
+                        if text.len() > 500 {
+                            let _ = std::fs::write(&cache_file, &text);
+                            filter_texts.push(text);
+                            continue;
+                        }
+                    }
+
+                    // Fallback to existing file if offline
+                    if let Ok(s) = std::fs::read_to_string(&cache_file) {
+                        filter_texts.push(s);
                     }
                 }
 
-                // Fallback to existing file if offline
-                if let Ok(s) = std::fs::read_to_string(&cache_file) {
-                    filter_texts.push(s);
-                }
-            }
-
-            if !filter_texts.is_empty() {
-                tokio::task::spawn_blocking(move || {
+                if !filter_texts.is_empty() {
                     let mut set = FilterSet::new(false);
                     set.add_filter_list(DEFAULT_FILTER_RULES.to_string(), ParseOptions::default());
                     for t in filter_texts {
@@ -308,10 +314,8 @@ impl Shields {
                     }
                     let new_engine = Engine::new_with_filter_set(set);
                     *self.engine.write().unwrap() = Some(Arc::new(new_engine));
-                })
-                .await
-                .ok();
-            }
+                }
+            });
         });
     }
 }

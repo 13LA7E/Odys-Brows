@@ -152,6 +152,58 @@ export async function startLive() {
         state.shieldsEnabled = msg.enabled;
         renderShell(app, state);
       }
+    } else if (msg.type === 'tab-sleeping') {
+      if (state.tabs) {
+        const tab = state.tabs.find((t) => t.id === msg.view);
+        if (tab) tab.sleeping = msg.sleeping;
+      }
+      renderShell(app, state);
+    } else if (msg.type === 'extensions-loaded') {
+      state.extensions = msg.extensions;
+      renderShell(app, state);
+    } else if (msg.type === 'ai-config-loaded') {
+      state.aiConfig = msg.config;
+      renderShell(app, state);
+    } else if (msg.type === 'ai-test-result') {
+      state.aiTestResult = msg;
+      renderShell(app, state);
+    } else if (msg.type === 'ai-event') {
+      if (msg.event) {
+        if (!state.answer) {
+          state.answer = {
+            text: '',
+            sources: [],
+            footer: state.aiConfig?.provider === 'odysseus'
+              ? 'Answered by your Odysseus server'
+              : (state.aiConfig?.provider === 'cloud'
+                ? 'Answered by Cloud AI'
+                : (state.aiConfig?.provider === 'local' ? 'Answered by local AI' : 'AI')),
+            action: state.aiConfig?.provider === 'odysseus' ? 'Continue in Odysseus' : '',
+          };
+        }
+        if (state.answer.text === 'Thinking...') {
+          state.answer.text = '';
+        }
+        if (msg.event.type === 'delta') {
+          state.answer.text += msg.event.data;
+          renderShell(app, state);
+        } else if (msg.event.type === 'source') {
+          const s = msg.event.data?.title || msg.event.data?.url;
+          if (s && !state.answer.sources.includes(s)) {
+            state.answer.sources.push(s);
+            renderShell(app, state);
+          }
+        } else if (msg.event.type === 'error') {
+          state.answer.text = `Error: ${msg.event.data}`;
+          renderShell(app, state);
+        }
+      }
+    } else if (msg.type === 'vault-loaded') {
+      state.vaultEntries = msg.entries;
+      renderShell(app, state);
+    } else if (msg.type === 'vault-credentials') {
+      state.revealedPassword = { id: msg.id, username: msg.username, password: msg.password };
+      renderShell(app, state);
     }
   });
 
@@ -159,5 +211,8 @@ export async function startLive() {
 
   if (typeof window.odysseyBridge === 'function') {
     window.odysseyBridge(JSON.stringify({ type: 'load-settings' }));
+    window.odysseyBridge(JSON.stringify({ type: 'get-extensions' }));
+    window.odysseyBridge(JSON.stringify({ type: 'ai-get-config' }));
+    window.odysseyBridge(JSON.stringify({ type: 'vault-list' }));
   }
 }

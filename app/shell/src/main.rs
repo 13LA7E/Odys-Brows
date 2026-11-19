@@ -8,6 +8,7 @@
 
 mod brand;
 mod bridge;
+mod extensions;
 mod selftest;
 
 use bridge::{FromUi, ToUi};
@@ -19,6 +20,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Collapsed rail width (DESIGN.md §6). The page area starts here.
 const RAIL_WIDTH: i32 = 56;
@@ -68,15 +71,31 @@ pub struct Tab {
     pub opener: Option<ViewId>,
     pub space: usize,
     pub pinned: bool,
+    pub sleeping: bool,
+    pub has_audio: bool,
+    pub has_form_input: bool,
+    pub last_active: i64,
 }
 
 impl Tab {
     pub fn new(view: ViewId, opener: Option<ViewId>) -> Self {
+        Self::with_details(view, opener, 0, false)
+    }
+
+    pub fn with_details(view: ViewId, opener: Option<ViewId>, space: usize, pinned: bool) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         Self {
             view,
             opener,
-            space: 0,
-            pinned: false,
+            space,
+            pinned,
+            sleeping: false,
+            has_audio: false,
+            has_form_input: false,
+            last_active: now,
         }
     }
 }
@@ -92,6 +111,21 @@ pub struct ClosedTabRecord {
     pub opener: Option<ViewId>,
 }
 
+fn load_ai_config(dir: &Path) -> ai::AiConfig {
+    let path = dir.join("ai.json");
+    let Ok(data) = std::fs::read_to_string(path) else {
+        return ai::AiConfig::default();
+    };
+    serde_json::from_str(&data).unwrap_or_default()
+}
+
+fn save_ai_config(dir: &Path, config: &ai::AiConfig) {
+    let path = dir.join("ai.json");
+    if let Ok(data) = serde_json::to_string_pretty(config) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 #[derive(Debug)]
 struct Shell {
     tabs: Vec<Tab>,
@@ -105,10 +139,18 @@ struct Shell {
     tab_titles: HashMap<ViewId, String>,
     closed_tabs: VecDeque<ClosedTabRecord>,
     next_closed_id: u64,
+    extensions: extensions::ExtensionsStore,
+    vault: vault::VaultStore,
+    ai_client: Arc<ai::AiClient>,
+    ai_config: ai::AiConfig,
+    ai_cancel: Arc<AtomicBool>,
 }
 
 impl Default for Shell {
     fn default() -> Self {
+        let dir = profile_dir();
+        let ai_cfg = load_ai_config(&dir);
+        let vault_store = vault::VaultStore::load(&dir.join("vault.json"));
         Self {
             tabs: Vec::new(),
             shown: None,
@@ -121,6 +163,11 @@ impl Default for Shell {
             tab_titles: HashMap::new(),
             closed_tabs: VecDeque::new(),
             next_closed_id: 1,
+            extensions: extensions::ExtensionsStore::default(),
+            vault: vault_store,
+            ai_client: Arc::new(ai::AiClient::new()),
+            ai_config: ai_cfg,
+            ai_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -319,12 +366,8 @@ impl Shell {
             self.show(engine, view);
         } else {
             let view = engine.create_view(url);
-            self.tabs.push(Tab {
-                view,
-                opener: None,
-                space: self.active_space,
-                pinned: true,
-            });
+            self.tabs
+                .push(Tab::with_details(view, None, self.active_space, true));
             self.show(engine, view);
             self.on_url_changed(view, url);
             engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener: None }));
@@ -388,6 +431,21 @@ impl Shell {
         if !self.contains(view) {
             return;
         }
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.view == view) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            tab.last_active = now;
+            if tab.sleeping {
+                tab.sleeping = false;
+                engine.wake(view);
+                engine.send_to_ui(&bridge::to_json(&ToUi::TabSleeping {
+                    view,
+                    sleeping: false,
+                }));
+            }
+        }
         if let Some(old) = self.shown.filter(|v| *v != view) {
             engine.set_visible(old, false);
         }
@@ -410,17 +468,39 @@ impl Shell {
         self.persist_session();
     }
 
+    fn check_tab_sleeping(&mut self, engine: &mut CefEngine, timeout_secs: i64) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        for tab in &mut self.tabs {
+            // Edge cases §9: Never sleep active tab, tabs playing audio, pinned tabs, tabs with unsaved form input, or already sleeping
+            if Some(tab.view) == self.shown
+                || tab.pinned
+                || tab.has_audio
+                || tab.has_form_input
+                || tab.sleeping
+            {
+                continue;
+            }
+            if now - tab.last_active >= timeout_secs {
+                tab.sleeping = true;
+                engine.sleep(tab.view);
+                engine.send_to_ui(&bridge::to_json(&ToUi::TabSleeping {
+                    view: tab.view,
+                    sleeping: true,
+                }));
+            }
+        }
+    }
+
     fn handle(&mut self, engine: &mut CefEngine, message: FromUi) {
         let known = |s: &Shell, v: ViewId| s.contains(v);
         match message {
             FromUi::Open { url, opener } => {
                 let view = engine.create_view(&url);
-                self.tabs.push(Tab {
-                    view,
-                    opener,
-                    space: self.active_space,
-                    pinned: false,
-                });
+                self.tabs
+                    .push(Tab::with_details(view, opener, self.active_space, false));
                 self.show(engine, view);
                 if !url.is_empty() {
                     self.on_url_changed(view, &url);
@@ -438,12 +518,8 @@ impl Shell {
                     }
                 } else if !url.is_empty() {
                     let new_view = engine.create_view(&url);
-                    self.tabs.push(Tab {
-                        view: new_view,
-                        opener: None,
-                        space: self.active_space,
-                        pinned: false,
-                    });
+                    self.tabs
+                        .push(Tab::with_details(new_view, None, self.active_space, false));
                     self.show(engine, new_view);
                     self.on_url_changed(new_view, &url);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
@@ -604,12 +680,8 @@ impl Shell {
             FromUi::RelightClosedTab { id } => {
                 if let Some((url, opener)) = self.relight_closed_tab(id) {
                     let view = engine.create_view(&url);
-                    self.tabs.push(Tab {
-                        view,
-                        opener,
-                        space: self.active_space,
-                        pinned: false,
-                    });
+                    self.tabs
+                        .push(Tab::with_details(view, opener, self.active_space, false));
                     self.show(engine, view);
                     self.on_url_changed(view, &url);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
@@ -668,19 +740,174 @@ impl Shell {
                     }));
                 }
             }
+            FromUi::SetTabSleeping { view, sleeping } => {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.view == view) {
+                    if sleeping && Some(view) != self.shown && !tab.pinned && !tab.has_audio {
+                        tab.sleeping = true;
+                        engine.sleep(view);
+                        engine.send_to_ui(&bridge::to_json(&ToUi::TabSleeping {
+                            view,
+                            sleeping: true,
+                        }));
+                    } else if !sleeping {
+                        tab.sleeping = false;
+                        engine.wake(view);
+                        engine.send_to_ui(&bridge::to_json(&ToUi::TabSleeping {
+                            view,
+                            sleeping: false,
+                        }));
+                    }
+                }
+            }
+            FromUi::GetExtensions => {
+                let list = self.extensions.list();
+                engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+                    extensions: list,
+                }));
+            }
+            FromUi::ToggleExtension { id, enabled } => {
+                self.extensions.toggle(&id, enabled);
+                let _ = self.extensions.save(&profile_dir());
+                let list = self.extensions.list();
+                engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+                    extensions: list,
+                }));
+            }
+            FromUi::RemoveExtension { id } => {
+                self.extensions.remove(&id);
+                let _ = self.extensions.save(&profile_dir());
+                let list = self.extensions.list();
+                engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+                    extensions: list,
+                }));
+            }
+            FromUi::LoadUnpackedExtension { path } => {
+                let p = PathBuf::from(&path);
+                if self.extensions.load_unpacked(&p).is_ok() {
+                    let _ = self.extensions.save(&profile_dir());
+                    let list = self.extensions.list();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+                        extensions: list,
+                    }));
+                }
+            }
+            FromUi::AiGetConfig => {
+                let ui_cfg = ai::AiSettingsUi::from(&self.ai_config);
+                engine.send_to_ui(&bridge::to_json(&ToUi::AiConfigLoaded { config: ui_cfg }));
+            }
+            FromUi::AiSaveConfig { config } => {
+                self.ai_config = config;
+                save_ai_config(&profile_dir(), &self.ai_config);
+                let ui_cfg = ai::AiSettingsUi::from(&self.ai_config);
+                engine.send_to_ui(&bridge::to_json(&ToUi::AiConfigLoaded { config: ui_cfg }));
+            }
+            FromUi::AiTestConnection { config } => {
+                let client = self.ai_client.clone();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let res = rt.block_on(async { client.test_connection(&config).await });
+                    CefEngine.post_ui(move || match res {
+                        Ok(msg) => CefEngine.send_to_ui(&bridge::to_json(&ToUi::AiTestResult {
+                            ok: true,
+                            message: msg,
+                        })),
+                        Err(e) => CefEngine.send_to_ui(&bridge::to_json(&ToUi::AiTestResult {
+                            ok: false,
+                            message: e,
+                        })),
+                    });
+                });
+            }
+            FromUi::AiCancel => {
+                self.ai_cancel.store(true, Ordering::Relaxed);
+            }
+            FromUi::AiAsk { prompt, context } => {
+                self.ai_cancel.store(true, Ordering::Relaxed);
+                let cancel = Arc::new(AtomicBool::new(false));
+                self.ai_cancel = cancel.clone();
+                let client = self.ai_client.clone();
+                let config = self.ai_config.clone();
+
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    rt.block_on(async {
+                        client
+                            .ask(&config, &prompt, context.as_deref(), cancel, move |ev| {
+                                CefEngine.post_ui(move || {
+                                    CefEngine
+                                        .send_to_ui(&bridge::to_json(&ToUi::AiEvent { event: ev }));
+                                });
+                            })
+                            .await;
+                    });
+                });
+            }
+            FromUi::VaultList => {
+                let entries = self.vault.list();
+                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+            }
+            FromUi::VaultListForOrigin { origin } => {
+                let entries = self.vault.list_for_origin(&origin);
+                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+            }
+            FromUi::VaultAdd {
+                origin,
+                username,
+                password,
+            } => {
+                if self.vault.add(&origin, &username, &password).is_ok() {
+                    let _ = self.vault.save(&profile_dir().join("vault.json"));
+                    let entries = self.vault.list();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                }
+            }
+            FromUi::VaultUpdate {
+                id,
+                origin,
+                username,
+                password,
+            } => {
+                if self.vault.update(&id, origin, username, password).is_ok() {
+                    let _ = self.vault.save(&profile_dir().join("vault.json"));
+                    let entries = self.vault.list();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                }
+            }
+            FromUi::VaultDelete { id } => {
+                if self.vault.delete(&id).is_ok() {
+                    let _ = self.vault.save(&profile_dir().join("vault.json"));
+                    let entries = self.vault.list();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                }
+            }
+            FromUi::VaultReveal { id } => {
+                if let Ok((username, password)) = self.vault.get_credentials(&id) {
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultCredentials {
+                        id,
+                        username,
+                        password,
+                    }));
+                }
+            }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),
         }
     }
 }
 
-fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
+fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: Option<PathBuf>) {
     let history_store = if is_private {
         None
     } else {
         HistoryStore::open(&profile_dir().join("history.db")).ok()
     };
-    let saved_session = if is_private || any_selftest {
+    let saved_session = if is_private || any_selftest || urls_file.is_some() {
         SessionData::default()
     } else {
         load_session_or_default(&profile_dir())
@@ -690,21 +917,30 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
         history: history_store,
         rail_width: saved_session.rail_width,
         active_space: saved_session.active_space,
+        extensions: extensions::ExtensionsStore::load_or_default(&profile_dir()),
         ..Shell::default()
     }));
 
-    if !saved_session.tabs.is_empty() {
+    if let Some(path) = urls_file {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let mut s = shell.borrow_mut();
+            for u in content.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                let view = CefEngine.create_view(u);
+                s.tabs.push(Tab::new(view, None));
+                s.on_url_changed(view, u);
+            }
+            if let Some(first) = s.tabs.first().map(|t| t.view) {
+                s.show(&mut CefEngine, first);
+            }
+        }
+    } else if !saved_session.tabs.is_empty() {
         let mut s = shell.borrow_mut();
         let mut created_views = Vec::new();
         for tab in &saved_session.tabs {
             let view = CefEngine.create_view(&tab.url);
             created_views.push(view);
-            s.tabs.push(Tab {
-                view,
-                opener: None,
-                space: tab.space,
-                pinned: tab.pinned,
-            });
+            s.tabs
+                .push(Tab::with_details(view, None, tab.space, tab.pinned));
             s.tab_urls.insert(view, tab.url.clone());
             s.tab_titles.insert(view, tab.title.clone());
         }
@@ -735,6 +971,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
             engine_api::Event::Closed { .. }
                 | engine_api::Event::UrlChanged { .. }
                 | engine_api::Event::TitleChanged { .. }
+                | engine_api::Event::AudioChanged { .. }
         );
         if needs_shell {
             if let Ok(mut s) = events_shell.try_borrow_mut() {
@@ -750,6 +987,11 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
                     }
                     engine_api::Event::TitleChanged { view, title } => {
                         s.on_title_changed(*view, title);
+                    }
+                    engine_api::Event::AudioChanged { view, playing } => {
+                        if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
+                            t.has_audio = *playing;
+                        }
                     }
                     _ => {}
                 }
@@ -788,6 +1030,11 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
                             engine_api::Event::TitleChanged { view, title } => {
                                 s.on_title_changed(*view, title);
                             }
+                            engine_api::Event::AudioChanged { view, playing } => {
+                                if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
+                                    t.has_audio = *playing;
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -796,6 +1043,17 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool) {
             }
         }
     });
+
+    fn schedule_sleep_timer(shell: Rc<RefCell<Shell>>) {
+        let timer_shell = shell.clone();
+        CefEngine.after(30_000, move || {
+            if let Ok(mut s) = timer_shell.try_borrow_mut() {
+                s.check_tab_sleeping(&mut CefEngine, 600);
+            }
+            schedule_sleep_timer(timer_shell);
+        });
+    }
+    schedule_sleep_timer(shell);
 }
 
 fn main() {
@@ -804,11 +1062,18 @@ fn main() {
     let is_private =
         std::env::args().any(|a| a == "--private" || a == "-private" || a == "--incognito");
     let any_selftest = engine_selftest || ipc_selftest;
+    let profile_arg =
+        std::env::args().find_map(|a| a.strip_prefix("--profile-dir=").map(PathBuf::from));
+    let urls_file_arg =
+        std::env::args().find_map(|a| a.strip_prefix("--urls-file=").map(PathBuf::from));
+    let start_profile = profile_arg.clone();
     let result = engine_cef::run(
         move || engine_cef::StartOptions {
             // Self-tests use a throwaway profile so they never touch real data.
             // Private windows use an in-memory profile: no cookies, cache or storage on disk (P3-02).
-            profile_dir: if is_private {
+            profile_dir: if let Some(p) = start_profile {
+                p
+            } else if is_private {
                 PathBuf::new()
             } else if any_selftest {
                 std::env::temp_dir().join(format!("{}-selftest", brand::DATA_DIR))
@@ -834,7 +1099,7 @@ fn main() {
             if engine_selftest {
                 selftest::start(engine);
             } else {
-                connect(engine, is_private, any_selftest);
+                connect(engine, is_private, any_selftest, urls_file_arg);
                 if ipc_selftest {
                     selftest::ipc_timeout(engine);
                 }
@@ -1292,25 +1557,10 @@ mod tests {
     fn space_switching_and_pinned_tabs() {
         let mut shell = Shell::default();
         // Space 0: Tab 1
-        shell.tabs.push(Tab {
-            view: 1,
-            opener: None,
-            space: 0,
-            pinned: false,
-        });
+        shell.tabs.push(Tab::with_details(1, None, 0, false));
         // Space 1: Tab 2 (pinned), Tab 3
-        shell.tabs.push(Tab {
-            view: 2,
-            opener: None,
-            space: 1,
-            pinned: true,
-        });
-        shell.tabs.push(Tab {
-            view: 3,
-            opener: None,
-            space: 1,
-            pinned: false,
-        });
+        shell.tabs.push(Tab::with_details(2, None, 1, true));
+        shell.tabs.push(Tab::with_details(3, None, 1, false));
         shell.shown = Some(1);
 
         // Switch to space 1
@@ -1332,5 +1582,61 @@ mod tests {
         assert!(session.tabs[1].pinned);
         assert_eq!(session.tabs[2].space, 1);
         assert!(!session.tabs[2].pinned);
+    }
+
+    #[test]
+    fn tab_sleeping_idle_and_exclusions() {
+        let mut shell = Shell::default();
+        // Tab 1: active shown tab
+        let mut t1 = Tab::with_details(1, None, 0, false);
+        t1.last_active = 0; // old
+        shell.tabs.push(t1);
+        shell.shown = Some(1);
+
+        // Tab 2: background idle tab (should sleep)
+        let mut t2 = Tab::with_details(2, None, 0, false);
+        t2.last_active = 0; // old
+        shell.tabs.push(t2);
+
+        // Tab 3: pinned tab (never sleep)
+        let mut t3 = Tab::with_details(3, None, 0, true);
+        t3.last_active = 0;
+        shell.tabs.push(t3);
+
+        // Tab 4: audio playing tab (never sleep)
+        let mut t4 = Tab::with_details(4, None, 0, false);
+        t4.has_audio = true;
+        t4.last_active = 0;
+        shell.tabs.push(t4);
+
+        // Tab 5: form input tab (never sleep)
+        let mut t5 = Tab::with_details(5, None, 0, false);
+        t5.has_form_input = true;
+        t5.last_active = 0;
+        shell.tabs.push(t5);
+
+        // Tab 6: recent tab (not old enough to sleep)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let mut t6 = Tab::with_details(6, None, 0, false);
+        t6.last_active = now - 60; // only 1 min old
+        shell.tabs.push(t6);
+
+        // Run check with timeout of 600s
+        shell.check_tab_sleeping(&mut CefEngine, 600);
+
+        assert!(!shell.tabs[0].sleeping, "active tab should never sleep");
+        assert!(shell.tabs[1].sleeping, "background idle tab should sleep");
+        assert!(!shell.tabs[2].sleeping, "pinned tab should never sleep");
+        assert!(!shell.tabs[3].sleeping, "audio tab should never sleep");
+        assert!(!shell.tabs[4].sleeping, "form input tab should never sleep");
+        assert!(!shell.tabs[5].sleeping, "recent tab should not sleep");
+
+        // Now wake tab 2
+        shell.show(&mut CefEngine, 2);
+        assert!(!shell.tabs[1].sleeping, "showing sleeping tab wakes it");
+        assert_eq!(shell.shown, Some(2));
     }
 }

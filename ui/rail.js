@@ -207,7 +207,12 @@ export function renderCollapsedRail(railEl, options = {}) {
         b.append(activeSvg);
       } else {
         const dot = el('span');
-        dot.style.cssText = 'width:7px;height:7px;border-radius:4px;background:var(--node);display:block;';
+        if (tab.sleeping) {
+          dot.style.cssText = 'width:7px;height:7px;border-radius:4px;border:1px solid var(--node);background:transparent;opacity:0.4;display:block;';
+          b.setAttribute('title', 'Sleeping tab (click to wake)');
+        } else {
+          dot.style.cssText = 'width:7px;height:7px;border-radius:4px;background:var(--node);display:block;';
+        }
         b.append(dot);
       }
     }
@@ -463,9 +468,17 @@ export function renderExpandedRail(railEl, options = {}) {
     const cx = r.lvl === 0 ? 28 : 46;
     const cy = cys[i];
     const b = el('button', 'rail-tab-row');
-    const bg = r.active ? 'background:var(--w-active-row);color:var(--text);' : 'color:var(--text-soft);';
+    const isSleeping = Boolean(r.tab.sleeping && !r.active);
+    const bg = r.active
+      ? 'background:var(--w-active-row);color:var(--text);'
+      : isSleeping
+        ? 'color:var(--text-muted);opacity:0.6;'
+        : 'color:var(--text-soft);';
     b.style.cssText = `position:absolute;left:8px;top:${cy - 18}px;width:248px;height:36px;border-radius:8px;text-align:left;padding-left:${cx + 10}px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;${bg}`;
     b.textContent = r.tab.title || `Tab ${r.tab.id}`;
+    if (isSleeping) {
+      b.setAttribute('title', 'Sleeping tab (click to wake)');
+    }
     b.addEventListener('click', () => {
       if (onSelectTab) onSelectTab(r.tab.id);
     });

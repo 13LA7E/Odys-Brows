@@ -1,0 +1,27 @@
+name: CEF Upstream Version Monitor
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Every Monday at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  check-cef:
+    name: Check CEF Crate Version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Query crates.io for latest CEF version
+        run: |
+          CURRENT_PIN=$(grep -oP 'cef\s*=\s*\{\s*version\s*=\s*"=\K[^"]+' Cargo.toml || echo "unknown")
+          LATEST_VERSION=$(curl -s https://crates.io/api/v1/crates/cef | jq -r '.crate.max_version')
+          echo "Current pinned version: $CURRENT_PIN"
+          echo "Latest available on crates.io: $LATEST_VERSION"
+          if [ "$CURRENT_PIN" != "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "null" ]; then
+            echo "WARNING: A newer CEF version ($LATEST_VERSION) is available on crates.io."
+            echo "CEF_UPDATE_NEEDED=true" >> $GITHUB_ENV
+          else
+            echo "CEF is up to date."
+          fi

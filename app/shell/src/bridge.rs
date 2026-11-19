@@ -162,6 +162,74 @@ pub enum FromUi {
         #[serde(default)]
         view: Option<ViewId>,
     },
+    /// Explicitly sleep or wake a tab (P5-02).
+    SetTabSleeping {
+        view: ViewId,
+        sleeping: bool,
+    },
+    /// Request installed extensions list (P6-01).
+    GetExtensions,
+    /// Toggle an extension on/off (P6-01).
+    ToggleExtension {
+        id: String,
+        enabled: bool,
+    },
+    /// Remove an extension (P6-01).
+    RemoveExtension {
+        id: String,
+    },
+    /// Load an unpacked extension folder (P6-01).
+    LoadUnpackedExtension {
+        path: String,
+    },
+    /// Ask a question in Helm ask mode (P7-01, P7-03).
+    AiAsk {
+        prompt: String,
+        #[serde(default)]
+        context: Option<String>,
+    },
+    /// Cancel active AI request (P7-01, P7-03).
+    AiCancel,
+    /// Test an AI provider connection from Settings (P7-01, P7-02).
+    AiTestConnection {
+        config: ai::AiConfig,
+    },
+    /// Save AI config from Settings (P7-02).
+    AiSaveConfig {
+        config: ai::AiConfig,
+    },
+    /// Fetch current AI configuration (P7-02).
+    AiGetConfig,
+    /// List saved logins (P8-02).
+    VaultList,
+    /// List saved logins for origin (P8-02).
+    VaultListForOrigin {
+        origin: String,
+    },
+    /// Add a new login (P8-02).
+    VaultAdd {
+        origin: String,
+        username: String,
+        password: String,
+    },
+    /// Update a login (P8-02).
+    VaultUpdate {
+        id: String,
+        #[serde(default)]
+        origin: Option<String>,
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
+    },
+    /// Delete a login (P8-02).
+    VaultDelete {
+        id: String,
+    },
+    /// Reveal login password (P8-02).
+    VaultReveal {
+        id: String,
+    },
     /// Only used by `--ipc-selftest`.
     SelftestResult {
         ok: bool,
@@ -235,6 +303,38 @@ pub enum ToUi {
         view: ViewId,
         count: u64,
         enabled: bool,
+    },
+    /// Tab sleeping state update (P5-02).
+    TabSleeping {
+        view: ViewId,
+        sleeping: bool,
+    },
+    /// Extensions list update (P6-01, P6-03).
+    ExtensionsLoaded {
+        extensions: Vec<crate::extensions::ExtensionInfo>,
+    },
+    /// Streamed AI event or answer delta (P7-01, P7-03).
+    AiEvent {
+        event: ai::AiEvent,
+    },
+    /// Loaded AI settings (keys stripped, P7-02).
+    AiConfigLoaded {
+        config: ai::AiSettingsUi,
+    },
+    /// Test connection response (P7-01, P7-02).
+    AiTestResult {
+        ok: bool,
+        message: String,
+    },
+    /// Vault entries loaded (P8-02).
+    VaultLoaded {
+        entries: Vec<vault::VaultEntrySummary>,
+    },
+    /// Revealed login credentials (P8-02).
+    VaultCredentials {
+        id: String,
+        username: String,
+        password: String,
     },
 }
 

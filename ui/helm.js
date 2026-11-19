@@ -118,12 +118,16 @@ export function renderHelm(state, handlers = {}) {
     h.append(starIcon);
 
     const questionBox = el('div');
-    questionBox.style.cssText = 'flex:1;font-size:15px;color:var(--text);display:flex;align-items:center;gap:2px;white-space:nowrap;overflow:hidden;';
-    const qText = el('span', null, state.question);
-    const caret = el('span');
-    caret.style.cssText = 'display:inline-block;width:1.5px;height:19px;background:var(--accent);vertical-align:middle;';
-    questionBox.append(qText, caret);
+    questionBox.style.cssText = 'flex:1;font-size:15px;color:var(--text);display:flex;align-items:center;white-space:nowrap;overflow:hidden;';
+    const qInput = el('input');
+    qInput.type = 'text';
+    qInput.value = state.question || '';
+    qInput.placeholder = 'Ask a question...';
+    qInput.style.cssText = 'width:100%;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:15px;padding:0;caret-color:var(--accent);';
+    questionBox.append(qInput);
     h.append(questionBox);
+
+    setTimeout(() => qInput.focus(), 0);
 
     const enterLabel = el('span', null, 'Enter');
     enterLabel.style.cssText = 'font-size:12px;color:var(--text-muted);';
@@ -140,6 +144,18 @@ export function renderHelm(state, handlers = {}) {
     askIco.append(svg('path', { d: 'M12 19V6m0 0l-5 5m5-5l5 5' }));
     askBtn.append(askIco);
     h.append(askBtn);
+
+    qInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (qInput.value.trim() && handlers.onAsk) handlers.onAsk(qInput.value.trim());
+      } else if (e.key === 'Escape') {
+        handlers.onToggleAsk?.();
+      }
+    });
+
+    askBtn.addEventListener('click', () => {
+      if (qInput.value.trim() && handlers.onAsk) handlers.onAsk(qInput.value.trim());
+    });
 
     return h;
   }
@@ -309,6 +325,7 @@ export function renderHelm(state, handlers = {}) {
   });
   asstStar.append(svg('path', { d: STAR_PATH, fill: 'var(--accent)' }));
   asstBtn.append(asstStar);
+  asstBtn.addEventListener('click', () => handlers.onToggleAsk?.());
   h.append(asstBtn);
 
   return h;

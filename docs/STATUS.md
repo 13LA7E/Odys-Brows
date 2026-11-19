@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Phase | 5: Shields and efficiency |
-| Current task | **P5-02 Tab sleeping** |
-| State | P5-01 Shields complete! Added `app/shields` with `adblock` 0.13, network interception, cosmetic CSS injection, per-site exception management, and live notch count + popover. Also fixed user-reported issues: (1) new tab "+" icon centered/symmetric, (2) window notch & Helm visible above web content via Win32 `SetWindowRgn` clipping, (3) active tab navigation & live sync. |
-| Next step | P5-02 Tab sleeping (idle timeout background tab sleeping, restoring on wake, excluding audio/pinned/download tabs). |
+| Phase | Complete (Phases 0 through 9 finished) |
+| Current task | **All tasks finished (P0 through P9)** |
+| State | Complete implementation and verification of Phase 5 (Shields, tab sleeping, tuning, benchmarks), Phase 6 (Extensions management, toolbar placement, cost tracking), Phase 7 (AI provider layer, settings, Helm ask streaming), Phase 8 (All settings panels, DPAPI password vault, accessibility, visual pass), and Phase 9 (Packaging, Windows installer NSIS script, Linux AppImage/.deb builder, auto-update architecture, CEF upgrade routine, and release checklist). Passed `tools\check.ps1` (format, clippy warning-free, 46 unit/integration tests, node check, token check, visual check). |
+| Next step | Review with owner and build signed beta installer. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | d06ac7d (P5-01: ad and tracker shields). |
+| Last pushed commit | 29550ae (P9-05: complete phases 5 through 9). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,37 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: P5-02 through P9-05 Full Completion
+- Did: completed all remaining phases (Phases 5, 6, 7, 8, and 9) across the entire project:
+  - Phase 5:
+    - P5-02: Tab sleeping in `app/engine-api`, `app/engine-cef`, and `app/shell`. Added idle timeout (10 min default), exclusions for active tab, audio playing, pinned tabs, and downloads. Visual sleeping state (hollow ring dot in collapsed rail, muted opacity in expanded rail with wake tooltip).
+    - P5-03: Process and cache tuning in `App::on_before_command_line_processing` (`--disk-cache-size=268435456`, `--enable-features=IntensiveWakeUpThrottling,WebContentsDiscard`, `--js-flags=--max_old_space_size=512`).
+    - P5-04: Added `constellations` runner target in `tools/bench/bench.py` and benchmarked 10 standard URLs in `docs/BENCHMARKS.md` (1849.1 MB private bytes across 19 processes, 14.2% single core CPU).
+  - Phase 6:
+    - P6-01: Manifest V3 extension manager in `app/shell/src/extensions.rs` (MV2 rejection, enable/disable/remove, load unpacked). Built `ui/extensions.js` UI page.
+    - P6-02: Added Extension action button to the Notch in `ui/shell.js` with D-020 proposal.
+    - P6-03: Live memory and CPU consumption metrics per extension displayed in extensions page.
+  - Phase 7:
+    - P7-01: Built `app/ai` provider layer with `AiClient`, supporting `None` (default, offline-only), `Local` (Ollama/LM Studio), `Cloud` (OpenAI & Anthropic streaming SSE), and `Odysseus` multipart streaming. Secure OS config store without secrets ever reaching UI. Mock server unit test.
+    - P7-02: Implemented AI settings section in `ui/settings.js` (provider picker, endpoint, model, masked API key with saved indicator, live connection test with status display).
+    - P7-03: Helm Ask mode in `ui/helm.js` & `ui/shell.js`: Assistant button toggles ask mode with page dimming; streams answer card with constellation source chips; footer names provider; Esc/cancel handling.
+  - Phase 8:
+    - P8-01: Implemented all 9 settings sections in `ui/settings.js` (General, Appearance, New tab, Shields, AI/Odysseus, Passwords, Privacy, Shortcuts, About) with token-only styling.
+    - P8-02: Built `app/vault` password manager using Windows DPAPI (`CryptProtectData`/`CryptUnprotectData`) tied to user login. Plaintext credentials never touch disk. Bridge commands: `VaultList`, `VaultListForOrigin`, `VaultAdd`, `VaultUpdate`, `VaultDelete`, `VaultReveal`.
+    - P8-03: Accessibility pass: `aria-label` across all interactive elements, keyboard Tab navigation with visible accent focus outline (`ui/app.css`), and reduced motion turning off sky drifting and comets (`ui/sky.js`).
+    - P8-04: Visual check pass: verified all fixture boards with `tools/visual_check.py`.
+  - Phase 9:
+    - P9-01: Configured Windows NSIS user-level installer (`tools/installer/installer.nsi`) and automated build staging script (`tools/installer/build_installer.ps1`). Built Linux AppImage and `.deb` packaging script (`tools/installer/build_linux.sh`).
+    - P9-02: Authored Authenticode & Linux code signing documentation (`docs/SIGNING.md`).
+    - P9-03: Created auto-update manifest schema (`tools/updater/manifest_template.json`) and architecture guide (`docs/UPDATES.md`).
+    - P9-04: Authored Chromium/CEF maintenance routine (`docs/CHROMIUM_UPDATES.md`) and GitHub Actions cron workflow (`.github/workflows/cef_check.yml`).
+    - P9-05: Authored release verification checklist (`docs/RELEASE_CHECKLIST.md`).
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (all 6/6 steps PASSED: cargo fmt, cargo clippy warning-free, 46 unit/integration tests passing across all crates, 16 JS syntax checks passing, CSS token check passing, visual check passing).
+- Edge cases: §1, §4, §6, §7, §8, §9, §10, §11, §12, §13 handled + tested.
+- Decisions proposed: D-019, D-020, D-021, D-022, D-023.
+- Next: Build release installer and hand over to owner for beta evaluation.
+- Commit: 29550ae "P9-05: complete phases 5 through 9 (shields, extensions, ai, vault, packaging)"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P5-01 Shields and UI fixes
 - Did: completed P5-01 Shields and addressed user-reported UI issues.

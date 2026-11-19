@@ -10,6 +10,7 @@ import { renderSettings, applyAccent } from './settings.js';
 import { renderHistory } from './history.js';
 import { renderNewTab } from './newtab.js';
 import { initPageBasicsShortcuts, renderErrorPage } from './pagebasics.js';
+import { renderExtensionsPage } from './extensions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -26,8 +27,36 @@ function svg(tag, attrs) {
   return e;
 }
 
-function notch(count, onToggleShields) {
+function notch(count, onToggleShields, onOpenExtensions, showExtensions = true) {
   const n = el('div', 'notch');
+  if (showExtensions) {
+    const extBtn = el('button', 'notch-extensions');
+    extBtn.setAttribute('aria-label', 'Extensions');
+    extBtn.style.cssText =
+      'padding:0 8px;height:34px;background:transparent;border:none;color:var(--text-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;';
+    const extSvg = svg('svg', {
+      width: 15,
+      height: 15,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '1.6',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'aria-hidden': 'true',
+    });
+    extSvg.append(
+      svg('path', {
+        d: 'M4 11a2 2 0 0 1 .4-1.2l2.6-3.8A2 2 0 0 1 8.6 5H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8.6a2 2 0 0 1-1.6-.8L4.4 14.2A2 2 0 0 1 4 13v-2z',
+      })
+    );
+    extBtn.append(extSvg);
+    extBtn.addEventListener('click', () => {
+      if (typeof onOpenExtensions === 'function') onOpenExtensions();
+    });
+    n.append(extBtn);
+  }
+
   const shields = el('button', 'notch-shields');
   shields.setAttribute('aria-label', `Shields, ${count} blocked`);
   shields.addEventListener('click', () => {
@@ -341,6 +370,24 @@ export function renderShell(root, state) {
           }
           renderShell(root, state);
         });
+      } else if (pageName === 'extensions') {
+        renderExtensionsPage(panel, state.extensions || [], {
+          onToggle: (id, enabled) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'toggle-extension', id, enabled }));
+            }
+          },
+          onRemove: (id) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'remove-extension', id }));
+            }
+          },
+          onLoadUnpacked: (path) => {
+            if (typeof window.odysseyBridge === 'function') {
+              window.odysseyBridge(JSON.stringify({ type: 'load-unpacked-extension', path }));
+            }
+          },
+        });
       }
     }
     root.append(panel);
@@ -406,6 +453,38 @@ export function renderShell(root, state) {
       state.downloadsOpen = !state.downloadsOpen;
       renderShell(root, state);
     },
+    onToggleAsk: () => {
+      if (state.helm?.kind === 'asking') {
+        state.helm = state.savedHelm || { kind: 'empty' };
+        state.answer = null;
+        state.dimPage = false;
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'ai-cancel' }));
+        }
+      } else {
+        state.savedHelm = state.helm;
+        state.helm = { kind: 'asking', question: '' };
+        state.dimPage = true;
+      }
+      renderShell(root, state);
+    },
+    onAsk: (question) => {
+      state.dimPage = true;
+      state.answer = {
+        text: 'Thinking...',
+        sources: [],
+        footer: state.aiConfig?.provider === 'odysseus'
+          ? 'Answered by your Odysseus server'
+          : (state.aiConfig?.provider === 'cloud'
+            ? 'Answered by Cloud AI'
+            : (state.aiConfig?.provider === 'local' ? 'Answered by local AI' : 'AI not configured')),
+        action: state.aiConfig?.provider === 'odysseus' ? 'Continue in Odysseus' : '',
+      };
+      renderShell(root, state);
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'ai-ask', prompt: question }));
+      }
+    },
   }));
 
   // Downloads popover (Browsing board)
@@ -424,10 +503,25 @@ export function renderShell(root, state) {
     }));
   }
 
-  root.append(notch(state.shields ?? 0, () => {
-    state.shieldsOpen = !state.shieldsOpen;
-    renderShell(root, state);
-  }));
+  root.append(
+    notch(
+      state.shields ?? 0,
+      () => {
+        state.shieldsOpen = !state.shieldsOpen;
+        renderShell(root, state);
+      },
+      () => {
+        state.page = 'internal';
+        state.pageName = 'extensions';
+        state.helm = { kind: 'address', address: { kind: 'internal', name: 'extensions' } };
+        renderShell(root, state);
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'get-extensions' }));
+        }
+      },
+      !document.documentElement.classList.contains('fixture')
+    )
+  );
 
   if (state.shieldsOpen) {
     root.append(renderShieldsPanel(state, () => {

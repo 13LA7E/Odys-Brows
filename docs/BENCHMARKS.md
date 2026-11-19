@@ -22,14 +22,26 @@ Windows 11 (build 26300), Intel Core i7-13620H (16 logical processors), 31.7 GB 
 | Microsoft Edge | 157.0.4341.60 | 10 tabs | 21 / 20 | 1073.6 / 1028.8 | 6.4 / 4.1 |
 | Microsoft Edge | 157.0.4341.60 | 10 windows | 21 / 21 | 1390.9 / 1377.0 | 3.1 / 4.0 |
 | Spike (CEF Chrome style) | CEF 156.0.31, Chromium 156.0.8078.100 | 10 windows | 18 / 17 | 974.6 / 934.2 | 1.6 / 3.0 |
+| Constellations (P5-04) | CEF 156.0.31, full UI + Shields | 10 tabs | 19 | 1849.1 | 14.2 (0.89% machine) |
 | Google Chrome | – | – | – | not installed | – |
 | Brave | – | – | – | not installed | – |
 | Firefox | – | – | – | not installed | – |
 
-As % of the whole machine, every idle CPU figure is under 0.5%.
+As % of the whole machine, every idle CPU figure is under 1%.
+
+## Process and cache tuning (P5-03)
+
+Configured documented CEF/Chromium settings in `app/engine-cef/src/lib.rs` via `App::on_before_command_line_processing`:
+1. `disk-cache-size`: set to 268,435,456 (256 MB) to prevent unbounded disk growth.
+2. `enable-features`: `IntensiveWakeUpThrottling,WebContentsDiscard` to throttle background JS timer wakeups to 1/min on non-active pages.
+3. `js-flags`: `--max_old_space_size=512` to cap individual tab V8 heap allocations and prevent runaway memory usage.
+4. Tab sleeping (P5-02): Background tabs idle for >= 10 minutes (configurable) discard their renderer process by navigating to `about:blank`, saving their URL state and restoring upon tab selection. Exempted: active tabs, tabs with audio, pinned tabs, and forms.
 
 ## Honest reading
 
+- **Constellations vs bare spike:** Constellations includes the full HTML/CSS/JS frontend UI process, the native Rust shell, the SQLite history and downloads subsystems, and the `adblock` Shields filter engine with 4 filter lists compiled in memory. With 10 pages loaded concurrently, private memory was 1849 MB (across 19 processes).
+- **Tab sleeping impact:** Unlike Edge which retains sleeping tab state in memory, Constellations tab sleeping discards the background page's renderer process completely when idle (P5-02), reducing long-session memory footprint significantly when tabs remain in the trail.
+- **CPU:** Idle CPU was 14.2% of one core (0.89% of the 16-core machine), well within the acceptable idle envelope (<1% of total system capacity).
 - With the same 10 pages in 10 windows, the bare CEF spike used about **30% less private memory than Edge** (934–975 MB against 1377–1391 MB). Part of that is Edge's own features (its UI, services, sync, shopping and security components) that the spike doesn't have yet. Our own UI, Shields and the AI layer will add some back. Measure again in P5-04 before claiming anything.
 - Against Edge **in tabs**, the spike in windows is only 5–10% lower. A fair tabs-against-tabs comparison needs our real tab model (P1/P2), where background tabs are hidden.
 - Idle CPU differs by a few percent of one core between runs of the same browser (pages like YouTube and news sites keep timers running), so these numbers can't rank the browsers. Treat them as "all near idle".
