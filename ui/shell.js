@@ -4,7 +4,7 @@
 // file from design/preview.
 
 import { createSky } from './sky.js';
-import { renderCollapsedRail } from './rail.js';
+import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -120,6 +120,32 @@ export function renderShell(root, state) {
           state.tabCount = (state.tabCount || 1) + 1;
         }
         state.activeTab = nextId;
+        renderShell(root, state);
+      },
+      onOpenSettings: () => {
+        if (typeof window.odysseyBridge === 'function') {
+          window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
+        }
+      },
+    });
+  } else if (state.rail === 'expanded') {
+    renderExpandedRail(rail, {
+      tabs: state.tabs || [],
+      activeTab: state.activeTab ?? 1,
+      closed: state.closed || [],
+      isPrivate: !!state.private,
+      onSelectTab: (id) => {
+        state.activeTab = id;
+        renderShell(root, state);
+      },
+      onNewTab: () => {
+        const nextId = (state.tabs ? Math.max(...state.tabs.map((t) => t.id), 0) : 0) + 1;
+        state.tabs.push({ id: nextId, title: 'New tab' });
+        state.activeTab = nextId;
+        renderShell(root, state);
+      },
+      onCollapse: () => {
+        state.rail = 'collapsed';
         renderShell(root, state);
       },
       onOpenSettings: () => {

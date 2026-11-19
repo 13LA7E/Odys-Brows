@@ -76,6 +76,23 @@ impl Shell {
         self.tabs.iter().any(|t| t.view == view)
     }
 
+    fn close_tab(&mut self, view: ViewId) {
+        let parent_opener = self
+            .tabs
+            .iter()
+            .find(|t| t.view == view)
+            .and_then(|t| t.opener);
+        self.tabs.retain(|t| t.view != view);
+        for tab in &mut self.tabs {
+            if tab.opener == Some(view) {
+                tab.opener = parent_opener;
+            }
+        }
+        if self.shown == Some(view) {
+            self.shown = None;
+        }
+    }
+
     fn show(&mut self, engine: &mut CefEngine, view: ViewId) {
         if !self.contains(view) {
             return;
@@ -120,10 +137,7 @@ fn connect(engine: CefEngine) {
     engine.set_event_sink(move |event| {
         if let engine_api::Event::Closed { view } = &event {
             let mut s = events_shell.borrow_mut();
-            s.tabs.retain(|t| t.view != *view);
-            if s.shown == Some(*view) {
-                s.shown = None;
-            }
+            s.close_tab(*view);
         }
         if let Some(message) = bridge::event_to_ui(&event) {
             CefEngine.send_to_ui(&bridge::to_json(&message));
@@ -182,5 +196,55 @@ fn main() {
             eprintln!("{e}");
             std::process::exit(2);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_parent_reattaches_children_to_grandparent() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab {
+            view: 1,
+            opener: None,
+        });
+        shell.tabs.push(Tab {
+            view: 2,
+            opener: Some(1),
+        });
+        shell.tabs.push(Tab {
+            view: 3,
+            opener: Some(2),
+        });
+        shell.tabs.push(Tab {
+            view: 4,
+            opener: Some(1),
+        });
+
+        // Close tab 2 (child of 1): tab 3 should now have opener Some(1)
+        shell.close_tab(2);
+        assert_eq!(shell.tabs.len(), 3);
+        assert_eq!(
+            shell.tabs.iter().find(|t| t.view == 3).unwrap().opener,
+            Some(1)
+        );
+        assert_eq!(
+            shell.tabs.iter().find(|t| t.view == 4).unwrap().opener,
+            Some(1)
+        );
+
+        // Close tab 1 (root): tabs 3 and 4 should now have opener None (root level)
+        shell.close_tab(1);
+        assert_eq!(shell.tabs.len(), 2);
+        assert_eq!(
+            shell.tabs.iter().find(|t| t.view == 3).unwrap().opener,
+            None
+        );
+        assert_eq!(
+            shell.tabs.iter().find(|t| t.view == 4).unwrap().opener,
+            None
+        );
     }
 }

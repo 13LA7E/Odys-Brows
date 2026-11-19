@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 2: The shell |
-| Current task | **P2-04 Trail rail, expanded, with branches** |
-| State | P2-03 complete. Collapsed rail implemented in `ui/rail.js`, matching Main (0.0), Settings (0.0), HelmAnswer (0.0), and History (0.0). Tab switching and new tab ring verified in automated tests. Tab model holds `openerId`. |
-| Next step | P2-04 Trail rail, expanded, with branches (§6: 264px wide, wordmark, collapse button, single row pinned apps, tab tree with quadratic curves, new tab row, Home/spaces). |
+| Current task | **P2-05 Page panel and layout** |
+| State | P2-04 complete. Expanded rail implemented in `ui/rail.js`. Browsing (0.0) and ClosedTabs (0.0) pass visual check. Tree hierarchy, quadratic curve branches, collapse toggle, and child re-attachment on parent close verified in automated tests. |
+| Next step | P2-05 Page panel and layout (§4: page area starts at rail edge with `16 0 0 16` radius, page view sized to it, Helm overlay follows D-009, resize keeps Helm centered in page area). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `43182be` (P2-03). |
+| Last pushed commit | `e586ab2` (P2-04). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-04
+- Did: completed P2-04 Trail rail, expanded, with branches. Implemented `renderExpandedRail` in `ui/rail.js` (§6): 264px wide rail with star logo at (12, 18), "odyssey" wordmark at (44, 17), collapse button (32x32 button with sidebar icon) at (220, 12), single row of 6 pinned apps at top 68 (Mail, Calendar, Notes, Files, Maps, Odysseus with accent star 16), tab tree with quadratic curve branches (`M28 py Vcy-8 Q28 cy 36 cy H46`), active row highlight (`--w-active-row`, active circle r 12 + star 16), inactive row dots (r 3.5 `#5b656f`), new tab row with dashed ring and plus, Home/spaces bottom row, and sliders settings button at (220, 748). Implemented ClosedTabs board faded rows with dotted trunk and hover preview card. Implemented `reattachChildrenOnClose` in `ui/rail.js` and `Shell::close_tab` in Rust `app/shell/src/main.rs`. Created `tools/test_expanded_rail.py` testing branches, collapse toggle, and child re-attachment.
+- Verified: `python tools/visual_check.py Browsing ClosedTabs --region 0,0,264,800` scored 0.0 on both Browsing and ClosedTabs; `python tools/visual_check.py Main Settings --region 0,0,56,800` scored 0.0 (no regressions); `python tools/test_expanded_rail.py` passed; `cargo test` unit test `closing_parent_reattaches_children_to_grandparent` passed; `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED; `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` clean.
+- Edge cases: §2 tab hierarchy: child tabs branch visually from opener node with smooth quadratic curves; §2 closing parent with children: handled + tested (children re-attach to grandparent or root); §2 rail collapse toggle: handled + tested (collapses to 56px collapsed rail); §2 closed tabs fading and hover card: rendered per spec. Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: none.
+- Next: P2-05 Page panel and layout (§4).
+- Commit: `e586ab2` "P2-04: expanded trail rail with branches"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-03
 - Did: completed P2-03 Trail rail, collapsed. Created `ui/rail.js` with `renderCollapsedRail`. Implemented 56px collapsed rail (§6): logo star 20 at (12, 14), pinned apps (Mail, Calendar, Notes at top 68, 104, 140), tabs trunk with 1px line at x 28, active tab (r 13 circle with accent stroke .4 and accent star 18), inactive tabs (7px dot in `#5b656f`), new-tab dashed ring (r 10, dash 2.5 3) with centered plus (`M24.5 cy h7 M28 cy-3.5 v7` correcting sketch's "T" flaw), spaces column at left 21, top height - 122, and settings sliders button at left 12, top height - 52. Updated `ui/shell.js` to render collapsed rail and handle tab selection and new-tab creation. Updated Rust `app/shell/src/main.rs` and `bridge.rs` so `Shell` holds `Tab { view, opener }`, `FromUi::Open { url, opener }` accepts `opener`, and `ToUi::ViewOpened { view, opener }` returns it. Created `tools/test_collapsed_rail.py` verifying tab switching and new-tab ring creation via Playwright.
