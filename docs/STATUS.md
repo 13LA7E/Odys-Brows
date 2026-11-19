@@ -11,7 +11,7 @@
 | State | Phase 4 complete (P4-01 Downloads, P4-02 History store, P4-03 History page, P4-04 Closed tabs, P4-05 Session restore, P4-06 Page basics, P4-07 Pins and spaces). All Phase 4 tasks verified and pushed. |
 | Next step | P5-01 Shields (port shields.rs adblock engine, filter list cache, cosmetic filtering, notch count and settings panel). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 1865b17 (P4-06). |
+| Last pushed commit | 529a652 (P4-07). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
