@@ -11,7 +11,7 @@
 | State | P5-01 Shields complete! Added `app/shields` with `adblock` 0.13, network interception, cosmetic CSS injection, per-site exception management, and live notch count + popover. Also fixed user-reported issues: (1) new tab "+" icon centered/symmetric, (2) window notch & Helm visible above web content via Win32 `SetWindowRgn` clipping, (3) active tab navigation & live sync. |
 | Next step | P5-02 Tab sleeping (idle timeout background tab sleeping, restoring on wake, excluding audio/pinned/download tabs). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | bc76fc6 (fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine). |
+| Last pushed commit | d06ac7d (P5-01: ad and tracker shields). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -135,7 +135,7 @@ Copy this template for each session:
 - Edge cases §8: Filter lists fall back cleanly to baseline tracker rules if network offline; per-site exceptions immediately allow requests and persist; counter resets per tab and never goes negative; cosmetic rules hide intrusive ad elements.
 - Decisions proposed: none.
 - Next: P5-02 Tab sleeping.
-- Commit: P5-01: ad and tracker shields  Pushed: yes
+- Commit: d06ac7d "P5-01: ad and tracker shields"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: live browser navigation and interaction
 - Did:
