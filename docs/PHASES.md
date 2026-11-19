@@ -111,7 +111,7 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P2-05 Page panel and layout.** §4. Page area starts at the rail's edge with `16 0 0 16` radius; the page view is sized to it; the Helm overlay follows D-009; window resizing keeps the Helm centred in the page area.
   - Edge: §1 (sizes, scaling), §4 (full screen)
   - Done when: resize from 900 to 2560 px wide looks right (screenshots at 1280 and 1920 logged).
-- [ ] **P2-06 Helm: navigation and address.** §7 frame, back/forward/reload, the three address formats, typing a URL or search, `odyssey://settings` and `odyssey://history` internal pages, keyboard (Ctrl+L focuses the Helm, Esc leaves it). The Assistant button opens ask mode in Phase 7; disabled until then.
+- [x] **P2-06 Helm: navigation and address.** §7 frame, back/forward/reload, the three address formats, typing a URL or search, `odyssey://settings` and `odyssey://history` internal pages, keyboard (Ctrl+L focuses the Helm, Esc leaves it). The Assistant button opens ask mode in Phase 7; disabled until then.
   - Edge: §3
   - Done when: [Main] and [Browsing] Helm regions pass; keyboard flow works.
 - [ ] **P2-07 Settings page shell.** §9 Settings: nav and the Appearance section with working controls saved to disk (Stars, Shooting stars, Accent, Trail, Faster downloads). The other sections show their title only for now.

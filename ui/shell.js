@@ -5,6 +5,7 @@
 
 import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
+import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -19,24 +20,6 @@ function svg(tag, attrs) {
   const e = document.createElementNS(SVG, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   return e;
-}
-
-function helm(state) {
-  const h = el('div', 'helm');
-  h.setAttribute('role', 'toolbar');
-  h.setAttribute('aria-label', 'Helm');
-  const field = el('div', 'helm-address');
-  if (state.kind === 'empty') {
-    field.append(el('span', 'muted', 'Ask or enter an address'));
-  } else if (state.kind === 'address' && state.address.kind === 'web') {
-    field.append(el('span', 'host', state.address.host), el('span', 'muted', state.address.path));
-  } else if (state.kind === 'address' && state.address.kind === 'internal') {
-    field.append(el('span', 'muted', 'odyssey://'), el('span', 'host', state.address.name));
-  } else if (state.kind === 'asking') {
-    field.append(el('span', 'host', state.question));
-  }
-  h.append(field);
-  return h;
 }
 
 function notch(count) {
@@ -175,6 +158,43 @@ export function renderShell(root, state) {
     }
   }
 
-  root.append(helm(state.helm || { kind: 'empty' }));
+  // Answer card (HelmAnswer board, DESIGN.md §7)
+  if (state.answer) {
+    root.append(renderAnswerCard(state.answer));
+  }
+
+  // Helm toolbar
+  root.append(renderHelm(state.helm || { kind: 'empty' }, {
+    onBack: () => {
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'back' }));
+      }
+    },
+    onForward: () => {
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'forward' }));
+      }
+    },
+    onReload: () => {
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'reload' }));
+      }
+    },
+    onNavigate: (target) => {
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'navigate', target }));
+      }
+    },
+    onOpenDownloads: () => {
+      state.downloadsOpen = !state.downloadsOpen;
+      renderShell(root, state);
+    },
+  }));
+
+  // Downloads popover (Browsing board)
+  if (state.downloadsOpen && state.downloads) {
+    root.append(renderDownloadsPopover(state.downloads));
+  }
+
   root.append(notch(state.shields ?? 0));
 }

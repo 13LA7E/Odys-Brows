@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 2: The shell |
-| Current task | **P2-06 Helm: navigation and address** |
-| State | P2-05 complete. Page panel radius `16 0 0 16` and sizing verified. Helm centering across window widths (900px to 2560px) verified in automated tests. Screenshots logged at 1280px and 1920px. |
-| Next step | P2-06 Helm: navigation and address (§7: 560x52 frame, back/forward/reload, address display formats, typing/navigation, odyssey://settings and odyssey://history routing, keyboard Ctrl+L/Esc). |
+| Current task | **P2-07 Settings page shell** |
+| State | P2-06 complete. Helm navigation toolbar (§7) implemented with back/forward/reload, web/internal/empty/asking address formats, download ring, downloads popover, and asking answer card. Input classification and keyboard flow (Ctrl+L focus, Esc blur, Enter navigation, IME compose guard) verified. Helm regions score 0.0 across all boards. |
+| Next step | P2-07 Settings page shell (§9 Settings: nav and Appearance section with working controls: Stars, Shooting stars, Accent, Trail, Faster downloads, saved to disk; accent recoloring). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `0960456` (P2-05). |
+| Last pushed commit | `12a5c26` (P2-06). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -119,6 +119,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-06
+- Did: completed P2-06 Helm: navigation and address. Implemented `renderHelm` in `ui/helm.js` (§7): 560x52 floating pill centered dynamically, Back/Forward (32x32 round, 18px icons), Reload (32x32 round, 17px icon), address display (empty placeholder "Ask or enter an address", web with lock icon 14 and host + muted path, internal "odyssey://" + page name, asking mode with accent star 16, caret and Enter hint, Ask button with up-arrow 18). Implemented download ring (progress circle with circumference 69.1, stroke-dasharray and download arrow) and downloads popover aligned to Helm's right edge. Implemented `renderAnswerCard` for asking mode with constellation diagram and source chips. Implemented `classifyInput` handling EDGE_CASES §3 (blocking `javascript:`, `data:`, `chrome://`, `devtools://`, handling Windows paths `C:\...`, `file:///`, localhost, IPs, intranet names, web URLs, and DuckDuckGo search query fallback). Implemented keyboard flow (Ctrl+L activates typing input, Esc leaves, Enter triggers navigation, IME composing check prevents premature submission). Wired into `ui/shell.js`. Created `tools/test_helm.py` verifying all classification rules and keyboard navigation.
+- Verified: `python tools/visual_check.py Main --region 388,720,560,52` scored 0.0; `python tools/visual_check.py Browsing --region 492,720,560,52` scored 0.0; `python tools/visual_check.py HelmAnswer --region 388,720,560,52` scored 0.0; `python tools/visual_check.py Settings --region 388,720,560,52` scored 0.0; `python tools/visual_check.py ClosedTabs --region 492,720,560,52` scored 0.0; Browsing downloads popover region scored 0.0; HelmAnswer answer card region scored 0.0; `python tools/test_helm.py` passed all assertions; `powershell -ExecutionPolicy Bypass -File tools\check.ps1` all 6 steps passed; `tools\run-dev.ps1 --engine-selftest` printed PASSED; `tools\run-dev.ps1 --ipc-selftest` printed PASSED.
+- Edge cases: §3 URL vs search: handled + tested (localhost, IPs, intranet, drive paths, web URLs, search query fallback); §3 blocked schemes: handled + tested (`javascript:` and `data:` navigation blocked); §3 internal routing: handled + tested (`odyssey://settings` and `odyssey://history`); §3 whitespace & newlines: handled + tested (trimmed, newlines replaced with spaces); §3 IME: handled + tested (composition guard prevents early submit); §3 keyboard flow: handled + tested (Ctrl+L focus, Esc blur, Enter navigation). Linux native: not tested.
+- Not verified / unsure: Linux native.
+- Decisions proposed: none.
+- Next: P2-07 Settings page shell (§9).
+- Commit: `12a5c26` "P2-06: helm navigation and address"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P2-05
 - Did: completed P2-05 Page panel and layout (§4). Configured page panel styling (`.page` starts at `left: var(--rail)`, full window height, rounded `16 0 0 16` via `--r-page`). Centered Helm horizontally in page area using dynamic calc (`calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2)`), seated 28px above bottom edge (`--helm-bottom`). Added `FromUi::SetRailWidth` to message bridge and implemented `Shell::rail_width` in `app/shell/src/main.rs` to dynamically position and resize the page view to client bounds (`(c.width - b.x)`). Created `tools/test_layout.py` exercising window resizing from 900px to 2560px, verifying exact Helm centering (equal left and right page area margins), page radius, and new-tab sky passthrough. Captured layout screenshots at 1280px and 1920px in `docs/shots/`.
