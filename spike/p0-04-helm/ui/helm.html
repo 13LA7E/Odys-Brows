@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>helm</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:15px system-ui,sans-serif}
+.helm{box-sizing:border-box;height:52px;border-radius:26px;background:#13161a;display:flex;align-items:center;padding:0 8px;gap:2px;color:#aeb7bf}
+button{width:32px;height:32px;border-radius:50%;border:0;background:none;color:#aeb7bf;font:16px system-ui}
+input{flex:1;min-width:0;background:none;border:0;outline:none;color:#e8ecef;font:15px system-ui;padding:0 12px;text-overflow:ellipsis}
+.ai{width:36px;height:36px;background:rgba(255,255,255,.08);color:#5ad0f0}
+</style>
+<div class="helm"><button id="b" aria-label="Back">&#8249;</button><button id="f" aria-label="Forward">&#8250;</button>
+<input id="a" placeholder="Ask or enter an address" spellcheck="false" aria-label="Address"><button id="r" aria-label="Reload">&#8635;</button><button class="ai" aria-label="Assistant">&#10022;</button></div>
+<script>
+// Spike only: the Helm asks Rust to navigate by changing its own URL hash; Rust watches address changes.
+const a = document.getElementById('a');
+function setAddress(u) { if (document.activeElement !== a) a.value = u; }
+a.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.isComposing) { location.hash = 'go=' + encodeURIComponent(a.value.trim()); a.blur(); }
+  if (e.key === 'Escape') a.blur();
+});
+for (const [id, cmd] of [['b', 'back'], ['f', 'forward'], ['r', 'reload']])
+  document.getElementById(id).onclick = () => { location.hash = cmd + '=' + Date.now(); };
+// Input latency: time from the OS event to our handler.
+for (const t of ['pointerdown', 'keydown'])
+  addEventListener(t, e => console.log('METRIC input ' + t + ' ' + (performance.now() - e.timeStamp).toFixed(2)), true);
+</script>

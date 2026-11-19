@@ -7,18 +7,24 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-04 Our UI plus a page, and the floating Helm** (Windows part; P0-03 is Linux and pending) |
-| State | **P0-02 done** (CEF 156 window on Windows, `spike/p0-02-cef-window`). **\* LINUX PENDING \*** P0-01b and P0-03 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-04 on Windows: try (a) CEF off-screen rendering under our UI, (b) a borderless always-on-top Helm window, (c) other CEF options; measure each. Start from `spike/p0-02-cef-window`. |
+| Current task | **P0-04b Off-screen Helm spike** (Windows) |
+| State | **P0-04 Windows part done, awaiting Owner OK** (D-009 Proposed). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-04b: start from `spike/p0-04-helm`; render the Helm off-screen (Alloy, transparent) into a layered window owned by the main window; forward mouse, keys and IME; measure. Read `spike/p0-04-helm/README.md` first. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `054e3ed` (P0-01a Windows toolchains; completion record `587eba6`) |
+| Last pushed commit | `b1c79d1` (P0-02); P0-04 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
 
 - **\* LINUX PENDING \*** P0-01b needs the deferred Ubuntu toolchain setup and version record. P0-03 (P0-02 on Linux) also waits for it. Windows work can continue, but the full P0-01 task and Phase 0 gate remain open.
 
+## Awaiting Owner OK
+
+- **P0-04 / D-009:** the Helm-over-page approach. Evidence: `spike/p0-04-helm/README.md`, `spike/shots/p0-04-overlay-win.png` (overlay: square corners), `spike/shots/p0-04-window.png` (owned window: rounded but aliased, no shadow). Proposal: off-screen Helm in a layered window (P0-04b); interim fallback square corners (Q-06). Left `[~]` in PHASES.
+
 ## Questions for the owner
+
+- D-009 (Proposed in P0-04): may we build the Helm and popovers as off-screen Alloy views in a layered window? If P0-04b fails, is a square-cornered Helm (overlay views) acceptable for now (Q-06)? Chosen meanwhile: continue with P0-04b, the option that keeps the design exact.
 
 - Linux test setup: the owner will use an Ubuntu dual boot later; Linux setup and testing are deferred for P0-01b and P0-03.
 - Open decisions Q-01 to Q-07 are listed in `docs/DECISIONS.md`. None blocks Phase 0.
@@ -27,11 +33,12 @@
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
 - **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
+- **P0-04:** Linux not tested. Option (a) (page off-screen) not built because CEF windowless is always Alloy style (no Chrome style extensions). Tab switching with a single Chrome style BrowserView per window is unverified (test in P1-02). Page content fixed to the bottom can sit under the Helm (decide in P2-05). The min/max resize captures show only Helm placement (PrintWindow returned stale page frames).
 - PowerShell's current execution policy blocks `npm.ps1`; use the verified `npm.cmd` shim. No execution-policy setting was changed.
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -62,6 +69,16 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04 (Windows part)
+- Did: `spike/p0-04-helm`: one CEF Views window with the web page as a Chrome style BrowserView (only normal child, inset 56 px) and our UI as Alloy style BrowserViews from local HTML (stand-in rail and Helm). `--mode=overlay` (Helm as `add_overlay_view`), `--mode=window` (Helm in a frameless CEF window parented to the main window, follows `on_window_bounds_changed`, clipped with `SetWindowRgn`), `--mode=none` (baseline). Helpers: `run.ps1`, `bench.ps1`, `resize.ps1`, `shot.ps1`, `shot-all.ps1` (composite of the spike's own windows via PrintWindow, never the screen). D-009 updated with results and a Proposed approach; D-003 risk note; P0-04b added to PHASES; findings in the spike README.
+- Verified: `cargo build`, `cargo clippy -- -D warnings` clean, `cargo fmt`, `cargo test` (1 test: typed `javascript:` refused, URL vs search, percent decoding) pass. Ran every mode; screenshots `spike/shots/p0-04-overlay-win.png`, `p0-04-overlay-transparent-try.png`, `p0-04-window.png`, `p0-04-{overlay,window}-{min,max}.png`, viewed by eye. `bench.ps1` (Windows 11, 125%, 144 Hz, debug build): scroll 144.4 fps, p95 frame 7.10 ms, 0 frames over 25 ms in none/overlay/window; Helm click to handler avg 0.48 ms (overlay and window), key 0.71 to 0.74 ms avg. Window mode: main moved +120,+40 → Helm moved 120,40; minimise hides the Helm, restore shows it; Helm window has owner = main window.
+- Checked in the sources: `cef_types_runtime.h` (one Chrome style BrowserView per window; windowless always Alloy), `cef_types.h` background_color (no transparency for windowed browsers), `cef_window.h` AddOverlayView, CEF master `browser_view_impl.cc` AddedToWidget (fetched from GitHub; the shipped 156 binary may differ in detail but its log line matched).
+- Edge cases: §1 window sizes: minimum 800x600 DIP handled + tested (700x500 px request gave 1018x797 px); maximised handled + tested (Helm centred in the page area); snapped, full screen and two monitors not tested. Scaling: 125% only. Keyboard: Enter navigates, Esc leaves the address field; IME not tested (`isComposing` guard only). Window closed: graceful WM_CLOSE in the bench; owned Helm window closes with the main window. Both OSes: Linux not handled (pending). §4: full screen not tested; bottom-of-page content under the Helm is a known gap (P2-05); certificate, auth, dialogs not applicable to this spike. §12: frameless main window not part of this spike (P2-02); the owned Helm window has no taskbar button and is not always-on-top over other apps (handled + tested). §3: typed `javascript:` refused (handled + tested in the unit test).
+- Not verified / unsure: option (a) not built (documented reason). Linux entirely. The new P0-04b approach is a proposal only. Swapping the single Chrome style page view for tabs is unverified.
+- Decisions proposed: D-009 approach (Proposed, see DECISIONS); Q-06 fallback named.
+- Next: P0-04b (off-screen Helm in a layered window). P0-04 stays [~] until the owner says yes and Linux is tested.
+- Commit: see git log "P0-04: Helm over page spike on Windows (awaiting Owner OK)"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-02
 - Did: `spike/p0-02-cef-window`: a minimal Rust app on the `cef` crate (=156.7.0+156.0.31, tauri-apps/cef-rs) with one CEF Views window, `RuntimeStyle::CHROME`, 1280x800 preferred, 800x600 minimum, loading https://example.com (`--url=` overrides). Sandbox off. Profile in `%LOCALAPPDATA%\constellations-spike\p0-02`. `build.rs` embeds `app.manifest` (Windows 10/11 supportedOS, PerMonitorV2, longPathAware) through the MSVC linker; no extra crate. `shot.ps1` screenshots one process's window with `PrintWindow`. Findings are in the spike README.
 - Verified: `cargo build` OK (the `cef-dll-sys` build script downloaded `cef_binary_156.0.31+ge603d97+chromium-156.0.8078.100_windows64_minimal`). `cef_version.h` gives `CEF_VERSION "156.0.31+ge603d97+chromium-156.0.8078.100"`. Ran the exe with the CEF folder on PATH: example.com renders, screenshot `spike/shots/p0-02.png` (1600x1000 = 1280x800 at 125% scaling). No Chrome toolbar or tab strip appears with Views + Chrome style. `cargo clippy -- -D warnings` and `cargo fmt --check` clean.
@@ -71,7 +88,7 @@ Copy this template for each session:
 - Not verified / unsure: sandbox mode (cef-rs needs its bootstrap.exe layout on Windows); the cloned cef-rs `export-cef-dir` tool was not run (the harness refused to run code from a cloned repo), so CEF lives in the build folder rather than a shared CEF_PATH.
 - Decisions proposed: none.
 - Next: P0-03 is Linux (pending). Go on to P0-04 on Windows.
-- Commit: see the next entry or git log, "P0-02: CEF window spike on Windows"  Pushed: yes
+- Commit: `b1c79d1` "P0-02: CEF window spike on Windows"  Pushed: yes
 
 ### 2026-11-19: Copilot SDK in VS Code: P0-01a (Windows toolchains)
 - Did: inspected the Windows toolchain; installed the official `OpenJS.NodeJS.LTS` winget package because Node/npm were missing; reused the CMake and Ninja copies already bundled with Visual Studio Build Tools and added their directories to the user PATH; recorded all Windows versions in `docs/STATUS.md`. At the owner's direction, split P0-01 into P0-01a (Windows, ticked) and P0-01b (Linux, pending) in `docs/PHASES.md`, with a prominent `* LINUX PENDING *` marker. No application code or project dependencies changed.

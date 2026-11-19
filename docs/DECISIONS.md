@@ -30,6 +30,7 @@ Risks to settle in Phase 0:
 - Does Chrome style let us draw our own UI with no Chrome toolbar or tab strip? *Unverified.*
 - How complete is extension support in current CEF builds? *Unverified.*
 - If CEF can't do both, the next option is a Chromium fork (much heavier). Don't go there without the owner.
+- Found in P0-04: a Chrome style window can host **only one Chrome style BrowserView at a time** (`cef_types_runtime.h`). Tabs therefore need to swap the page view in and out of the window. Swapping without losing the page is *unverified*; test it in P1-02.
 
 ## D-004 Own engine: no. Accepted
 
@@ -56,6 +57,17 @@ Same approach as Odyssey, and the design boards are already HTML, so tokens and 
 ## D-009 The Helm floats over the page. Accepted as the goal; fallback Open (P0-04)
 
 The design has the command bar floating over the page. With native child views this is a z-order problem: a similar Tauri+WebView2 browser had to turn popups into separate borderless windows. Phase 0 tests options (CEF off-screen rendering compositing, an overlay window, or a reserved strip at the bottom as fallback). Any fallback needs the owner's OK because it changes the design.
+
+**P0-04 results on Windows (19 Nov 2026, evidence in `spike/p0-04-helm/README.md` and `spike/shots/p0-04-*.png`). Linux not tested.**
+
+- The page is a Chrome style CEF BrowserView, the window's only normal child. Our UI (rail, Helm, popovers) is Alloy style BrowserViews. CEF allows one Chrome style BrowserView per window, and it must be added before any other BrowserView (checked in `cef_types_runtime.h` and `browser_view_impl.cc`).
+- Windowed CEF browsers can't be transparent (`cef_types.h`), so a Helm drawn in a normal BrowserView is an opaque rectangle.
+- (c) CEF Views overlay (`Window::add_overlay_view`): works, the Helm floats over the page, but it is square (black corners) with no shadow.
+- (b) Separate frameless window parented to the main window: works, follows moves, hides on minimise. `SetWindowRgn` gives a rounded pill, but with aliased edges and no shadow. Windows only as built.
+- (a) Off-screen rendering for the page: not built, because CEF says windowless is always Alloy style, which loses Chrome style extensions (D-003, D-010).
+- Scrolling and input latency are the same with no Helm, (b) and (c): 144 fps, p95 frame 7.1 ms; click/key to handler under 1 ms on average.
+
+**Proposed (needs the owner):** build the Helm and popovers as **Alloy style views drawn off-screen with a transparent background into a per-pixel-alpha window** above the page (Windows: a layered window owned by the main window; Linux: a transparent toplevel or subsurface, to be tested). Only our own UI is off-screen; the page stays Chrome style. This is the only option found that can draw the design exactly (anti-aliased 26 px pill and the drawn shadow). It needs a follow-up spike (P0-04b) to prove input, IME and focus. **Interim fallback** if that fails: (c) overlay views with square-cornered Helm and popovers. That changes the design, so it needs the owner's OK (Q-06).
 
 ## D-010 Extensions: supported, Manifest V3 only. Accepted
 

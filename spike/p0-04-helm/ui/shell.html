@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>shell</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+.rail{position:absolute;left:0;top:0;width:56px;height:100%}
+.trunk{position:absolute;left:28px;top:214px;width:1px;height:88px;background:rgba(255,255,255,.16)}
+.dot{position:absolute;left:24.5px;width:7px;height:7px;border-radius:50%;background:#5b656f}
+.s{position:absolute;width:1.4px;height:1.4px;border-radius:50%;background:#fff}
+</style>
+<div class="rail"><div class="trunk"></div>
+<div class="dot" style="top:210.5px"></div><div class="dot" style="top:254.5px;background:#5ad0f0"></div><div class="dot" style="top:298.5px"></div></div>
+<script>
+// Spike stand-in for the rail and sky (not the real design).
+for (let i = 0; i < 18; i++) {
+  const d = document.createElement('div'); d.className = 's';
+  d.style.left = (4 + Math.random() * 48) + 'px'; d.style.top = (Math.random() * innerHeight) + 'px';
+  d.style.opacity = .25 + Math.random() * .45; document.body.appendChild(d);
+}
+</script>

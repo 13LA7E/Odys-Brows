@@ -1,0 +1,12 @@
+[package]
+name = "p0-04-helm"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone spike, not part of any workspace.
+[workspace]
+
+[dependencies]
+# Pinned exactly so the CEF version is reproducible (D-003 spike).
+cef = { version = "=156.7.0", default-features = false }
