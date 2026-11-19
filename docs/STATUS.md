@@ -11,7 +11,7 @@
 | State | Live browser execution and interaction verified! Fixed re-entrant borrow panic on CEF events, wired live Helm navigation and tab switching to native engine, and eliminated dummy fixture tabs in live mode. |
 | Next step | P5-01 Shields (port shields.rs adblock engine, filter list cache, cosmetic filtering, notch count and settings panel). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 7572188 (fix(ui): mount live browser UI). |
+| Last pushed commit | bc76fc6 (fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -133,7 +133,7 @@ Copy this template for each session:
 - Edge cases §1 & §3: Malformed or object `target` payloads handled gracefully without bridge error; synchronous CEF callbacks never re-borrow `RefCell` mutably; navigation with no active tab opens a new tab automatically; empty or about:blank URLs show the sky constellation while live web pages show the native CEF view; all notch window controls (minimize, maximize, close) work.
 - Decisions proposed: none.
 - Next: Phase 5: Shields and efficiency (P5-01 Shields).
-- Commit: fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine  Pushed: yes
+- Commit: bc76fc6 "fix(shell): fix re-entrant borrow panic and wire Helm navigation to engine"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P4-07
 - Did: completed P4-07 Pins and spaces (DESIGN.md §6, PHASES.md P4-07, EDGE_CASES §6 & §9).
