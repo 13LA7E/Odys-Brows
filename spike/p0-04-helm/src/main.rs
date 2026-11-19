@@ -3,9 +3,13 @@
 //! overlay), `window` = Helm in its own frameless CEF window owned by the main window,
 //! `none` = no Helm (baseline). `--probe` measures page scroll frame pacing (JS rAF);
 //! the Helm always logs input latency (event timeStamp to handler).
+//! `osr` (P0-04b, Windows) = Helm rendered off-screen into a per-pixel-alpha layered window.
 
 use cef::*;
 use std::cell::RefCell;
+
+#[cfg(windows)]
+mod osr;
 
 const RAIL: i32 = 56;
 const HELM_W: i32 = 560;
@@ -17,6 +21,7 @@ enum Mode {
     Overlay,
     Window,
     None,
+    Osr,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -99,6 +104,10 @@ fn layout(w: i32, h: i32) {
                 height: HELM_H,
             }));
             round_corners(hw);
+        }
+        #[cfg(windows)]
+        if osr::exists() {
+            osr::place(hx, hy);
         }
     });
 }
@@ -196,6 +205,11 @@ wrap_window_delegate! {
                 }
             });
             window.show();
+            #[cfg(windows)]
+            if mode() == Mode::Osr {
+                let mut client = OsrClient::new();
+                osr::create(window.window_handle().0 as *mut _, &format!("{}?osr", ui_url("helm.html")), &mut client);
+            }
             let c = window.client_area_bounds_in_screen();
             layout(c.width, c.height);
         }
@@ -220,6 +234,8 @@ wrap_window_delegate! {
                     hw.close();
                 }
             });
+            #[cfg(windows)]
+            osr::destroy();
         }
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
@@ -326,6 +342,10 @@ wrap_life_span_handler! {
                     Role::Shell => {}
                 }
             });
+            #[cfg(windows)]
+            if self.role == Role::Helm && mode() == Mode::Osr {
+                osr::set_browser(Some(b.clone()));
+            }
         }
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
             let left = ST.with(|s| {
@@ -396,10 +416,29 @@ wrap_display_handler! {
                         page.go_forward();
                     } else if hash.starts_with("reload=") {
                         page.reload();
+                    } else if hash.starts_with("esc=") {
+                        // Esc leaves the Helm: give the keyboard back to the page.
+                        #[cfg(windows)]
+                        if mode() == Mode::Osr {
+                            osr::focus_owner();
+                        }
+                        if let Some(h) = page.host() {
+                            h.set_focus(1);
+                        }
                     }
                 }
                 Role::Shell => {}
             }
+        }
+        fn on_cursor_change(&self, _b: Option<&mut Browser>, cursor: sys::HCURSOR, _t: CursorType, _i: Option<&CursorInfo>) -> i32 {
+            // Off-screen browsers don't set the cursor themselves.
+            #[cfg(windows)]
+            if self.role == Role::Helm && mode() == Mode::Osr {
+                osr::set_cursor(cursor as *mut _);
+                return 1;
+            }
+            let _ = cursor;
+            0
         }
         fn on_console_message(&self, _b: Option<&mut Browser>, _l: LogSeverity, msg: Option<&CefString>, _s: Option<&CefString>, _line: i32) -> i32 {
             let m = msg.map(CefString::to_string).unwrap_or_default();
@@ -434,6 +473,8 @@ wrap_load_handler! {
                 return;
             }
             println!("page load_end status={status}");
+            // Click-through check: log clicks that reach the page.
+            run_js(b, "addEventListener('pointerdown', e => console.log('METRIC pagepointer ' + e.clientX + ',' + e.clientY), true);");
             if std::env::args().any(|a| a == "--probe") {
                 run_js(b, SCROLL_PROBE);
             }
@@ -461,6 +502,22 @@ wrap_client! {
         }
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(Load::new(self.role))
+        }
+    }
+}
+
+#[cfg(windows)]
+wrap_client! {
+    struct OsrClient {}
+    impl Client {
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> {
+            Some(Life::new(Role::Helm))
+        }
+        fn display_handler(&self) -> Option<DisplayHandler> {
+            Some(Display::new(Role::Helm))
+        }
+        fn render_handler(&self) -> Option<RenderHandler> {
+            Some(osr::HelmRender::new())
         }
     }
 }
@@ -574,6 +631,7 @@ fn main() {
     {
         "window" => Mode::Window,
         "none" => Mode::None,
+        "osr" => Mode::Osr,
         _ => Mode::Overlay,
     };
     ST.with(|s| {
@@ -591,6 +649,8 @@ fn main() {
     let mut app = SpikeApp::new();
     let settings = Settings {
         no_sandbox: 1,
+        // Needed for the off-screen Helm (P0-04b) only.
+        windowless_rendering_enabled: (m == Mode::Osr) as i32,
         root_cache_path: CefString::from(root.to_string_lossy().as_ref()),
         ..Default::default()
     };

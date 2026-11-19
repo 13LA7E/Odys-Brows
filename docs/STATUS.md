@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-04b Off-screen Helm spike** (Windows) |
-| State | **P0-04 Windows part done, awaiting Owner OK** (D-009 Proposed). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-04b: start from `spike/p0-04-helm`; render the Helm off-screen (Alloy, transparent) into a layered window owned by the main window; forward mouse, keys and IME; measure. Read `spike/p0-04-helm/README.md` first. |
+| Current task | **P0-05 Chrome style without Chrome's UI, and extensions** (Windows) |
+| State | **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-05: in a Chrome style window, confirm no Chrome toolbar/tab strip (P0-02 already shows none with Views), then install uBlock Origin Lite, Bitwarden and Dark Reader from the Web Store page and unpacked; record popup, options, content scripts, service worker. Results table under D-003. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `b1c79d1` (P0-02); P0-04 commit follows (see the session log) |
+| Last pushed commit | `94812fb` (P0-04); P0-04b commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
@@ -21,6 +21,7 @@
 ## Awaiting Owner OK
 
 - **P0-04 / D-009:** the Helm-over-page approach. Evidence: `spike/p0-04-helm/README.md`, `spike/shots/p0-04-overlay-win.png` (overlay: square corners), `spike/shots/p0-04-window.png` (owned window: rounded but aliased, no shadow). Proposal: off-screen Helm in a layered window (P0-04b); interim fallback square corners (Q-06). Left `[~]` in PHASES.
+- **P0-04b:** the off-screen Helm works on Windows (`spike/shots/p0-04b-osr.png`, numbers in `spike/p0-04-helm/README.md`). Needs: the owner's OK on the look and the 25–48 ms input-to-paint, and an IME test by someone with a Chinese/Japanese/Korean IME (`run.ps1 -AppArgs "--mode=osr"`, click the Helm, type with the IME). Left `[~]`.
 
 ## Questions for the owner
 
@@ -33,6 +34,7 @@
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
 - **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
+- **P0-04b:** IME untested; IME candidate window placement not done; screen-reader access to the off-screen Helm unverified; input-to-paint 25–48 ms (shared-texture path untested); Linux window path not designed.
 - **P0-04:** Linux not tested. Option (a) (page off-screen) not built because CEF windowless is always Alloy style (no Chrome style extensions). Tab switching with a single Chrome style BrowserView per window is unverified (test in P1-02). Page content fixed to the bottom can sit under the Helm (decide in P2-05). The min/max resize captures show only Helm placement (PrintWindow returned stale page frames).
 - PowerShell's current execution policy blocks `npm.ps1`; use the verified `npm.cmd` shim. No execution-policy setting was changed.
 
@@ -69,6 +71,15 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04b (Windows)
+- Did: `spike/p0-04-helm/src/osr.rs` + `--mode=osr`: the Helm as an Alloy windowless browser (transparent background, 60 fps) painted with `UpdateLayeredWindow(ULW_ALPHA)` into a `WS_EX_LAYERED` popup owned by the main window; WndProc forwards mouse (move/leave/buttons/wheel), keys, focus and IME composition/commit; cursor via `on_cursor_change`; `WM_NCHITTEST` returns `HTTRANSPARENT` outside the pill so the shadow doesn't block the page; placement skips while the owner is minimised; Esc returns focus to the page. `ui/helm.html` gets a 48 px shadow margin and the design's shadow in this mode. `HELM_DUMP` writes the last frame so `shot-all.ps1` can composite it with real alpha. `windows-sys` 0.61.2 used directly (already in the tree through `cef`; no new crate). README section, D-009 result, PHASES `[~]`.
+- Verified: build, `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` pass. `bench.ps1 -Modes osr` (5 runs; Windows 11, 125%, 144 Hz, debug): page scroll 144.4 fps p95 7.0–7.1 ms (one run 58.7 fps, not repeatable); Helm click/key to handler 0.36–0.40 / 0.51–0.58 ms avg; input to next Helm paint 25–48 ms avg, max 130–217 ms; `HELM_FPS=120` no better (33–37 ms). Click 20 DIP above the pill reached the page. Main moved +120,+40 → Helm moved 120,40; minimise hides it, restore shows it. Screenshot `spike/shots/p0-04b-osr.png` viewed by eye: anti-aliased pill and soft shadow over Wikipedia.
+- Edge cases: §1 keyboard: typing reaches the field (11 keydowns logged), Esc hands focus back (coded; checked by the log only). Scaling: 125% only; DPI change handled in code (`notify_screen_info_changed`) but not tested across monitors. Window minimised/moved: handled + tested. Rapid input: 10 clicks at 200 ms handled. Both OSes: Linux not handled. §3 IME: not tested (no IME on this unattended run); composition is drawn in the page, candidate window placement not done. §12: owned popup, no taskbar button, not above other apps (handled + tested via owner check). Accessibility: not checked (off-screen UI may be invisible to screen readers; unverified).
+- Not verified / unsure: IME, screen readers, Linux, shared-texture rendering, behaviour with two monitors at different scaling.
+- Decisions proposed: D-009 stays Proposed, now with the P0-04b result.
+- Next: P0-05 (Chrome UI hidden + MV3 extensions) on Windows.
+- Commit: see git log "P0-04b: off-screen Helm in a layered window (Windows; awaiting Owner OK)"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04 (Windows part)
 - Did: `spike/p0-04-helm`: one CEF Views window with the web page as a Chrome style BrowserView (only normal child, inset 56 px) and our UI as Alloy style BrowserViews from local HTML (stand-in rail and Helm). `--mode=overlay` (Helm as `add_overlay_view`), `--mode=window` (Helm in a frameless CEF window parented to the main window, follows `on_window_bounds_changed`, clipped with `SetWindowRgn`), `--mode=none` (baseline). Helpers: `run.ps1`, `bench.ps1`, `resize.ps1`, `shot.ps1`, `shot-all.ps1` (composite of the spike's own windows via PrintWindow, never the screen). D-009 updated with results and a Proposed approach; D-003 risk note; P0-04b added to PHASES; findings in the spike README.
 - Verified: `cargo build`, `cargo clippy -- -D warnings` clean, `cargo fmt`, `cargo test` (1 test: typed `javascript:` refused, URL vs search, percent decoding) pass. Ran every mode; screenshots `spike/shots/p0-04-overlay-win.png`, `p0-04-overlay-transparent-try.png`, `p0-04-window.png`, `p0-04-{overlay,window}-{min,max}.png`, viewed by eye. `bench.ps1` (Windows 11, 125%, 144 Hz, debug build): scroll 144.4 fps, p95 frame 7.10 ms, 0 frames over 25 ms in none/overlay/window; Helm click to handler avg 0.48 ms (overlay and window), key 0.71 to 0.74 ms avg. Window mode: main moved +120,+40 → Helm moved 120,40; minimise hides the Helm, restore shows it; Helm window has owner = main window.
@@ -77,7 +88,7 @@ Copy this template for each session:
 - Not verified / unsure: option (a) not built (documented reason). Linux entirely. The new P0-04b approach is a proposal only. Swapping the single Chrome style page view for tabs is unverified.
 - Decisions proposed: D-009 approach (Proposed, see DECISIONS); Q-06 fallback named.
 - Next: P0-04b (off-screen Helm in a layered window). P0-04 stays [~] until the owner says yes and Linux is tested.
-- Commit: see git log "P0-04: Helm over page spike on Windows (awaiting Owner OK)"  Pushed: yes
+- Commit: `94812fb` "P0-04: Helm over page spike on Windows (awaiting Owner OK)"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-02
 - Did: `spike/p0-02-cef-window`: a minimal Rust app on the `cef` crate (=156.7.0+156.0.31, tauri-apps/cef-rs) with one CEF Views window, `RuntimeStyle::CHROME`, 1280x800 preferred, 800x600 minimum, loading https://example.com (`--url=` overrides). Sandbox off. Profile in `%LOCALAPPDATA%\constellations-spike\p0-02`. `build.rs` embeds `app.manifest` (Windows 10/11 supportedOS, PerMonitorV2, longPathAware) through the MSVC linker; no extra crate. `shot.ps1` screenshots one process's window with `PrintWindow`. Findings are in the spike README.

@@ -69,6 +69,8 @@ The design has the command bar floating over the page. With native child views t
 
 **Proposed (needs the owner):** build the Helm and popovers as **Alloy style views drawn off-screen with a transparent background into a per-pixel-alpha window** above the page (Windows: a layered window owned by the main window; Linux: a transparent toplevel or subsurface, to be tested). Only our own UI is off-screen; the page stays Chrome style. This is the only option found that can draw the design exactly (anti-aliased 26 px pill and the drawn shadow). It needs a follow-up spike (P0-04b) to prove input, IME and focus. **Interim fallback** if that fails: (c) overlay views with square-cornered Helm and popovers. That changes the design, so it needs the owner's OK (Q-06).
 
+**P0-04b result (19 Nov 2026, Windows): the proposed approach works.** The Helm as an Alloy windowless browser painted into a layered window owned by the main window draws exactly as designed: an anti-aliased pill with the shadow, over the live page (`spike/shots/p0-04b-osr.png`). Page scrolling is unchanged (144 fps). Clicks in the shadow reach the page (`WM_NCHITTEST` → `HTTRANSPARENT`). It follows moves and hides on minimise. Cost: input-to-paint 25–48 ms on average (frames are copied through the CPU). IME is coded but untested, accessibility of off-screen UI is *unverified*, and Linux needs its own window path. Details: `spike/p0-04-helm/README.md`. **Still Proposed: owner OK needed.**
+
 ## D-010 Extensions: supported, Manifest V3 only. Accepted
 
 - Google removed every Manifest V2 extension, uBlock Origin included, from the Chrome Web Store on 31 Aug 2026, and Chromium itself has removed MV2 support. A bundled Chromium is MV3-only.

@@ -5,7 +5,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:15px 
 button{width:32px;height:32px;border-radius:50%;border:0;background:none;color:#aeb7bf;font:16px system-ui}
 input{flex:1;min-width:0;background:none;border:0;outline:none;color:#e8ecef;font:15px system-ui;padding:0 12px;text-overflow:ellipsis}
 .ai{width:36px;height:36px;background:rgba(255,255,255,.08);color:#5ad0f0}
+/* Off-screen mode: the page is 48 px larger on every side for the shadow (DESIGN.md §3). */
+.osr body{padding:48px}
+.osr .helm{width:560px;box-shadow:0 12px 32px rgba(0,0,0,.5)}
 </style>
+<script>if (new URLSearchParams(location.search).has('osr')) document.documentElement.classList.add('osr');</script>
 <div class="helm"><button id="b" aria-label="Back">&#8249;</button><button id="f" aria-label="Forward">&#8250;</button>
 <input id="a" placeholder="Ask or enter an address" spellcheck="false" aria-label="Address"><button id="r" aria-label="Reload">&#8635;</button><button class="ai" aria-label="Assistant">&#10022;</button></div>
 <script>
@@ -14,7 +18,7 @@ const a = document.getElementById('a');
 function setAddress(u) { if (document.activeElement !== a) a.value = u; }
 a.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) { location.hash = 'go=' + encodeURIComponent(a.value.trim()); a.blur(); }
-  if (e.key === 'Escape') a.blur();
+  if (e.key === 'Escape') { a.blur(); location.hash = 'esc=' + Date.now(); }
 });
 for (const [id, cmd] of [['b', 'back'], ['f', 'forward'], ['r', 'reload']])
   document.getElementById(id).onclick = () => { location.hash = cmd + '=' + Date.now(); };

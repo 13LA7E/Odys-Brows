@@ -40,3 +40,25 @@ Screenshots are taken with `PrintWindow` per window (`shot.ps1`, `shot-all.ps1`)
 9. The Helm covers about 52 px of the page above its bottom 28 px. Content that is fixed to the bottom of a page (cookie banners) can sit under it (EDGE §4). Decide in P2-05.
 
 Linux: **not tested** (no Linux machine yet). On Linux, `SetWindowRgn` doesn't exist. Option b would need an X11 shape or a transparent toplevel, and on Wayland the app can't place the Helm window itself, so the overlay or off-screen variants matter more there.
+
+## P0-04b: the Helm rendered off-screen into a layered window (`--mode=osr`, Windows)
+
+`src/osr.rs`. The Helm is an **Alloy, windowless** CEF browser (`WindowInfo::set_as_windowless`, `background_color` alpha 0 = transparent painting, `windowless_frame_rate` 60, `Settings.windowless_rendering_enabled = 1`). It paints premultiplied BGRA buffers (`RenderHandler::on_paint`) into a `WS_EX_LAYERED` popup **owned by the main window** with `UpdateLayeredWindow(ULW_ALPHA)`. The HTML is 48 DIP larger on each side so the design's shadow (`0 12px 32px rgba(0,0,0,.5)`) is drawn. The page stays the Chrome style BrowserView.
+
+What we forward ourselves (WndProc): mouse move/leave/buttons/wheel (pixels → DIP), keys (`WM_KEYDOWN/UP/CHAR`, system keys), focus (`set_focus`), IME (`WM_IME_COMPOSITION` → `ime_set_composition`/`ime_commit_text`, `WM_IME_ENDCOMPOSITION` → `ime_finish_composing_text`), cursor (`DisplayHandler::on_cursor_change` → `SetCursor`). `WM_NCHITTEST` returns `HTTRANSPARENT` outside the pill shape, so clicks in the shadow reach the page (the main window is on the same thread, which `HTTRANSPARENT` needs). Esc in the Helm hands focus back to the main window and the page.
+
+Results (same machine and probe as above; `bench.ps1 -Modes osr`, `$env:HELM_FPS` sets the off-screen frame rate):
+
+| Check | Result |
+|---|---|
+| Look | Anti-aliased 26 px pill with the drawn shadow over the live page (`../shots/p0-04b-osr.png`; composited from the exact frame passed to `UpdateLayeredWindow`, dumped with `HELM_DUMP`, because `PrintWindow` can't read layered alpha) |
+| Page scroll with the Helm present | 144.4 fps, p95 7.0–7.1 ms, 0 frames > 25 ms (5 runs; one run at 58.7 fps was not repeatable) |
+| Click / key → handler in the Helm | 0.36–0.40 ms / 0.53–0.58 ms average |
+| Input → next Helm paint (`METRIC osrpaint`, from WndProc to `on_paint`) | 25–48 ms average over 5 runs, max 130–217 ms (first input after load). 120 fps did not help (33–37 ms), so 60 stays |
+| Click 20 DIP above the pill (in the shadow) | reaches the page (`pagepointer` logged) |
+| Main window moved +120,+40 px | Helm moved 120,40 |
+| Main window minimised / restored | Helm hidden / shown (`place()` skips while the owner `IsIconic`) |
+| IME (Chinese, Japanese, Korean) | **not tested**: needs a person with an IME installed. Code path exists; candidate window placement (`on_ime_composition_range_changed`) not done |
+| Linux | not tested. Needs a different window path (X11 ARGB visual or Wayland subsurface) |
+
+Costs and risks: input-to-paint is slower than a windowed view (CEF copies the frame to the CPU; `shared_texture_enabled` with a D3D11 compositor could cut that, untested). Accessibility of an off-screen browser has to be checked (screen readers see the layered window, not a native Chromium tree; *unverified*). Every popover (downloads, answer card, closed-tab preview) would use the same path.

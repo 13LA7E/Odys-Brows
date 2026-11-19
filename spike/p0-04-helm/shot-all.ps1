@@ -33,7 +33,9 @@ $main = $wins | Sort-Object { $_.W * $_.Ht } -Descending | Select-Object -First 
 if (-not $main) { Write-Error 'no window'; exit 1 }
 $canvas = New-Object System.Drawing.Bitmap $main.W, $main.Ht
 $g = [System.Drawing.Graphics]::FromImage($canvas)
-foreach ($w in @($main) + @($wins | Where-Object { $_.H -ne $main.H })) {
+$skip = @()
+if ($env:HELM_DUMP -and (Test-Path $env:HELM_DUMP)) { $raw0 = [IO.File]::ReadAllBytes($env:HELM_DUMP); $skip = @($wins | Where-Object { $_.W -eq [BitConverter]::ToInt32($raw0, 0) -and $_.Ht -eq [BitConverter]::ToInt32($raw0, 4) } | ForEach-Object { $_.H }) }
+foreach ($w in @($main) + @($wins | Where-Object { $_.H -ne $main.H -and $skip -notcontains $_.H })) {
   $b = New-Object System.Drawing.Bitmap $w.W, $w.Ht; $bg = [System.Drawing.Graphics]::FromImage($b)
   $dc = $bg.GetHdc(); [SA]::PrintWindow($w.H, $dc, 2) | Out-Null; $bg.ReleaseHdc($dc); $bg.Dispose()
   # Apply the window's own region (PrintWindow ignores it), so the composite shows what the user sees.
@@ -41,5 +43,16 @@ foreach ($w in @($main) + @($wins | Where-Object { $_.H -ne $main.H })) {
   "  region type for $($w.H): $kind (0 none/error, 1 null, 2 simple, 3 complex)"
   if ($kind -ge 2) { $rg = [System.Drawing.Region]::FromHrgn($hr); $rg.Translate($w.L - $main.L, $w.T - $main.T); $g.Clip = $rg } else { $g.ResetClip() }
   $g.DrawImage($b, $w.L - $main.L, $w.T - $main.T); $g.ResetClip(); $b.Dispose()
+}
+# Off-screen Helm (P0-04b): draw its last frame (premultiplied BGRA dumped by the app) at its window position.
+if ($env:HELM_DUMP -and (Test-Path $env:HELM_DUMP)) {
+  $raw = [IO.File]::ReadAllBytes($env:HELM_DUMP); $hw = [BitConverter]::ToInt32($raw, 0); $hh = [BitConverter]::ToInt32($raw, 4)
+  $layer = $wins | Where-Object { $_.W -eq $hw -and $_.Ht -eq $hh } | Select-Object -First 1
+  if ($layer) {
+    $bm = New-Object System.Drawing.Bitmap $hw, $hh, ([System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $ld = $bm.LockBits((New-Object System.Drawing.Rectangle 0, 0, $hw, $hh), 'WriteOnly', $bm.PixelFormat)
+    [Runtime.InteropServices.Marshal]::Copy($raw, 8, $ld.Scan0, $hw * $hh * 4); $bm.UnlockBits($ld)
+    $g.DrawImage($bm, $layer.L - $main.L, $layer.T - $main.T); "  drew off-screen Helm frame ${hw}x${hh}"
+  }
 }
 $canvas.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png); "saved $Out"

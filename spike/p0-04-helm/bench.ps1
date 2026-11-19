@@ -57,8 +57,10 @@ foreach ($m in $Modes) {
     for ($i = 0; $i -lt 10; $i++) { Click $x $y; Start-Sleep -Milliseconds 200 }
     [System.Windows.Forms.SendKeys]::SendWait('abcdefghij'); Start-Sleep -Milliseconds 300
     [System.Windows.Forms.SendKeys]::SendWait('{ESC}'); Start-Sleep -Milliseconds 300
+    # Click-through: 20 DIP above the pill (inside the off-screen Helm's shadow margin) must reach the page.
+    Click $x ([int]($y - (26 + 20) * $s)); Start-Sleep -Milliseconds 400
   }
-  if ($m -eq 'window') {
+  if ($m -eq 'window' -or $m -eq 'osr') {
     $helm = $wins | Where-Object { $_ -ne $main } | Select-Object -First 1
     $before = Rect $helm; $mr = Rect $main
     [B]::SetWindowPos($main, [IntPtr]::Zero, $mr.L + 120, $mr.T + 40, 0, 0, 0x0015) | Out-Null; Start-Sleep 1   # NOSIZE|NOZORDER|NOACTIVATE
@@ -71,6 +73,9 @@ foreach ($m in $Modes) {
   Get-Process p0-04-helm -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1
   $lines = Get-Content $out
   $lines | Where-Object { $_ -match 'METRIC scroll' }
+  $pp = @($lines | Where-Object { $_ -match 'METRIC pagepointer' }); "page clicks received: $($pp.Count) $($pp -join ' | ')"
+  $op = @($lines | Where-Object { $_ -match 'METRIC osrpaint' } | ForEach-Object { [double]($_ -split ' ')[-1] })
+  if ($op.Count) { $st = $op | Measure-Object -Average -Maximum; "osr input-to-paint n=$($op.Count) avg_ms=$([Math]::Round($st.Average,2)) max_ms=$([Math]::Round($st.Maximum,2))" }
   foreach ($t in 'pointerdown', 'keydown') {
     $v = @($lines | Where-Object { $_ -match "METRIC input $t " } | ForEach-Object { [double]($_ -split ' ')[-1] })
     if ($v.Count) { $st = $v | Measure-Object -Average -Maximum; "input $t n=$($v.Count) avg_ms=$([Math]::Round($st.Average,2)) max_ms=$([Math]::Round($st.Maximum,2))" }
