@@ -83,7 +83,7 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
   - Done when: each board's fixture loads in a normal browser with no errors in the console, even before it looks right; `python tools/visual_check.py` runs and prints a score for each.
 - [x] **P1-05 Tokens and fonts.** `ui/tokens.css` with every value from DESIGN.md §3 as CSS variables, and `@font-face` for the bundled Familjen Grotesk files.
   - Done when: no raw hex colours appear in UI CSS outside `tokens.css` (grep check in `check`).
-- [ ] **P1-06 One verify command.** `tools/check.ps1` and `tools/check.sh` run: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, a JS syntax check of `ui/` (`node --check` per file), the tokens grep from P1-05, and `python tools/visual_check.py --report-only` if Python and Playwright are present.
+- [x] **P1-06 One verify command.** `tools/check.ps1` and `tools/check.sh` run: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, a JS syntax check of `ui/` (`node --check` per file), the tokens grep from P1-05, and `python tools/visual_check.py --report-only` if Python and Playwright are present.
   - Done when: both scripts pass on a clean checkout and fail with a clear message when one step fails.
 - [ ] **P1-07 CI.** GitHub Actions on `windows-latest` and `ubuntu-latest` running the check script on every push. No releases yet.
   - Done when: both jobs are green on GitHub for the `Constellations` branch. Limit the workflow to that branch (`on: push: branches: [Constellations]`) so `main` is unaffected. If GitHub Actions is disabled for the repo, ask the owner to enable it.

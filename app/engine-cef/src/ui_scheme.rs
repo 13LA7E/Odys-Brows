@@ -157,9 +157,14 @@ wrap_scheme_handler_factory! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn tree() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("ui-scheme-test-{}", std::process::id()));
+        let n = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("ui-scheme-test-{}-{}", std::process::id(), n));
         std::fs::create_dir_all(root.join("ui").join("fonts")).unwrap();
         std::fs::write(root.join("ui").join("index.html"), "<p>").unwrap();
         std::fs::write(root.join("ui").join("fonts").join("a b.woff2"), "x").unwrap();

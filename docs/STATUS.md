@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 1: Skeleton (Gate 0 not met; continuing on Proposed decisions, see Gate 0 check) |
-| Current task | **P1-06 One verify command** |
-| State | P1-01..P1-05 done on Windows. P1-05 tokens verified (all DESIGN.md §3 tokens in tokens.css, @font-face for bundled Familjen Grotesk, 0 raw hex colours outside tokens.css). |
-| Next step | P1-06 (one verify command: `tools/check.ps1` and `tools/check.sh`), then P1-07 (CI). |
+| Current task | **P1-07 CI** |
+| State | P1-01..P1-06 done on Windows. `tools/check.ps1` and `tools/check.sh` created, verified passing on Windows and Git Bash, with clear failure messages. |
+| Next step | P1-07 (GitHub Actions CI workflow on `Constellations` branch). |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `48b5ec6` (P1-05). |
+| Last pushed commit | `48a3f02` (P1-06). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -117,6 +117,15 @@ Copy this template for each session:
 - Next: <the exact next step for the next agent>
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
+
+### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-06
+- Did: created `tools/check.ps1` (PowerShell) and `tools/check.sh` (POSIX/Bash) implementing the unified verify command. Checks include: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, JS syntax validation (`node --check` across `ui/*.js`), token verification (no raw hex outside `ui/tokens.css`), and visual check (`tools/visual_check.py --report-only`). Also fixed race condition in `app/engine-cef/src/ui_scheme.rs` test suite by using an atomic counter for temporary directories (`TEST_DIR_COUNTER`).
+- Verified: `powershell -ExecutionPolicy Bypass -File tools\check.ps1` runs all 6 steps and exits 0 ("All checks PASSED."); `bash tools/check.sh` runs all 6 steps and exits 0; verified clear failure message when formatting fails (`cargo fmt --check failed. Run 'cargo fmt' to fix.`); `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --engine-selftest` printed PASSED (exit 0); `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1 --ipc-selftest` printed PASSED (exit 0).
+- Edge cases: §1 both OSes: PowerShell and Bash scripts provided; handles missing Playwright gracefully (skips visual check with informative message); clear error messages on failures; atomic temp dirs prevent parallel test collisions. Linux native: not tested (ran bash via Git Bash on Windows).
+- Not verified / unsure: Linux native execution (pending P0-01b/Ubuntu environment).
+- Decisions proposed: none.
+- Next: P1-07 CI (GitHub Actions workflow for `Constellations`).
+- Commit: `48a3f02` "P1-06: one verify command"  Pushed: yes
 
 ### 2026-11-19: Google Antigravity / Gemini 3.8 Flash: P1-05
 - Did: completed P1-05 tokens and fonts. Added missing DESIGN.md §3 tokens to `ui/tokens.css` (accent rings at opacity: `--accent-ring`, `--accent-ring-private`, `--accent-ring-hover`; radii: `--r-page`, `--r-notch`, `--r-chip`). Replaced hardcoded radius literals in `ui/app.css` with token variables. Verified all 4 Familjen Grotesk font weights (400, 500, 600, 700) and OFL.txt in `ui/fonts/`.
