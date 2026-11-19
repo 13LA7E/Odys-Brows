@@ -30,6 +30,20 @@ Risks to settle in Phase 0:
 - Does Chrome style let us draw our own UI with no Chrome toolbar or tab strip? *Unverified.*
 - How complete is extension support in current CEF builds? *Unverified.*
 - If CEF can't do both, the next option is a Chromium fork (much heavier). Don't go there without the owner.
+- **P0-05 results (Windows, 19 Nov 2026; Linux not tested).** Details and screenshots: `spike/p0-05-extensions/README.md`.
+
+  | Check | Windows | Linux |
+  |---|---|---|
+  | No Chrome toolbar / tab strip in our window | Yes, by default (Views + Chrome style, toolbar type NONE) | not tested |
+  | Install from the Chrome Web Store page | Works ("Add to Chrome" → Chrome's prompt → installed), despite a "Switch to Chrome" banner | not tested |
+  | Install unpacked (`--load-extension`) | Works (per launch) | not tested |
+  | Background service worker (uBOL, Bitwarden, Dark Reader) | Running | not tested |
+  | Content scripts (Dark Reader) | Work | not tested |
+  | Network blocking (uBOL, declarativeNetRequest) | Works | not tested |
+  | Options page | Works as a tab | not tested |
+  | Action popup | No button to open it (no toolbar); the popup page works as a tab | not tested |
+
+  **D-003 re-confirmed on Windows** for what extensions need. Problems written up for the owner: extension-opened tabs appear in a native Chrome window outside our UI; Chrome's registry-registered external extensions are picked up and even downloaded into our profile; the popup needs our own button (P6-02). Linux still to test.
 - Found in P0-04: a Chrome style window can host **only one Chrome style BrowserView at a time** (`cef_types_runtime.h`). Tabs therefore need to swap the page view in and out of the window. Swapping without losing the page is *unverified*; test it in P1-02.
 
 ## D-004 Own engine: no. Accepted

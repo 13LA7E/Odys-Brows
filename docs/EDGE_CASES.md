@@ -112,6 +112,9 @@ The rule of thumb: the browser must never lose the user's data, never freeze the
 - An extension crashing or hanging; one asking for broad permissions (show them before install).
 - Extension popups must appear above pages (the same z-order issue as the Helm).
 - Extension updates failing; removing an extension clears its data.
+- Extensions that open tabs or windows (`chrome.tabs.create`, an install "welcome" page): they must land in our Trail, never in a native Chrome window (found in P0-05).
+- Extensions other programs register for Google Chrome (Windows registry, Linux external extension folders): never pick them up or download them (found in P0-05).
+- An extension page as the very first URL at start-up fails until extensions have registered (`ERR_BLOCKED_BY_CLIENT`, found in P0-05): restore such tabs after extensions are ready.
 
 ## §11 AI
 

@@ -7,11 +7,11 @@
 | | |
 |---|---|
 | Phase | 0: Spike |
-| Current task | **P0-05 Chrome style without Chrome's UI, and extensions** (Windows) |
-| State | **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
-| Next step | P0-05: in a Chrome style window, confirm no Chrome toolbar/tab strip (P0-02 already shows none with Views), then install uBlock Origin Lite, Bitwarden and Dark Reader from the Web Store page and unpacked; record popup, options, content scripts, service worker. Results table under D-003. |
+| Current task | **P0-06 DRM test** (Windows) |
+| State | **P0-05 Windows part done** (D-003 re-confirmed on Windows, problems written up). **P0-04 and P0-04b Windows parts done, awaiting Owner OK** (D-009 Proposed: off-screen Helm in a layered window works). P0-02 done. **\* LINUX PENDING \*** P0-01b, P0-03 and the Linux half of P0-04 wait for the owner's Ubuntu dual boot; the Phase 0 gate stays open. |
+| Next step | P0-06: enable Widevine through CEF's component updater in a spike (start from `spike/p0-05-extensions`), play a public Widevine test stream (Shaka Player demo or Bitmovin DRM demo), record exactly what happens in D-015. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | `94812fb` (P0-04); P0-04b commit follows (see the session log) |
+| Last pushed commit | `fd848b3` (P0-04b); P0-05 commit follows (see the session log) |
 | Last agent | Claude Code (VS Code) / Claude Opus 5.5 |
 
 ## Blockers
@@ -25,6 +25,8 @@
 
 ## Questions for the owner
 
+- P0-05: installing from the Chrome Web Store works in CEF. Is that acceptable under Google's terms (Q-04)? Chosen meanwhile: keep testing with it, decide before P6.
+
 - D-009 (Proposed in P0-04): may we build the Helm and popovers as off-screen Alloy views in a layered window? If P0-04b fails, is a square-cornered Helm (overlay views) acceptable for now (Q-06)? Chosen meanwhile: continue with P0-04b, the option that keeps the design exact.
 
 - Linux test setup: the owner will use an Ubuntu dual boot later; Linux setup and testing are deferred for P0-01b and P0-03.
@@ -34,13 +36,14 @@
 
 - **P0-01b — \* LINUX PENDING \*** Linux toolchain installation, versions and CEF build packages are not verified.
 - **P0-02:** single-instance hand-off not built (a second copy on the same profile exits with a message; the real app must forward its URL, P1 or later). Running from a path with spaces or a non-ASCII user name not tested. Sandbox off in the spike (decide with P0-08).
+- **P0-05:** extension-opened tabs open a native Chrome window (must be caught; callback unverified); Chrome's registry-registered external extensions are picked up and downloaded into our profile (must be turned off; method unverified); the action popup has no button (P6-02); unpacked extensions don't persist via `--load-extension`; Linux not tested.
 - **P0-04b:** IME untested; IME candidate window placement not done; screen-reader access to the off-screen Helm unverified; input-to-paint 25–48 ms (shared-texture path untested); Linux window path not designed.
 - **P0-04:** Linux not tested. Option (a) (page off-screen) not built because CEF windowless is always Alloy style (no Chrome style extensions). Tab switching with a single Chrome style BrowserView per window is unverified (test in P1-02). Page content fixed to the bottom can sit under the Helm (decide in P2-05). The min/max resize captures show only Helm placement (PrintWindow returned stale page frames).
 - PowerShell's current execution policy blocks `npm.ps1`; use the verified `npm.cmd` shim. No execution-policy setting was changed.
 
 ## Needs testing on
 
-- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
+- **Linux:** **\* LINUX PENDING \*** P0-01b toolchain setup and versions, P0-03 (the P0-02 spike on Linux), the Linux column of the P0-05 table, the Linux half of P0-04 (no SetWindowRgn on Linux; Wayland can't position windows), plus later Linux runtime and UI verification.
 
 ## Environment (Windows recorded during P0-01a; **\* LINUX PENDING \***)
 
@@ -71,6 +74,16 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-05 (Windows)
+- Did: `spike/p0-05-extensions` (P0-02 window + `--toolbar=` + `--then=`), `run.ps1`, `shot-main.ps1`. Fetched uBlock Origin Lite 2026.1116.1650, Bitwarden 2026.10.2 and Dark Reader 4.9.135 as CRX3 from Google's update service and unpacked them outside the repo (path-checked). Tested Chrome UI hiding, unpacked load, Web Store install, service workers, content scripts, DNR blocking, options and popup pages. Results table under D-003, README with problems, three new edge-case kinds in EDGE_CASES §10.
+- Verified: build OK (into the shared `../p0-04-helm/target`), clippy clean. `chrome://extensions` lists all three enabled (`spike/shots/p0-05-extensions-page.png`). `--toolbar=normal`/`location` show no toolbar in our window. `chrome://serviceworker-internals` shows the three workers, uBOL RUNNING. Dark Reader darkened Wikipedia. With uBOL, `pagead2.googlesyndication.com/pagead/js/adsbygoogle.js` ended on `chrome-extension://<uBOL>/strictblock.html#...`; without extensions: `ERR_ABORTED`, no extension page. Popup/options pages as tabs: `load_end status=200`. Web Store: rejected Google's consent ("Reject all"), clicked "Add to Chrome", Chrome's prompt appeared, clicked "Add extension"; `Secure Preferences` then lists Dark Reader with `location=1 from_webstore=True`, and `Default/Extensions/<id>/4.9.135_0` exists.
+- Privacy: two screenshots were redacted before commit (a card naming an extension a local program registered for Chrome; the profile path containing the Windows user name). Extension files are not in the repo.
+- Edge cases (§10): MV2 install not tried (D-010 stands). Broad permissions shown at install: yes, Chrome's prompt lists them (checked by hand). Popup above pages: no popup button exists yet (P6-02). Crash/hang, update failure, removal clearing data: not tested (P6). New cases added to EDGE_CASES §10. §1: slow network (store consent page) and first run (fresh profile) checked by hand. Linux: not tested.
+- Not verified / unsure: Google's terms for Web Store installs (Q-04); how to stop external-extension sources; which callback catches extension-opened tabs; persisting unpacked extensions via developer mode.
+- Decisions proposed: none new (D-003 re-confirmed on Windows; table added).
+- Next: P0-06 (Widevine) on Windows.
+- Commit: see git log "P0-05: Chrome UI hidden and MV3 extensions on Windows"  Pushed: yes
+
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04b (Windows)
 - Did: `spike/p0-04-helm/src/osr.rs` + `--mode=osr`: the Helm as an Alloy windowless browser (transparent background, 60 fps) painted with `UpdateLayeredWindow(ULW_ALPHA)` into a `WS_EX_LAYERED` popup owned by the main window; WndProc forwards mouse (move/leave/buttons/wheel), keys, focus and IME composition/commit; cursor via `on_cursor_change`; `WM_NCHITTEST` returns `HTTRANSPARENT` outside the pill so the shadow doesn't block the page; placement skips while the owner is minimised; Esc returns focus to the page. `ui/helm.html` gets a 48 px shadow margin and the design's shadow in this mode. `HELM_DUMP` writes the last frame so `shot-all.ps1` can composite it with real alpha. `windows-sys` 0.61.2 used directly (already in the tree through `cef`; no new crate). README section, D-009 result, PHASES `[~]`.
 - Verified: build, `cargo clippy -- -D warnings`, `cargo fmt`, `cargo test` pass. `bench.ps1 -Modes osr` (5 runs; Windows 11, 125%, 144 Hz, debug): page scroll 144.4 fps p95 7.0–7.1 ms (one run 58.7 fps, not repeatable); Helm click/key to handler 0.36–0.40 / 0.51–0.58 ms avg; input to next Helm paint 25–48 ms avg, max 130–217 ms; `HELM_FPS=120` no better (33–37 ms). Click 20 DIP above the pill reached the page. Main moved +120,+40 → Helm moved 120,40; minimise hides it, restore shows it. Screenshot `spike/shots/p0-04b-osr.png` viewed by eye: anti-aliased pill and soft shadow over Wikipedia.
@@ -78,7 +91,7 @@ Copy this template for each session:
 - Not verified / unsure: IME, screen readers, Linux, shared-texture rendering, behaviour with two monitors at different scaling.
 - Decisions proposed: D-009 stays Proposed, now with the P0-04b result.
 - Next: P0-05 (Chrome UI hidden + MV3 extensions) on Windows.
-- Commit: see git log "P0-04b: off-screen Helm in a layered window (Windows; awaiting Owner OK)"  Pushed: yes
+- Commit: `fd848b3` "P0-04b: off-screen Helm in a layered window (Windows; awaiting Owner OK)"  Pushed: yes
 
 ### 2026-11-19: Claude Code (VS Code) / Claude Opus 5.5: P0-04 (Windows part)
 - Did: `spike/p0-04-helm`: one CEF Views window with the web page as a Chrome style BrowserView (only normal child, inset 56 px) and our UI as Alloy style BrowserViews from local HTML (stand-in rail and Helm). `--mode=overlay` (Helm as `add_overlay_view`), `--mode=window` (Helm in a frameless CEF window parented to the main window, follows `on_window_bounds_changed`, clipped with `SetWindowRgn`), `--mode=none` (baseline). Helpers: `run.ps1`, `bench.ps1`, `resize.ps1`, `shot.ps1`, `shot-all.ps1` (composite of the spike's own windows via PrintWindow, never the screen). D-009 updated with results and a Proposed approach; D-003 risk note; P0-04b added to PHASES; findings in the spike README.
