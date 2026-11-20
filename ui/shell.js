@@ -162,18 +162,96 @@ function signature(state) {
   }
 }
 
-function mountSky(root, state) {
+// --- Regions (AUDIT-03) ----------------------------------------------------------------------
+// Every region of the window (rail, panel, Helm, notch, popovers...) is built once and kept while
+// the data it draws is unchanged. renderShell only decides which nodes should be there and
+// reconcile() puts them in order, so untouched nodes are never removed or re-inserted: their
+// hover state, scroll position and running transitions survive any number of renders.
+const regionCache = new Map();
+let regionsUsed = new Set();
+
+function region(key, sig, build, opts = {}) {
+  regionsUsed.add(key);
+  const s = JSON.stringify(sig);
+  const cached = regionCache.get(key);
+  if (cached && cached.sig === s) return cached.el;
+  const el = build();
+  if (cached) {
+    // Same region, new data: swap without any enter or exit animation.
+    cached.el.dataset.exit = '0';
+  } else if (opts.enter && document.documentElement.dataset.motion !== 'off') {
+    el.classList.add('enter');
+    el.addEventListener('animationend', () => el.classList.remove('enter'), { once: true });
+  }
+  if (opts.exit) el.dataset.exit = '1';
+  regionCache.set(key, { sig: s, el });
+  return el;
+}
+
+function cssMs(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = parseFloat(v);
+  if (Number.isNaN(n)) return fallback;
+  return v.endsWith('ms') ? n : v.endsWith('s') ? n * 1000 : n;
+}
+
+/** Make root's children exactly `nodes`, in order, moving or removing only what differs. */
+function reconcile(root, nodes) {
+  const want = new Set(nodes);
+  const motionOff = document.documentElement.dataset.motion === 'off';
+  for (const child of [...root.children]) {
+    if (want.has(child)) {
+      child.classList.remove('leaving');
+      continue;
+    }
+    if (child.dataset && child.dataset.exit === '1' && !motionOff) {
+      if (!child.classList.contains('leaving')) {
+        child.classList.add('leaving');
+        setTimeout(() => {
+          if (child.classList.contains('leaving') && !want.has(child)) child.remove();
+        }, cssMs('--dur-base', 200) + 30);
+      }
+      continue;
+    }
+    child.remove();
+  }
+  let ref = root.firstChild;
+  const skip = () => {
+    while (ref && ref.classList && ref.classList.contains('leaving') && !want.has(ref)) ref = ref.nextSibling;
+  };
+  skip();
+  for (const n of nodes) {
+    if (n === ref) {
+      ref = ref.nextSibling;
+      skip();
+    } else {
+      root.insertBefore(n, ref);
+    }
+  }
+}
+
+const PANEL_EXCLUDE = new Set([
+  'sky', 'tabs', 'activeTab', 'closed', 'helm', 'savedHelm', 'answer', 'dimPage', 'downloads',
+  'downloadsOpen', 'shields', 'shieldsOpen', 'shieldsEnabled', 'prompts', 'isLoading',
+  'canGoBack', 'canGoForward', 'activeSpace', 'minute', 'tabCount',
+]);
+/** What the page panel draws: everything except the data only other regions use. */
+function panelSig(state) {
+  const o = {};
+  for (const k of Object.keys(state)) if (!PANEL_EXCLUDE.has(k)) o[k] = state[k];
+  return o;
+}
+
+function mountSky(state, add) {
   const first = state.sky && state.sky[0];
   const key = JSON.stringify([
     state.starsMode || 'still', !!state.shootingStars, !!state.private,
     window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
     first ? [first.x, first.y] : 0,
   ]);
-  if (skyHandle && skyKey === key) {
-    root.append(skyHandle.canvas);
-  } else {
+  if (!(skyHandle && skyKey === key)) {
     if (skyHandle) skyHandle.destroy();
-    skyHandle = createSky(root, {
+    skyHandle = createSky(null, {
       stars: state.sky,
       mode: state.starsMode || 'still',
       shootingStars: state.shootingStars,
@@ -181,6 +259,7 @@ function mountSky(root, state) {
     });
     skyKey = key;
   }
+  add(skyHandle.canvas);
   // A web page covers the sky; don't animate what nobody can see (AUDIT-34).
   skyHandle.setPaused(state.live === true && state.page === 'web');
 }
@@ -232,7 +311,9 @@ export function renderShell(root, state) {
   window.__renderCount += 1;
   lastSignature = signature(state);
   const focused = captureFocus(root);
-  root.replaceChildren();
+  const nodes = [];
+  const add = (n) => { if (n) nodes.push(n); };
+  regionsUsed = new Set();
   root.classList.toggle('private', !!state.private);
   if (state.settings?.accent) {
     applyAccent(state.settings.accent);
@@ -244,7 +325,11 @@ export function renderShell(root, state) {
     window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: railWidth }));
   }
 
-  mountSky(root, state);
+  mountSky(state, add);
+  const railNode = region('rail', {
+    rail: state.rail, tabs: state.tabs ?? state.tabCount, activeTab: state.activeTab,
+    activeSpace: state.activeSpace, closed: state.closed, priv: !!state.private,
+  }, () => {
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
   if (state.rail === 'collapsed' || state.rail === 'private') {
@@ -408,9 +493,12 @@ export function renderShell(root, state) {
       },
     });
   }
-  root.append(rail);
+  return rail;
+  });
+  add(railNode);
 
   if (state.page !== 'none') {
+    const panelNode = region('panel', panelSig(state), () => {
     const panel = el('section', `page page-${state.page}`);
     panel.setAttribute('aria-label', 'Page');
     if (state.pageError) {
@@ -502,16 +590,24 @@ export function renderShell(root, state) {
         });
       }
     }
-    root.append(panel);
+    return panel;
+    });
+    add(panelNode);
     if (state.dimPage && !state.pageHtml?.includes('rgba(0,0,0,.5)')) {
-      root.append(el('div', 'page-dim'));
+      add(region('dim', 1, () => el('div', 'page-dim'), { enter: true, exit: true }));
     }
   }
 
   if (state.private && (state.page === 'none' || state.privateCopy)) {
-    root.append(renderPrivateCopy(state.privateCopy || {}));
+    add(region('private-copy', state.privateCopy || {}, () => renderPrivateCopy(state.privateCopy || {})));
   } else if (state.page === 'none') {
-    renderNewTab(root, state, (tabId) => {
+    add(region('newtab', {
+      tabs: (state.tabs || []).map((t) => [t.id, t.title, t.url, t.parent]),
+      activeTab: state.activeTab, newTab: state.newTab, minute: state.minute,
+    }, () => {
+    const wrap = el('div', 'newtab-region');
+    wrap.style.display = 'contents';
+    renderNewTab(wrap, state, (tabId) => {
       state.activeTab = tabId;
       const current = state.tabs?.find((t) => t.id === tabId);
       if (current?.url && current.url !== 'about:blank' && !current.url.startsWith('odyssey://')) {
@@ -526,17 +622,19 @@ export function renderShell(root, state) {
         window.odysseyBridge(JSON.stringify({ type: 'show', view: tabId }));
       }
     });
+    return wrap;
+    }));
   }
 
   // Answer card (HelmAnswer board, DESIGN.md §7)
   if (state.answer) {
-    root.append(renderAnswerCard(state.answer));
+    add(region('answer', state.answer, () => renderAnswerCard(state.answer), { enter: true, exit: true }));
   }
 
   // Permission and certificate questions for the tab being shown (AUDIT-21).
   const prompt = (state.prompts || []).find((p) => p.view === state.activeTab);
   if (prompt) {
-    root.append(renderPromptCard(prompt, (answer) => {
+    add(region('prompt', prompt, () => renderPromptCard(prompt, (answer) => {
       state.prompts = state.prompts.filter((p) => p !== prompt);
       if (typeof window.odysseyBridge === 'function') {
         window.odysseyBridge(JSON.stringify(prompt.kind === 'permission'
@@ -544,7 +642,7 @@ export function renderShell(root, state) {
           : { type: 'answer-certificate', request: prompt.request, proceed: answer }));
       }
       renderShell(root, state);
-    }));
+    }), { enter: true, exit: true }));
   }
 
   // Helm toolbar. The download ring follows the active download (AUDIT-05).
@@ -552,7 +650,7 @@ export function renderShell(root, state) {
   const helmState = activeDl && state.helm?.kind === 'address'
     ? { ...state.helm, download: activeDl.progress ?? 0 }
     : (state.helm || { kind: 'empty' });
-  root.append(renderHelm(helmState, {
+  add(region('helm', helmState, () => renderHelm(helmState, {
     onBack: () => {
       if (typeof window.odysseyBridge === 'function') {
         window.odysseyBridge(JSON.stringify({ type: 'back', view: state.activeTab }));
@@ -615,11 +713,11 @@ export function renderShell(root, state) {
         window.odysseyBridge(JSON.stringify({ type: 'ai-ask', prompt: question }));
       }
     },
-  }));
+  })));
 
   // Downloads popover (Browsing board)
   if (state.downloadsOpen && state.downloads && state.downloads.length) {
-    root.append(renderDownloadsPopover(state.downloads, {
+    add(region('downloads', state.downloads, () => renderDownloadsPopover(state.downloads, {
       onControl: (id, action) => {
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'download-control', id, action }));
@@ -630,10 +728,13 @@ export function renderShell(root, state) {
           window.odysseyBridge(JSON.stringify({ type: 'open-download', path }));
         }
       },
-    }));
+    }), { enter: true, exit: true }));
   }
 
-  root.append(
+  add(region('notch', {
+    count: state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
+    open: !!state.shieldsOpen,
+  }, () =>
     notch(
       // Live: only a web page has a count (AUDIT-25).
       state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
@@ -652,15 +753,17 @@ export function renderShell(root, state) {
       },
       !document.documentElement.classList.contains('fixture')
     )
-  );
+  ));
 
   if (state.shieldsOpen) {
-    root.append(renderShieldsPanel(state, () => {
+    add(region('shields', { c: state.shields, e: state.shieldsEnabled, h: state.helm?.address?.host }, () => renderShieldsPanel(state, () => {
       state.shieldsOpen = false;
       renderShell(root, state);
-    }));
+    }), { enter: true, exit: true }));
   }
 
+  for (const k of [...regionCache.keys()]) if (!regionsUsed.has(k)) regionCache.delete(k);
+  reconcile(root, nodes);
   restoreFocus(root, focused);
   watchOverlays(root, state);
 }

@@ -324,6 +324,16 @@ export async function startLive() {
 
   renderShell(app, state);
 
+  // The new-tab clock is part of a cached region; tick it once a minute.
+  state.minute = Math.floor(Date.now() / 60000);
+  setInterval(() => {
+    const m = Math.floor(Date.now() / 60000);
+    if (m !== state.minute) {
+      state.minute = m;
+      renderShellLive();
+    }
+  }, 5000);
+
   // A click while another app is in front brings us forward (page windows are separate windows).
   window.addEventListener('pointerdown', () => {
     if (!document.hasFocus()) window.odysseyBridge?.(JSON.stringify({ type: 'focus-window' }));
