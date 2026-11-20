@@ -249,6 +249,11 @@ impl Shell {
         Some((record.url, record.opener))
     }
 
+    fn relight_last_closed(&mut self) -> Option<(String, Option<ViewId>)> {
+        let record = self.closed_tabs.pop_back()?;
+        Some((record.url, record.opener))
+    }
+
     fn closed_tab_infos(&self) -> Vec<bridge::ClosedTabInfo> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -370,7 +375,11 @@ impl Shell {
                 .push(Tab::with_details(view, None, self.active_space, true));
             self.show(engine, view);
             self.on_url_changed(view, url);
-            engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener: None }));
+            engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+                view,
+                opener: None,
+                url: Some(url.to_string()),
+            }));
         }
         self.persist_session();
     }
@@ -507,14 +516,26 @@ impl Shell {
         let known = |s: &Shell, v: ViewId| s.contains(v);
         match message {
             FromUi::Open { url, opener } => {
-                let view = engine.create_view(&url);
+                let view = engine.create_view(if url.starts_with("odyssey://") {
+                    ""
+                } else {
+                    &url
+                });
                 self.tabs
                     .push(Tab::with_details(view, opener, self.active_space, false));
                 if !url.is_empty() {
                     self.tab_urls.insert(view, url.clone());
                 }
                 self.show(engine, view);
-                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
+                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+                    view,
+                    opener,
+                    url: if url.is_empty() {
+                        None
+                    } else {
+                        Some(url.clone())
+                    },
+                }));
                 if !url.is_empty() {
                     self.on_url_changed(view, &url);
                 }
@@ -546,6 +567,7 @@ impl Shell {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: new_view,
                         opener: None,
+                        url: Some(url.clone()),
                     }));
                     self.on_url_changed(new_view, &url);
                 }
@@ -571,8 +593,40 @@ impl Shell {
                 }
             }
             FromUi::Show { view } => {
-                if let Some(v) = view.or(self.shown) {
+                let target = view.or(self.shown);
+                if let Some(v) = target
+                    && known(self, v)
+                {
                     self.show(engine, v);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: v }));
+                }
+            }
+            FromUi::NextTab => {
+                if !self.tabs.is_empty() {
+                    let cur_idx = self
+                        .shown
+                        .and_then(|cur| self.tabs.iter().position(|t| t.view == cur))
+                        .unwrap_or(0);
+                    let next_idx = (cur_idx + 1) % self.tabs.len();
+                    let target = self.tabs[next_idx].view;
+                    self.show(engine, target);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: target }));
+                }
+            }
+            FromUi::PrevTab => {
+                if !self.tabs.is_empty() {
+                    let cur_idx = self
+                        .shown
+                        .and_then(|cur| self.tabs.iter().position(|t| t.view == cur))
+                        .unwrap_or(0);
+                    let prev_idx = if cur_idx == 0 {
+                        self.tabs.len() - 1
+                    } else {
+                        cur_idx - 1
+                    };
+                    let target = self.tabs[prev_idx].view;
+                    self.show(engine, target);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: target }));
                 }
             }
             FromUi::Close { view } => {
@@ -616,6 +670,7 @@ impl Shell {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: t.view,
                         opener: t.opener,
+                        url: self.tab_urls.get(&t.view).cloned(),
                     }));
                     if let Some(url) = self.tab_urls.get(&t.view) {
                         engine.send_to_ui(&bridge::to_json(&ToUi::Url {
@@ -700,13 +755,25 @@ impl Shell {
                 }));
             }
             FromUi::RelightClosedTab { id } => {
-                if let Some((url, opener)) = self.relight_closed_tab(id) {
-                    let view = engine.create_view(&url);
+                let found = match id {
+                    Some(cid) => self.relight_closed_tab(cid),
+                    None => self.relight_last_closed(),
+                };
+                if let Some((url, opener)) = found {
+                    let view = engine.create_view(if url.starts_with("odyssey://") {
+                        ""
+                    } else {
+                        &url
+                    });
                     self.tabs
                         .push(Tab::with_details(view, opener, self.active_space, false));
                     self.show(engine, view);
                     self.on_url_changed(view, &url);
-                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+                        view,
+                        opener,
+                        url: Some(url),
+                    }));
                     let infos = self.closed_tab_infos();
                     engine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
                 }
@@ -987,36 +1054,134 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     let pending_events = Rc::new(RefCell::new(Vec::new()));
     let pending_events_sink = pending_events.clone();
     let events_shell = shell.clone();
-    engine.set_event_sink(move |event| {
-        let needs_shell = matches!(
-            &event,
+    fn dispatch_engine_event(s: &mut Shell, event: &engine_api::Event) {
+        match event {
+            engine_api::Event::Closed { view } => {
+                s.close_tab(*view);
+                if s.shown.is_none()
+                    && let Some(last) = s.tabs.last().map(|t| t.view)
+                {
+                    s.show(&mut CefEngine, last);
+                    CefEngine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: last }));
+                }
+                let infos = s.closed_tab_infos();
+                CefEngine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
+            }
+            engine_api::Event::UrlChanged { view, url } => {
+                s.on_url_changed(*view, url);
+            }
+            engine_api::Event::TitleChanged { view, title } => {
+                s.on_title_changed(*view, title);
+            }
+            engine_api::Event::AudioChanged { view, playing } => {
+                if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
+                    t.has_audio = *playing;
+                }
+            }
+            engine_api::Event::ShortcutNewTab => {
+                s.handle(
+                    &mut CefEngine,
+                    FromUi::Open {
+                        url: "".into(),
+                        opener: None,
+                    },
+                );
+            }
+            engine_api::Event::ShortcutCloseTab { view } => {
+                s.handle(&mut CefEngine, FromUi::Close { view: Some(*view) });
+            }
+            engine_api::Event::ShortcutReload { view } => {
+                CefEngine.reload(*view);
+            }
+            engine_api::Event::ShortcutBack { view } => {
+                CefEngine.go_back(*view);
+            }
+            engine_api::Event::ShortcutForward { view } => {
+                CefEngine.go_forward(*view);
+            }
+            engine_api::Event::ShortcutNextTab => {
+                s.handle(&mut CefEngine, FromUi::NextTab);
+            }
+            engine_api::Event::ShortcutPrevTab => {
+                s.handle(&mut CefEngine, FromUi::PrevTab);
+            }
+            engine_api::Event::ShortcutFocusAddress => {
+                CefEngine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
+            }
+            engine_api::Event::ShortcutOpenHistory => {
+                s.handle(
+                    &mut CefEngine,
+                    FromUi::Open {
+                        url: "odyssey://history".into(),
+                        opener: None,
+                    },
+                );
+            }
+            engine_api::Event::ShortcutOpenSettings => {
+                s.handle(
+                    &mut CefEngine,
+                    FromUi::Open {
+                        url: "odyssey://settings".into(),
+                        opener: None,
+                    },
+                );
+            }
+            engine_api::Event::ShortcutFindInPage { view } => {
+                CefEngine.send_to_ui(&bridge::to_json(&ToUi::FindInPagePrompt { view: *view }));
+            }
+            engine_api::Event::ShortcutDevTools { view } => {
+                CefEngine.open_devtools(*view);
+            }
+            engine_api::Event::ShortcutRelightClosedTab => {
+                s.handle(&mut CefEngine, FromUi::RelightClosedTab { id: None });
+            }
+            engine_api::Event::ShortcutPrint { view } => {
+                CefEngine.print(*view);
+            }
+            engine_api::Event::ShortcutZoomIn { view } => {
+                CefEngine.set_zoom(*view, 1.1);
+            }
+            engine_api::Event::ShortcutZoomOut { view } => {
+                CefEngine.set_zoom(*view, 0.9);
+            }
+            engine_api::Event::ShortcutZoomReset { view } => {
+                CefEngine.set_zoom(*view, 1.0);
+            }
+            _ => {}
+        }
+    }
+
+    let is_shell_event = |event: &engine_api::Event| {
+        matches!(
+            event,
             engine_api::Event::Closed { .. }
                 | engine_api::Event::UrlChanged { .. }
                 | engine_api::Event::TitleChanged { .. }
                 | engine_api::Event::AudioChanged { .. }
-        );
-        if needs_shell {
+                | engine_api::Event::ShortcutNewTab
+                | engine_api::Event::ShortcutCloseTab { .. }
+                | engine_api::Event::ShortcutReload { .. }
+                | engine_api::Event::ShortcutBack { .. }
+                | engine_api::Event::ShortcutForward { .. }
+                | engine_api::Event::ShortcutNextTab
+                | engine_api::Event::ShortcutPrevTab
+                | engine_api::Event::ShortcutFocusAddress
+                | engine_api::Event::ShortcutOpenHistory
+                | engine_api::Event::ShortcutOpenSettings
+                | engine_api::Event::ShortcutFindInPage { .. }
+                | engine_api::Event::ShortcutDevTools { .. }
+                | engine_api::Event::ShortcutRelightClosedTab
+                | engine_api::Event::ShortcutPrint { .. }
+                | engine_api::Event::ShortcutZoomIn { .. }
+                | engine_api::Event::ShortcutZoomOut { .. }
+                | engine_api::Event::ShortcutZoomReset { .. }
+        )
+    };
+
+    engine.set_event_sink(move |event| {
+        if is_shell_event(&event) {
             if let Ok(mut s) = events_shell.try_borrow_mut() {
-                match &event {
-                    engine_api::Event::Closed { view } => {
-                        s.close_tab(*view);
-                        let infos = s.closed_tab_infos();
-                        CefEngine
-                            .send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
-                    }
-                    engine_api::Event::UrlChanged { view, url } => {
-                        s.on_url_changed(*view, url);
-                    }
-                    engine_api::Event::TitleChanged { view, title } => {
-                        s.on_title_changed(*view, title);
-                    }
-                    engine_api::Event::AudioChanged { view, playing } => {
-                        if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
-                            t.has_audio = *playing;
-                        }
-                    }
-                    _ => {}
-                }
+                dispatch_engine_event(&mut s, &event);
             } else {
                 pending_events_sink.borrow_mut().push(event.clone());
             }
@@ -1038,27 +1203,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             match next_event {
                 Some(ev) => {
                     if let Ok(mut s) = ui_shell.try_borrow_mut() {
-                        match &ev {
-                            engine_api::Event::Closed { view } => {
-                                s.close_tab(*view);
-                                let infos = s.closed_tab_infos();
-                                CefEngine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated {
-                                    tabs: infos,
-                                }));
-                            }
-                            engine_api::Event::UrlChanged { view, url } => {
-                                s.on_url_changed(*view, url);
-                            }
-                            engine_api::Event::TitleChanged { view, title } => {
-                                s.on_title_changed(*view, title);
-                            }
-                            engine_api::Event::AudioChanged { view, playing } => {
-                                if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
-                                    t.has_audio = *playing;
-                                }
-                            }
-                            _ => {}
-                        }
+                        dispatch_engine_event(&mut s, &ev);
                     }
                 }
                 None => break,

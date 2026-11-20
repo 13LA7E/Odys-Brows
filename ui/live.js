@@ -3,16 +3,13 @@ import { SHIELDS_COUNT } from './fixtures.js';
 import { renderShell } from './shell.js';
 import { onMessage } from './bridge.js';
 import { initPageBasicsShortcuts } from './pagebasics.js';
+import { generateSky } from './sky.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
-  let sky = [];
-  try {
-    const skyData = await (await fetch('fixtures/sky.json')).json();
-    sky = skyData.Main || [];
-  } catch (_) {
-    sky = [];
-  }
+  const winW = window.innerWidth || 1280;
+  const winH = window.innerHeight || 800;
+  const sky = generateSky('newtab', winW, winH);
 
   const state = {
     rail: 'collapsed',
@@ -31,34 +28,65 @@ export async function startLive() {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'view-opened') {
       if (!state.tabs) state.tabs = [];
-      const existing = state.tabs.find((t) => t.id === msg.view);
-      if (!existing) {
-        state.tabs.push({ id: msg.view, title: 'New tab', parent: msg.opener });
+      let tab = state.tabs.find((t) => t.id === msg.view);
+      if (!tab) {
+        tab = { id: msg.view, title: 'New tab', parent: msg.opener, url: msg.url || '' };
+        state.tabs.push(tab);
+      } else if (msg.url) {
+        tab.url = msg.url;
       }
       state.activeTab = msg.view;
-      const tab = state.tabs.find((t) => t.id === msg.view);
-      if (tab?.url && tab.url !== 'about:blank' && !tab.url.startsWith('odyssey://')) {
+      const url = tab.url || msg.url || '';
+      if (url && url !== 'about:blank' && !url.startsWith('odyssey://')) {
         state.page = 'web';
         try {
-          const u = new URL(tab.url);
+          const u = new URL(url);
           state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
         } catch (_) {
-          state.helm = { kind: 'address', address: { kind: 'web', host: tab.url, path: '' } };
+          state.helm = { kind: 'address', address: { kind: 'web', host: url, path: '' } };
         }
-      } else if (tab?.url?.startsWith('odyssey://')) {
+      } else if (url && url.startsWith('odyssey://')) {
         state.page = 'internal';
-        try {
-          const u = new URL(tab.url);
-          state.pageName = u.hostname;
-          state.helm = { kind: 'address', address: { kind: 'internal', name: u.hostname } };
-        } catch (_) {
-          state.helm = { kind: 'empty' };
-        }
+        const name = url.replace(/^odyssey:\/\//, '').replace(/\/$/, '');
+        state.pageName = name;
+        state.helm = { kind: 'address', address: { kind: 'internal', name } };
       } else {
         state.page = 'none';
         state.helm = { kind: 'empty' };
       }
       renderShell(app, state);
+    } else if (msg.type === 'view-shown') {
+      state.activeTab = msg.view;
+      const tab = state.tabs?.find((t) => t.id === msg.view);
+      const url = tab?.url || '';
+      if (url && url !== 'about:blank' && !url.startsWith('odyssey://')) {
+        state.page = 'web';
+        try {
+          const u = new URL(url);
+          state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
+        } catch (_) {
+          state.helm = { kind: 'address', address: { kind: 'web', host: url, path: '' } };
+        }
+      } else if (url && url.startsWith('odyssey://')) {
+        state.page = 'internal';
+        const name = url.replace(/^odyssey:\/\//, '').replace(/\/$/, '');
+        state.pageName = name;
+        state.helm = { kind: 'address', address: { kind: 'internal', name } };
+      } else {
+        state.page = 'none';
+        state.helm = { kind: 'empty' };
+      }
+      renderShell(app, state);
+    } else if (msg.type === 'helm-focus') {
+      const input = document.querySelector('.helm-search-input, .helm-address, .helm');
+      if (input) {
+        input.focus();
+        if (input.select) input.select();
+      }
+    } else if (msg.type === 'find-in-page-prompt') {
+      import('./pagebasics.js').then(({ toggleFindBar }) => {
+        toggleFindBar(app, msg.view || state.activeTab);
+      });
     } else if (msg.type === 'closed') {
       if (state.tabs) {
         state.tabs = state.tabs.filter((t) => t.id !== msg.view);
@@ -220,6 +248,7 @@ export async function startLive() {
   renderShell(app, state);
 
   window.addEventListener('resize', () => {
+    state.sky = generateSky('newtab', window.innerWidth || 1280, window.innerHeight || 800);
     renderShell(app, state);
   });
 

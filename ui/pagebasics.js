@@ -233,14 +233,66 @@ export function renderErrorPage(container, info = {}, onReload = null) {
   container.append(wrap);
 }
 
-/** Register global page-basics keyboard shortcuts (Ctrl+F, Ctrl+=, Ctrl+-, Ctrl+0, Ctrl+P, F12). */
+/** Register global keyboard shortcuts across chrome and page basics. */
 export function initPageBasicsShortcuts(getRoot, getActiveViewId) {
   window.addEventListener('keydown', (e) => {
     const isCtrl = e.ctrlKey || e.metaKey;
     const viewId = typeof getActiveViewId === 'function' ? getActiveViewId() : 1;
     const root = typeof getRoot === 'function' ? getRoot() : document.getElementById('app');
 
-    if (isCtrl && (e.key === 'f' || e.key === 'F')) {
+    if (isCtrl && !e.altKey && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
+      }
+    } else if (isCtrl && !e.altKey && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'relight-closed-tab' }));
+      }
+    } else if (isCtrl && !e.altKey && (e.key === 'w' || e.key === 'W')) {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'close', view: viewId }));
+      }
+    } else if ((isCtrl && !e.altKey && (e.key === 'l' || e.key === 'L')) || e.key === 'F6') {
+      e.preventDefault();
+      const input = document.querySelector('.helm-search-input, .helm-address, .helm');
+      if (input) {
+        input.focus();
+        if (input.select) input.select();
+      }
+    } else if ((isCtrl && !e.altKey && (e.key === 'r' || e.key === 'R')) || e.key === 'F5') {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'reload', view: viewId }));
+      }
+    } else if (isCtrl && !e.altKey && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://history' }));
+      }
+    } else if (isCtrl && !e.altKey && e.key === ',') {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
+      }
+    } else if (isCtrl && !e.altKey && e.key === 'Tab') {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: e.shiftKey ? 'prev-tab' : 'next-tab' }));
+      }
+    } else if (e.altKey && !isCtrl && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'back', view: viewId }));
+      }
+    } else if (e.altKey && !isCtrl && e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'forward', view: viewId }));
+      }
+    } else if (isCtrl && (e.key === 'f' || e.key === 'F')) {
       e.preventDefault();
       if (root) toggleFindBar(root, viewId);
     } else if (isCtrl && (e.key === '=' || e.key === '+')) {

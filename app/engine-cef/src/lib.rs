@@ -132,19 +132,10 @@ fn maybe_quit() {
 
 #[cfg(windows)]
 mod win32 {
-    #[repr(C)]
-    pub struct WinRect {
-        pub left: i32,
-        pub top: i32,
-        pub right: i32,
-        pub bottom: i32,
-    }
-
     #[link(name = "user32")]
     unsafe extern "system" {
         pub fn SetWindowRgn(h: isize, rgn: isize, redraw: i32) -> i32;
         pub fn GetDpiForWindow(h: isize) -> u32;
-        pub fn GetClientRect(h: isize, rect: *mut WinRect) -> i32;
     }
     #[link(name = "gdi32")]
     unsafe extern "system" {
@@ -165,25 +156,8 @@ fn update_page_window_region(win: &Window, width: i32, height: i32) {
         }
         let dpi = win32::GetDpiForWindow(h).max(96) as f32 / 96.0;
 
-        let mut rc = win32::WinRect {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        win32::GetClientRect(h, &mut rc);
-        let client_w = rc.right - rc.left;
-        let client_h = rc.bottom - rc.top;
-        let w = if client_w > 0 {
-            client_w
-        } else {
-            (width as f32 * dpi).round() as i32
-        };
-        let h_px = if client_h > 0 {
-            client_h
-        } else {
-            (height as f32 * dpi).round() as i32
-        };
+        let w = (width as f32 * dpi).round() as i32;
+        let h_px = (height as f32 * dpi).round() as i32;
 
         let base_rgn = win32::CreateRectRgn(0, 0, w, h_px);
 
@@ -250,6 +224,20 @@ fn place(id: ViewId) {
 }
 
 fn place_all() {
+    STATE.with(|s| {
+        let s = s.borrow();
+        if let (Some(main), Some(ui)) = (s.main.as_ref(), s.ui.as_ref()) {
+            let c = main.client_area_bounds_in_screen();
+            let v = View::from(ui);
+            v.set_bounds(Some(&Rect {
+                x: 0,
+                y: 0,
+                width: c.width,
+                height: c.height,
+            }));
+            main.layout();
+        }
+    });
     let ids: Vec<ViewId> = STATE.with(|s| s.borrow().pages.keys().copied().collect());
     for id in ids {
         place(id);
@@ -302,6 +290,7 @@ wrap_window_delegate! {
                 s.ui = self.ui.borrow().clone();
             });
             window.show();
+            place_all();
             if let Some(ready) = ON_READY.with(|r| r.borrow_mut().take()) {
                 ready(CefEngine);
             }
@@ -587,7 +576,15 @@ wrap_window_delegate! {
             place(self.id);
         }
         fn on_window_bounds_changed(&self, window: Option<&mut Window>, _bounds: Option<&Rect>) {
-            if let Some(w) = window {
+            if let (Some(w), Some(v)) = (window, self.view.borrow().as_ref()) {
+                let c = w.client_area_bounds_in_screen();
+                let view = View::from(v);
+                view.set_bounds(Some(&Rect {
+                    x: 0,
+                    y: 0,
+                    width: c.width,
+                    height: c.height,
+                }));
                 w.layout();
             }
         }
@@ -1054,10 +1051,141 @@ wrap_resource_request_handler! {
     }
 }
 
+#[cfg(windows)]
+type OsEvent = sys::MSG;
+#[cfg(not(windows))]
+type OsEvent = sys::XEvent;
+
+wrap_keyboard_handler! {
+    struct PageKeyboard { id: ViewId }
+
+    impl KeyboardHandler {
+        fn on_pre_key_event(
+            &self,
+            _browser: Option<&mut Browser>,
+            event: Option<&KeyEvent>,
+            _os_event: Option<&mut OsEvent>,
+            is_keyboard_shortcut: Option<&mut ::std::os::raw::c_int>,
+        ) -> ::std::os::raw::c_int {
+            let Some(ev) = event else { return 0 };
+            if ev.type_ != KeyEventType::RAWKEYDOWN && ev.type_ != KeyEventType::KEYDOWN {
+                return 0;
+            }
+
+            let modifiers = ev.modifiers;
+            // SHIFT = 2, CONTROL = 4, ALT = 8, COMMAND = 128
+            let is_ctrl = (modifiers & 4) != 0 || (modifiers & 128) != 0;
+            let is_shift = (modifiers & 2) != 0;
+            let is_alt = (modifiers & 8) != 0;
+            let key = ev.windows_key_code;
+
+            if is_ctrl && !is_alt {
+                if key == 0x54 {
+                    // Ctrl+T / Ctrl+Shift+T
+                    if is_shift {
+                        emit(Event::ShortcutRelightClosedTab);
+                    } else {
+                        emit(Event::ShortcutNewTab);
+                    }
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x57 || key == 0x73 {
+                    // Ctrl+W / Ctrl+F4
+                    emit(Event::ShortcutCloseTab { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x4C || key == 0x75 {
+                    // Ctrl+L / F6
+                    emit(Event::ShortcutFocusAddress);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x52 {
+                    // Ctrl+R
+                    emit(Event::ShortcutReload { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x48 {
+                    // Ctrl+H
+                    emit(Event::ShortcutOpenHistory);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 188 {
+                    // Ctrl+,
+                    emit(Event::ShortcutOpenSettings);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x09 {
+                    // Ctrl+Tab / Ctrl+Shift+Tab
+                    if is_shift {
+                        emit(Event::ShortcutPrevTab);
+                    } else {
+                        emit(Event::ShortcutNextTab);
+                    }
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x46 {
+                    // Ctrl+F
+                    emit(Event::ShortcutFindInPage { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 187 || key == 0x6B {
+                    // Ctrl+= / Ctrl++
+                    emit(Event::ShortcutZoomIn { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 189 || key == 0x6D {
+                    // Ctrl+-
+                    emit(Event::ShortcutZoomOut { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x30 || key == 0x60 {
+                    // Ctrl+0
+                    emit(Event::ShortcutZoomReset { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x50 {
+                    // Ctrl+P
+                    emit(Event::ShortcutPrint { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                }
+            } else if is_alt && !is_ctrl {
+                if key == 0x25 {
+                    // Alt+Left
+                    emit(Event::ShortcutBack { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x27 {
+                    // Alt+Right
+                    emit(Event::ShortcutForward { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                }
+            } else if !is_ctrl && !is_alt {
+                if key == 0x74 {
+                    // F5
+                    emit(Event::ShortcutReload { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x7B {
+                    // F12
+                    emit(Event::ShortcutDevTools { view: self.id });
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                }
+            }
+            0
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient { id: ViewId }
 
     impl Client {
+        fn keyboard_handler(&self) -> Option<KeyboardHandler> {
+            Some(PageKeyboard::new(self.id))
+        }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(PageLife::new(self.id))
         }

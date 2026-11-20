@@ -66,11 +66,20 @@ pub struct DownloadInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The main frame's URL changed (navigation, history, fragment).
-    UrlChanged { view: ViewId, url: String },
+    UrlChanged {
+        view: ViewId,
+        url: String,
+    },
     /// The page title changed. Empty when the page has none (show the host instead).
-    TitleChanged { view: ViewId, title: String },
+    TitleChanged {
+        view: ViewId,
+        title: String,
+    },
     /// The page's favicon URL changed (`None`: no favicon).
-    FaviconChanged { view: ViewId, url: Option<String> },
+    FaviconChanged {
+        view: ViewId,
+        url: Option<String>,
+    },
     /// Loading started or stopped; also whether back/forward are possible now.
     LoadingChanged {
         view: ViewId,
@@ -86,7 +95,10 @@ pub enum Event {
         text: String,
     },
     /// The page started or stopped playing audio.
-    AudioChanged { view: ViewId, playing: bool },
+    AudioChanged {
+        view: ViewId,
+        playing: bool,
+    },
     /// The page wants a new window or tab. The engine did *not* open it: the browser decides
     /// (and keeps `opener` to draw the Trail's branch). `user_gesture` is false for pop-ups the
     /// user didn't ask for (EDGE_CASES §2).
@@ -113,11 +125,57 @@ pub enum Event {
         error: String,
     },
     /// The page's renderer process crashed or was killed.
-    Crashed { view: ViewId, reason: String },
+    Crashed {
+        view: ViewId,
+        reason: String,
+    },
     /// The view finished closing; its id is now invalid.
-    Closed { view: ViewId },
+    Closed {
+        view: ViewId,
+    },
     /// Count of ads and trackers blocked for this view changed (P5-01).
-    ShieldsCountChanged { view: ViewId, count: u64 },
+    ShieldsCountChanged {
+        view: ViewId,
+        count: u64,
+    },
+    /// Browser keyboard shortcuts intercepted from a page view or native window.
+    ShortcutNewTab,
+    ShortcutCloseTab {
+        view: ViewId,
+    },
+    ShortcutReload {
+        view: ViewId,
+    },
+    ShortcutBack {
+        view: ViewId,
+    },
+    ShortcutForward {
+        view: ViewId,
+    },
+    ShortcutNextTab,
+    ShortcutPrevTab,
+    ShortcutFocusAddress,
+    ShortcutOpenHistory,
+    ShortcutOpenSettings,
+    ShortcutFindInPage {
+        view: ViewId,
+    },
+    ShortcutDevTools {
+        view: ViewId,
+    },
+    ShortcutRelightClosedTab,
+    ShortcutPrint {
+        view: ViewId,
+    },
+    ShortcutZoomIn {
+        view: ViewId,
+    },
+    ShortcutZoomOut {
+        view: ViewId,
+    },
+    ShortcutZoomReset {
+        view: ViewId,
+    },
 }
 
 /// The web engine, as the browser sees it. All methods are called on the UI thread.

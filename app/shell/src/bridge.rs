@@ -111,10 +111,15 @@ pub enum FromUi {
     },
     /// Clear all history (P4-02).
     ClearAllHistory,
-    /// Relight a closed tab (P4-04).
+    /// Relight a closed tab (P4-04, None relights most recent).
     RelightClosedTab {
-        id: u64,
+        #[serde(default)]
+        id: Option<u64>,
     },
+    /// Switch to next tab.
+    NextTab,
+    /// Switch to prev tab.
+    PrevTab,
     /// Forget a closed tab from the closed earlier list (P4-04).
     ForgetClosedTab {
         id: u64,
@@ -245,6 +250,15 @@ pub enum ToUi {
         view: ViewId,
         #[serde(skip_serializing_if = "Option::is_none")]
         opener: Option<ViewId>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+    },
+    ViewShown {
+        view: ViewId,
+    },
+    HelmFocus,
+    FindInPagePrompt {
+        view: ViewId,
     },
     Url {
         view: ViewId,

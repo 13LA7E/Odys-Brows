@@ -40,7 +40,9 @@ export function createSky(container, options = {}) {
       }
       for (let i = 0; i < extraCount; i++) {
         let x, y;
-        if (rand() < (width - 1280) / width) {
+        const rightArea = (width - 1280) * height;
+        const totalExtraArea = width * height - 1280 * 800;
+        if (rand() < rightArea / totalExtraArea) {
           x = 1280 + rand() * (width - 1280);
           y = rand() * height;
         } else {

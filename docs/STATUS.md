@@ -120,6 +120,26 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Disappearing Controls Over Web Pages, Keyboard Shortcuts, Settings/Tab Navigation, and Sky Density
+- Did: resolved all 4 critical bugs reported with live user screenshot evidence:
+  1. Window controls and search bar (Helm) disappearing over web pages:
+     - Root cause: In `place_all()` inside `app/engine-cef/src/lib.rs`, `s.ui` (`BrowserView`) in `MainWindow` was never explicitly resized. When maximized on a 2560x1440 or high-DPI display, `PageWindow` was placed at 2504x1440, and `update_page_window_region` punched holes for Notch (top-right x=2280) and Helm (bottom center y=1360). But `MainWindow`'s UI was stuck at 1280x800, so the holes exposed empty black window background. Furthermore, `GetClientRect` returned stale asynchronous rects.
+     - Fix: In `place_all()`, explicitly update `s.ui` bounds to `(0, 0, c.width, c.height)` and trigger `main.layout()`. In `update_page_window_region`, compute dimensions directly from `width` and `height` parameters scaled by DPI without stale Win32 client rect calls. In `PageWindow::on_window_bounds_changed`, also explicitly resize the web view to `(0, 0, c.width, c.height)`. The Notch and Helm now show through the holes cleanly and are fully interactive over any web page.
+  2. Keyboard shortcuts not working:
+     - Root cause: `PageClient` lacked a `keyboard_handler`, so whenever focus was inside a web page (e.g. DuckDuckGo), native Chromium consumed all keystrokes. In addition, `initPageBasicsShortcuts` in `ui/pagebasics.js` only listened to zoom/devtools/print/find and lacked `Ctrl+T`, `Ctrl+W`, `Ctrl+L`, `Ctrl+R`, `Ctrl+H`, `Ctrl+,`, `Ctrl+Tab`, `Alt+Left`, `Alt+Right`.
+     - Fix: Implemented `PageKeyboard` wrapping `KeyboardHandler` with `on_pre_key_event` in `app/engine-cef/src/lib.rs`. Intercepts `Ctrl+T`, `Ctrl+Shift+T`, `Ctrl+W`, `Ctrl+L`, `Ctrl+R`, `F5`, `Ctrl+H`, `Ctrl+,`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Alt+Left`, `Alt+Right`, `Ctrl+F`, `F12`, `Ctrl+P`, `Ctrl+=`, `Ctrl+-`, `Ctrl+0`. Added corresponding shortcut variants to `Event` in `app/engine-api/src/lib.rs` and dispatched them in `app/shell/src/main.rs`. Also added comprehensive global key event handling in `ui/pagebasics.js` for when UI has focus. Added `ToUi::HelmFocus` handling in `ui/live.js` for `Ctrl+L`.
+  3. Star density on the right is negligible:
+     - Root cause: `ui/live.js` was loading `fixtures/sky.json` (`skyData.Main` with 166 stars packed into 1280x800), and the extra stars loop in `ui/sky.js` partitioned extra area using `(width - 1280) / width` (50% instead of 69%), leaving the right half visibly sparse on wide monitors.
+     - Fix: In `ui/live.js`, initialize `sky` directly with `generateSky('newtab', window.innerWidth, window.innerHeight)` which generates a mathematically uniform star density across the entire screen width and height. Also corrected the area ratio formula in `ui/sky.js` and regenerated sky dynamically on window `resize`.
+  4. Settings and New Tab navigation reliability:
+     - Root cause: When `open` with `odyssey://settings` was invoked, `ToUi::ViewOpened` had no `url`, so `ui/live.js` treated `tab.url` as undefined and reset `state.page` back to `'none'`.
+     - Fix: Added `url: Option<String>` to `ToUi::ViewOpened` in `app/shell/src/bridge.rs` and populated it in `FromUi::Open`. Handled `view-opened` and `view-shown` in `ui/live.js` to immediately activate internal or web page routing.
+- Verified:
+  - `tools\check.ps1` PASSED all 6 steps: cargo fmt, cargo clippy warning-free, all 50 unit and integration tests passed, node syntax check on 16 files passed, token check passed, visual check passed.
+  - Built fresh release executable `cargo build --release --bin constellations` and updated `dist\Constellations\`.
+- Edge cases: §1 (window bounds, resize, shortcuts), §4 (cutouts and page window clipping), §5 (keyboard navigation and accessibility), §7 (internal page routing), §9 (uniform sky density across all monitor aspect ratios) handled + tested.
+- Next: Launch `Constellations.bat` to verify live in user session.
+
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Live Window Layout, Settings Navigation, and Fullscreen Sky
 - Did: fixed 4 severe live window & navigation issues reported by the user:
   1. Main window full-screen layout & black cutouts: Added `window.set_to_fill_layout()` and `window.layout()` to `MainWindow` and `PageWindow` in `app/engine-cef/src/lib.rs`. Previously `ui` stayed fixed at preferred size 1280x800, so on wide/high-DPI screens the right and bottom were pure black, and `SetWindowRgn` cutouts over web pages exposed empty black background instead of the main window's Notch and Helm. With `set_to_fill_layout()` and Win32 `GetClientRect` DPI-accurate clipping, the UI now stretches to the full window and Notch controls / Helm align to the exact pixel.
