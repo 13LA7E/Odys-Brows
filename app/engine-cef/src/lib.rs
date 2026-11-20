@@ -236,6 +236,29 @@ fn update_page_window_region(
     }
 }
 
+/// Re-cut the holes in every visible page window (overlays moved or appeared).
+#[cfg(windows)]
+fn refresh_holes() {
+    STATE.with(|s| {
+        let s = s.borrow();
+        let Some(main) = s.main.as_ref() else { return };
+        let c = main.client_area_bounds_in_screen();
+        for page in s.pages.values().filter(|p| p.visible) {
+            let Some(win) = page.window.as_ref() else {
+                continue;
+            };
+            let b = page.bounds;
+            update_page_window_region(
+                win,
+                (c.width - b.x).max(1),
+                c.height.max(1),
+                b.x,
+                &s.overlay_holes,
+            );
+        }
+    });
+}
+
 /// Put a page window where the shell wants it: client-area DIP → screen DIP.
 fn place(id: ViewId) {
     STATE.with(|s| {
@@ -1502,8 +1525,12 @@ impl CefEngine {
             !same
         });
         if changed {
-            place_all();
+            // Only the hole shapes change: don't re-place the page windows for this.
+            #[cfg(windows)]
+            refresh_holes();
         }
+        #[cfg(not(windows))]
+        let _ = changed;
     }
 
     /// Move keyboard focus from a page window to our UI (Ctrl+L, F6). Pages are separate
@@ -1976,7 +2003,10 @@ wrap_app! {
                 // on, Windows shows the UI window's content only where no page window sits on
                 // top, ignoring the holes cut into the page windows, so the Helm and notch were
                 // empty grey shapes. Without it the holes show the UI.
-                cmd.append_switch(Some(&CefString::from("disable-direct-composition")));
+                // CONSTELLATIONS_DIRECT_COMPOSITION=1 turns the fix off (for comparing CPU use).
+                if std::env::var_os("CONSTELLATIONS_DIRECT_COMPOSITION").is_none() {
+                    cmd.append_switch(Some(&CefString::from("disable-direct-composition")));
+                }
                 cmd.append_switch(Some(&CefString::from("disable-backgrounding-occluded-windows")));
                 cmd.append_switch(Some(&CefString::from("disable-renderer-backgrounding")));
                 cmd.append_switch_with_value(

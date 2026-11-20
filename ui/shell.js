@@ -331,6 +331,7 @@ export function renderShell(root, state) {
   const add = (n) => { if (n) nodes.push(n); };
   regionsUsed = new Set();
   root.classList.toggle('private', !!state.private);
+  root.dataset.overPage = state.page === 'web' ? '1' : '0';
   if (state.settings?.accent) {
     applyAccent(state.settings.accent);
   }
@@ -825,6 +826,26 @@ function reportOverlays() {
   window.odysseyBridge(JSON.stringify({ type: 'set-overlay-rects', rects }));
 }
 
+// While a card animates its rectangle moves every frame: keep the hole glued to it.
+let trackingOverlays = false;
+function trackOverlayAnimations() {
+  if (trackingOverlays) return;
+  trackingOverlays = true;
+  let frames = 0;
+  const tick = () => {
+    reportOverlays();
+    frames += 1;
+    const animating = [...document.querySelectorAll(OVERLAY_SELECTOR)].some((e) => e.getAnimations().length > 0);
+    if (animating && frames < 120) {
+      requestAnimationFrame(tick);
+    } else {
+      trackingOverlays = false;
+      reportOverlays();
+    }
+  };
+  requestAnimationFrame(tick);
+}
+
 function watchOverlays(root, state) {
   if (!state.live) return;
   window.__overlayRects = () => JSON.parse(lastOverlayJson);
@@ -834,6 +855,8 @@ function watchOverlays(root, state) {
       overlayTimer = setTimeout(reportOverlays, 30);
     });
     overlayObserver.observe(root, { childList: true, subtree: true });
+    root.addEventListener('animationstart', trackOverlayAnimations, true);
+    root.addEventListener('transitionrun', trackOverlayAnimations, true);
     window.addEventListener('resize', () => { clearTimeout(overlayTimer); overlayTimer = setTimeout(reportOverlays, 60); });
   }
   clearTimeout(overlayTimer);

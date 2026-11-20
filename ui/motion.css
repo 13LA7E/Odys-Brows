@@ -34,6 +34,13 @@ button:active:not(:disabled) { box-shadow: inset 0 0 0 100vmax var(--press-wash)
 }
 .page-dim.leaving { transform: none; }
 
+/* Over a web page the card sits in a hole cut in the page window, and a native page can't blend
+   with our UI: fading would show the black sky instead of the page. So over a page the cards only
+   slide (transform), and stay opaque until they leave. */
+@keyframes ody-slide { from { transform: translateY(var(--rise-small)); } to { transform: none; } }
+#app[data-over-page='1'] .enter { animation-name: ody-slide; }
+#app[data-over-page='1'] .leaving { opacity: 1; }
+
 /* Page and settings-section switches: a short cross-fade of the content. */
 .page-in, .section-in { animation: ody-fade var(--dur-base) var(--ease-out) both; }
 
@@ -58,6 +65,7 @@ button:active:not(:disabled) { box-shadow: inset 0 0 0 100vmax var(--press-wash)
   .enter, .page-in, .section-in, .star-enter { animation-name: ody-fade; }
   .branch-enter { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
   .leaving { transform: none; }
+  #app[data-over-page='1'] .enter { animation: none; }
   .helm.is-loading::after { animation: none; opacity: .6; }
   .helm-dl-btn.pulse { animation: none; }
 }

@@ -25,7 +25,7 @@ try:
     ev(pw, "document.title='open'+Math.random()")   # any state change renders; query at once, before 200 ms pass
     anim = json.loads(ui("JSON.stringify((()=>{const e=document.querySelector('.downloads-popover'); if(!e) return null; const a=e.getAnimations(); return {n:a.length, name:a[0]&&a[0].animationName, dur:a[0]&&a[0].effect.getTiming().duration}})())"))
     print('popover animation:', anim)
-    check('downloads popover enters with the rise animation (AUDIT-33)', bool(anim) and anim.get('name') == 'ody-rise-small', anim)
+    check('downloads popover enters with a slide (over a web page; rise+fade elsewhere) (AUDIT-33)', bool(anim) and anim.get('name') in ('ody-slide', 'ody-rise-small'), anim)  # over a web page cards only slide
     check('animation duration = --dur-base (200ms)', bool(anim) and anim.get('dur') == 200, anim and anim.get('dur'))
     # --- no restart under churn: tag the animation object, force many renders, same animation object continues
     ui("window.__el = document.querySelector('.downloads-popover'); window.__a = window.__el && window.__el.getAnimations()[0]; 1")
