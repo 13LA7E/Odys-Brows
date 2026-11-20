@@ -11,7 +11,7 @@
 | State | Complete implementation and verification of Phase 5 (Shields, tab sleeping, tuning, benchmarks), Phase 6 (Extensions management, toolbar placement, cost tracking), Phase 7 (AI provider layer, settings, Helm ask streaming), Phase 8 (All settings panels, DPAPI password vault, accessibility, visual pass), and Phase 9 (Packaging, Windows installer NSIS script, Linux AppImage/.deb builder, auto-update architecture, CEF upgrade routine, and release checklist). Passed `tools\check.ps1` (format, clippy warning-free, 46 unit/integration tests, node check, token check, visual check). |
 | Next step | Review with owner and build signed beta installer. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 5fdd911 (fix(shell,engine,ui): fix disappearing controls, page shortcuts, settings navigation, and uniform sky density). |
+| Last pushed commit | 32428e8 (fix(engine,shell,ui): fix layout recursion stack overflow, view navigation visibility, dev runner build step, and sky uniformity). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -131,7 +131,7 @@ Copy this template for each session:
   - Built fresh release executable `cargo build --release --bin constellations` and updated `dist\Constellations\`.
   - Ran `target\debug\constellations.exe` without stack overflow or crash.
 - Next: Launch `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1` or `Constellations.bat` to test live.
-- Commit: pending
+- Commit: 32428e8 "fix(engine,shell,ui): fix layout recursion stack overflow, view navigation visibility, dev runner build step, and sky uniformity"  Pushed: yes
 
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Disappearing Controls Over Web Pages, Keyboard Shortcuts, Settings/Tab Navigation, and Sky Density
 - Did: resolved all 4 critical bugs reported with live user screenshot evidence:
