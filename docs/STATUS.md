@@ -11,7 +11,7 @@
 | State | Complete implementation and verification of Phase 5 (Shields, tab sleeping, tuning, benchmarks), Phase 6 (Extensions management, toolbar placement, cost tracking), Phase 7 (AI provider layer, settings, Helm ask streaming), Phase 8 (All settings panels, DPAPI password vault, accessibility, visual pass), and Phase 9 (Packaging, Windows installer NSIS script, Linux AppImage/.deb builder, auto-update architecture, CEF upgrade routine, and release checklist). Passed `tools\check.ps1` (format, clippy warning-free, 46 unit/integration tests, node check, token check, visual check). |
 | Next step | Review with owner and build signed beta installer. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | a60e6eb (fix(shell,ui): fix full-screen layout, disappearing controls, settings navigation, and wide sky). |
+| Last pushed commit | 5fdd911 (fix(shell,engine,ui): fix disappearing controls, page shortcuts, settings navigation, and uniform sky density). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -139,6 +139,7 @@ Copy this template for each session:
   - Built fresh release executable `cargo build --release --bin constellations` and updated `dist\Constellations\`.
 - Edge cases: §1 (window bounds, resize, shortcuts), §4 (cutouts and page window clipping), §5 (keyboard navigation and accessibility), §7 (internal page routing), §9 (uniform sky density across all monitor aspect ratios) handled + tested.
 - Next: Launch `Constellations.bat` to verify live in user session.
+- Commit: 5fdd911 "fix(shell,engine,ui): fix disappearing controls, page shortcuts, settings navigation, and uniform sky density"  Pushed: yes
 
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Live Window Layout, Settings Navigation, and Fullscreen Sky
 - Did: fixed 4 severe live window & navigation issues reported by the user:
