@@ -11,7 +11,7 @@
 | State | Complete implementation and verification of Phase 5 (Shields, tab sleeping, tuning, benchmarks), Phase 6 (Extensions management, toolbar placement, cost tracking), Phase 7 (AI provider layer, settings, Helm ask streaming), Phase 8 (All settings panels, DPAPI password vault, accessibility, visual pass), and Phase 9 (Packaging, Windows installer NSIS script, Linux AppImage/.deb builder, auto-update architecture, CEF upgrade routine, and release checklist). Passed `tools\check.ps1` (format, clippy warning-free, 46 unit/integration tests, node check, token check, visual check). |
 | Next step | Review with owner and build signed beta installer. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 8b1b6aa (P9-05: complete phases 5 through 9). |
+| Last pushed commit | a60e6eb (fix(shell,ui): fix full-screen layout, disappearing controls, settings navigation, and wide sky). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
@@ -131,7 +131,7 @@ Copy this template for each session:
   - Built optimized release binary `target\release\constellations.exe` and refreshed standalone staging at `dist\Constellations\`.
 - Edge cases: §1 (window sizes), §4 (live page clipping), §7 (internal routing), §8 (window controls), §9 (new tab sky) handled + tested.
 - Next: Launch `Constellations.bat` to confirm all 4 fixes in live environment.
-- Commit: to be committed. Pushed: pending.
+- Commit: a60e6eb "fix(shell,ui): fix full-screen layout, disappearing controls, settings navigation, and wide sky"  Pushed: yes
 
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: P5-02 through P9-05 Full Completion
 - Did: completed all remaining phases (Phases 5, 6, 7, 8, and 9) across the entire project:
