@@ -1,7 +1,9 @@
 //! Password vault (P8-02, EDGE_CASES §1, §7).
 //!
-//! Encrypted individually with Windows DPAPI (tied to Windows login, no master password needed).
-//! On Linux/other targets, falls back to secure obfuscated storage or returns clear error.
+//! Windows: each password is encrypted with DPAPI (tied to the Windows login).
+//! Linux: each password lives in the Secret Service keyring; `vault.json` only holds a marker.
+//! If no secure store is available the operation fails with a clear error. Nothing is ever
+//! stored in a reversible form on disk.
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
@@ -47,6 +49,11 @@ impl From<&VaultEntry> for VaultEntrySummary {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct VaultStore {
     pub entries: Vec<VaultEntry>,
+    /// Set when the file on disk was damaged; show it to the user.
+    #[serde(skip)]
+    pub load_notice: Option<String>,
+    #[serde(skip)]
+    read_only: bool,
 }
 
 fn now_ms() -> String {
@@ -132,39 +139,109 @@ fn dpapi_unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     Ok(res)
 }
 
+#[cfg(windows)]
+fn protect(_id: &str, plain: &[u8]) -> Result<Vec<u8>, String> {
+    dpapi_protect(plain)
+}
+#[cfg(windows)]
+fn unprotect(_id: &str, data: &[u8]) -> Result<Vec<u8>, String> {
+    dpapi_unprotect(data)
+}
 #[cfg(not(windows))]
-fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
-    // Non-Windows fallback: simple salted masking for cross-platform builds
-    let mut out = plaintext.to_vec();
-    for (i, b) in out.iter_mut().enumerate() {
-        *b ^= (0x5A ^ (i as u8 & 0x0F));
-    }
-    Ok(out)
+fn protect(id: &str, plain: &[u8]) -> Result<Vec<u8>, String> {
+    let text = std::str::from_utf8(plain).map_err(|_| "Password is not valid text.".to_string())?;
+    secrets::set(&format!("vault:{id}"), text)?;
+    Ok(b"keyring".to_vec())
+}
+#[cfg(not(windows))]
+fn unprotect(id: &str, _marker: &[u8]) -> Result<Vec<u8>, String> {
+    secrets::get(&format!("vault:{id}"))?
+        .map(String::into_bytes)
+        .ok_or_else(|| "The password is missing from the system keyring.".to_string())
 }
 
-#[cfg(not(windows))]
-fn dpapi_unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
-    let mut out = ciphertext.to_vec();
-    for (i, b) in out.iter_mut().enumerate() {
-        *b ^= (0x5A ^ (i as u8 & 0x0F));
+/// Named secrets in the OS credential store (Windows Credential Manager, Linux Secret
+/// Service). Used for the vault on Linux and for AI keys everywhere (D-014).
+pub mod secrets {
+    const SERVICE: &str = "constellations-browser";
+
+    fn entry(name: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(SERVICE, name).map_err(|e| format!("Secure store unavailable: {e}"))
     }
-    Ok(out)
+
+    pub fn set(name: &str, value: &str) -> Result<(), String> {
+        entry(name)?
+            .set_password(value)
+            .map_err(|e| format!("Couldn't save to the secure store: {e}"))
+    }
+
+    pub fn get(name: &str) -> Result<Option<String>, String> {
+        match entry(name)?.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!("Couldn't read the secure store: {e}")),
+        }
+    }
+
+    pub fn delete(name: &str) -> Result<(), String> {
+        match entry(name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("Couldn't update the secure store: {e}")),
+        }
+    }
 }
 
 impl VaultStore {
+    /// A missing file gives an empty vault. A file that can't be parsed is moved aside to
+    /// `vault.json.corrupt-<time>` (never overwritten) and reported in `load_notice`.
     pub fn load(path: &Path) -> Self {
-        let Ok(data) = std::fs::read_to_string(path) else {
-            return Self::default();
+        let data = match std::fs::read_to_string(path) {
+            Ok(d) => d,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(e) => {
+                return Self {
+                    load_notice: Some(format!("Couldn't read saved logins: {e}")),
+                    read_only: true,
+                    ..Self::default()
+                };
+            }
         };
-        serde_json::from_str::<Self>(&data).unwrap_or_default()
+        match serde_json::from_str::<Self>(&data) {
+            Ok(store) => store,
+            Err(_) => {
+                let mut backup = path.as_os_str().to_owned();
+                backup.push(format!(".corrupt-{}", now_ms()));
+                let moved = std::fs::rename(path, &backup).is_ok();
+                Self {
+                    load_notice: Some(if moved {
+                        "Saved logins couldn't be read. The damaged file was kept as vault.json.corrupt-*.".to_string()
+                    } else {
+                        "Saved logins couldn't be read and the damaged file couldn't be moved aside.".to_string()
+                    }),
+                    read_only: !moved,
+                    ..Self::default()
+                }
+            }
+        }
     }
 
+    /// Writes a temp file then renames it, so a crash never leaves a half-written vault.
     pub fn save(&self, path: &Path) -> Result<(), String> {
+        if self.read_only {
+            return Err("Saved logins are locked because the file on disk is damaged.".to_string());
+        }
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         let data = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(path, data).map_err(|e| e.to_string())
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        let tmp = std::path::PathBuf::from(tmp);
+        std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, path).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            e.to_string()
+        })
     }
 
     pub fn list(&self) -> Vec<VaultEntrySummary> {
@@ -193,10 +270,11 @@ impl VaultStore {
         if origin.is_empty() {
             return Err("Site is required.".to_string());
         }
-        let encrypted = dpapi_protect(password.as_bytes())?;
+        let id = new_id();
+        let encrypted = protect(&id, password.as_bytes())?;
         let ts = now_ms();
         let entry = VaultEntry {
-            id: new_id(),
+            id,
             origin,
             username: username.to_string(),
             secret: B64.encode(encrypted),
@@ -216,7 +294,7 @@ impl VaultStore {
         password: Option<String>,
     ) -> Result<(), String> {
         let new_secret = if let Some(p) = password {
-            Some(B64.encode(dpapi_protect(p.as_bytes())?))
+            Some(B64.encode(protect(id, p.as_bytes())?))
         } else {
             None
         };
@@ -244,6 +322,8 @@ impl VaultStore {
         if self.entries.len() == before {
             return Err("Saved login not found.".to_string());
         }
+        #[cfg(not(windows))]
+        let _ = secrets::delete(&format!("vault:{id}"));
         Ok(())
     }
 
@@ -254,7 +334,7 @@ impl VaultStore {
             .find(|e| e.id == id)
             .ok_or_else(|| "Saved login not found.".to_string())?;
         let encrypted = B64.decode(&entry.secret).map_err(|e| e.to_string())?;
-        let plain = dpapi_unprotect(&encrypted)?;
+        let plain = unprotect(&entry.id, &encrypted)?;
         String::from_utf8(plain).map_err(|_| "Decrypted password is not valid text.".to_string())
     }
 
@@ -265,7 +345,7 @@ impl VaultStore {
             .find(|e| e.id == id)
             .ok_or_else(|| "Saved login not found.".to_string())?;
         let encrypted = B64.decode(&entry.secret).map_err(|e| e.to_string())?;
-        let plain = dpapi_unprotect(&encrypted)?;
+        let plain = unprotect(&entry.id, &encrypted)?;
         let pass = String::from_utf8(plain)
             .map_err(|_| "Decrypted password is not valid text.".to_string())?;
         Ok((entry.username.clone(), pass))
@@ -275,6 +355,44 @@ impl VaultStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("vault-test-{name}-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("vault.json")
+    }
+
+    #[test]
+    fn corrupt_file_is_kept_and_not_overwritten() {
+        let path = temp_path("corrupt");
+        std::fs::write(&path, "{ not json").unwrap();
+        let store = VaultStore::load(&path);
+        assert!(store.load_notice.is_some());
+        assert!(store.entries.is_empty());
+        let moved: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".corrupt-"))
+            .collect();
+        assert_eq!(moved.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(moved[0].path()).unwrap(),
+            "{ not json"
+        );
+    }
+
+    #[test]
+    fn interrupted_write_keeps_old_file() {
+        let path = temp_path("atomic");
+        std::fs::write(&path, r#"{"entries":[]}"#).unwrap();
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        std::fs::write(&tmp, "{ half").unwrap();
+        let store = VaultStore::load(&path);
+        assert!(store.load_notice.is_none());
+        store.save(&path).unwrap();
+        assert!(VaultStore::load(&path).load_notice.is_none());
+    }
 
     #[test]
     fn test_vault_protect_and_reveal() {

@@ -7,7 +7,7 @@ import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
-import { renderHistory } from './history.js';
+import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab } from './newtab.js';
 import { initPageBasicsShortcuts, renderErrorPage } from './pagebasics.js';
 import { renderExtensionsPage } from './extensions.js';
@@ -142,12 +142,96 @@ export function renderPrivateCopy(copy = {}) {
   return container;
 }
 
+// --- Rendering helpers (AUDIT-03, AUDIT-04) -------------------------------------------------
+// The window is still rebuilt from state, but: renders are coalesced and skipped when nothing
+// that is drawn changed; the sky is one long-lived instance; the rail width is only sent when it
+// changes; and a text field the user is typing in keeps its text and caret.
+
+let skyHandle = null;
+let skyKey = '';
+let lastRailWidth = null;
+let lastSignature = '';
+let renderQueued = false;
+window.__renderCount = 0;
+
+function signature(state) {
+  try {
+    return JSON.stringify(state, (k, v) => (k === 'sky' ? undefined : v));
+  } catch (_) {
+    return String(Math.random());
+  }
+}
+
+function mountSky(root, state) {
+  const first = state.sky && state.sky[0];
+  const key = JSON.stringify([
+    state.starsMode || 'still', !!state.shootingStars, !!state.private,
+    window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
+    first ? [first.x, first.y] : 0,
+  ]);
+  if (skyHandle && skyKey === key) {
+    root.append(skyHandle.canvas);
+  } else {
+    if (skyHandle) skyHandle.destroy();
+    skyHandle = createSky(root, {
+      stars: state.sky,
+      mode: state.starsMode || 'still',
+      shootingStars: state.shootingStars,
+      private: state.private,
+    });
+    skyKey = key;
+  }
+  // A web page covers the sky; don't animate what nobody can see (AUDIT-34).
+  skyHandle.setPaused(state.live === true && state.page === 'web');
+}
+
+function captureFocus(root) {
+  const a = document.activeElement;
+  if (!a || !root.contains(a) || !(a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return null;
+  return {
+    tag: a.tagName, cls: a.className, ph: a.placeholder, value: a.value,
+    start: a.selectionStart, end: a.selectionEnd,
+  };
+}
+
+function restoreFocus(root, f) {
+  if (!f) return;
+  const target = [...root.querySelectorAll(f.tag.toLowerCase())]
+    .find((e) => e.className === f.cls && e.placeholder === f.ph);
+  if (!target) return;
+  if (target.value !== f.value) target.value = f.value;
+  target.focus({ preventScroll: true });
+  try { target.setSelectionRange(f.start, f.end); } catch (_) { /* not a text field */ }
+}
+
+/**
+ * Live mode: ask for a render. Several calls in one task become one render, nothing is drawn if
+ * the state is unchanged, and the Helm's address field is never replaced while it is being edited.
+ */
+export function requestRender(root, state) {
+  if (renderQueued) return;
+  renderQueued = true;
+  Promise.resolve().then(() => {
+    renderQueued = false;
+    const a = document.activeElement;
+    if (a && a.classList && a.classList.contains('helm-input') && a.style.display !== 'none') {
+      a.addEventListener('blur', () => requestRender(root, state), { once: true });
+      return;
+    }
+    if (signature(state) === lastSignature) return;
+    renderShell(root, state);
+  });
+}
+
 /** Render the whole window for one state (a fixture now, live state later). */
 export function renderShell(root, state) {
   if (!window.__pageBasicsInit) {
     window.__pageBasicsInit = true;
     initPageBasicsShortcuts(() => document.getElementById('app'), () => state.activeTab);
   }
+  window.__renderCount += 1;
+  lastSignature = signature(state);
+  const focused = captureFocus(root);
   root.replaceChildren();
   root.classList.toggle('private', !!state.private);
   if (state.settings?.accent) {
@@ -155,16 +239,12 @@ export function renderShell(root, state) {
   }
   const railWidth = state.rail === 'expanded' ? 264 : 56;
   root.style.setProperty('--rail', `${railWidth}px`);
-  if (typeof window.odysseyBridge === 'function') {
+  if (typeof window.odysseyBridge === 'function' && railWidth !== lastRailWidth) {
+    lastRailWidth = railWidth;
     window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: railWidth }));
   }
 
-  createSky(root, {
-    stars: state.sky,
-    mode: state.starsMode || 'still',
-    shootingStars: state.shootingStars,
-    private: state.private,
-  });
+  mountSky(root, state);
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
   if (state.rail === 'collapsed' || state.rail === 'private') {
@@ -347,10 +427,30 @@ export function renderShell(root, state) {
     } else if (state.page === 'internal') {
       const pageName = state.pageName || state.helm?.address?.name;
       if (pageName === 'history' || state.history) {
-        renderHistory(panel, state.history, {
+        let historyView = state.history;
+        if (state.live) {
+          // Live data arrives as day groups from Rust (AUDIT-09).
+          const days = formatDayGroups(Array.isArray(state.history) ? state.history : []);
+          const rows = days.flatMap((d) => d.rows);
+          const branches = rows.filter((r) => r.branch).length;
+          historyView = {
+            days,
+            searchQuery: state.historyQuery || '',
+            side: {
+              title: days[0]?.label || 'History',
+              summary: rows.length
+                ? `${rows.length} ${rows.length === 1 ? 'page' : 'pages'}, ${branches} ${branches === 1 ? 'branch' : 'branches'}.`
+                : 'Nothing here yet. Pages you visit will appear on your trail.',
+            },
+          };
+        }
+        renderHistory(panel, historyView, {
           onSearch: (q) => {
+            state.historyQuery = q;
             if (typeof window.odysseyBridge === 'function') {
-              window.odysseyBridge(JSON.stringify({ type: 'search-history', query: q }));
+              window.odysseyBridge(JSON.stringify(q.trim()
+                ? { type: 'search-history', query: q }
+                : { type: 'query-history' }));
             }
           },
           onOpen: (url) => {
@@ -431,8 +531,12 @@ export function renderShell(root, state) {
     root.append(renderAnswerCard(state.answer));
   }
 
-  // Helm toolbar
-  root.append(renderHelm(state.helm || { kind: 'empty' }, {
+  // Helm toolbar. The download ring follows the active download (AUDIT-05).
+  const activeDl = (state.downloads || []).find((d) => d.active);
+  const helmState = activeDl && state.helm?.kind === 'address'
+    ? { ...state.helm, download: activeDl.progress ?? 0 }
+    : (state.helm || { kind: 'empty' });
+  root.append(renderHelm(helmState, {
     onBack: () => {
       if (typeof window.odysseyBridge === 'function') {
         window.odysseyBridge(JSON.stringify({ type: 'back', view: state.activeTab }));
@@ -498,7 +602,7 @@ export function renderShell(root, state) {
   }));
 
   // Downloads popover (Browsing board)
-  if (state.downloadsOpen && state.downloads) {
+  if (state.downloadsOpen && state.downloads && state.downloads.length) {
     root.append(renderDownloadsPopover(state.downloads, {
       onControl: (id, action) => {
         if (typeof window.odysseyBridge === 'function') {
@@ -515,7 +619,8 @@ export function renderShell(root, state) {
 
   root.append(
     notch(
-      state.shields ?? 0,
+      // Live: only a web page has a count (AUDIT-25).
+      state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
       () => {
         state.shieldsOpen = !state.shieldsOpen;
         renderShell(root, state);
@@ -539,6 +644,8 @@ export function renderShell(root, state) {
       renderShell(root, state);
     }));
   }
+
+  restoreFocus(root, focused);
 }
 
 export function renderShieldsPanel(state, onClose) {

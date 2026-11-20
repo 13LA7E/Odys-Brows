@@ -62,6 +62,7 @@ If your context window is small, read STATUS, then the one task, then only the s
 - **Don't guess facts.** If you're not sure about an API, version or behaviour, look it up in the official docs or the source, and say in the log what you checked. If you can't check, write "unverified" next to it. The owner wants this.
 - **Don't delete or rewrite** `design/source/`, `design/png/` or `docs/DECISIONS.md` history. Mark a decision Superseded; don't erase it.
 - **No new dependencies** without a one-line reason in the commit message. Prefer well-maintained crates and packages.
+- **A red CI run blocks the next push.** Check the latest GitHub Actions run on `Constellations` before pushing; fix a failing Linux or Windows job first.
 - **Keep the build warning-free** (`cargo clippy -- -D warnings` once the code exists).
 - **Don't run your tool's `/init`.** Kimi Code, OpenCode and Claude Code all have an init command that writes or overwrites `AGENTS.md`/`CLAUDE.md`. This file is maintained by hand.
 - **Don't add `GEMINI.md`, `.agents/rules/` or other tool-specific rule files.** Antigravity gives `GEMINI.md` priority over `AGENTS.md`, so a second file would quietly override this one. Every rule goes in this file.

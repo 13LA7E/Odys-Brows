@@ -1,28 +1,84 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { SHIELDS_COUNT } from './fixtures.js';
-import { renderShell } from './shell.js';
+import { renderShell, requestRender } from './shell.js';
 import { onMessage } from './bridge.js';
-import { initPageBasicsShortcuts } from './pagebasics.js';
+import { initPageBasicsShortcuts, focusHelm } from './pagebasics.js';
 import { generateSky } from './sky.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
   const winW = window.innerWidth || 1280;
   const winH = window.innerHeight || 800;
-  const sky = generateSky('newtab', winW, winH);
+  const isPrivate = new URLSearchParams(location.search).get('private') === '1';
+  const sky = generateSky(isPrivate ? 'private' : 'newtab', winW, winH);
 
   const state = {
-    rail: 'collapsed',
+    private: isPrivate,
+    rail: isPrivate ? 'private' : 'collapsed',
     tabs: [],
     activeTab: null,
     page: 'none',
     sky,
-    shields: SHIELDS_COUNT,
+    live: true,
+    shields: 0,
+    downloads: [],
     activeSpace: 0,
     helm: { kind: 'empty' },
   };
 
   initPageBasicsShortcuts(() => app, () => state.activeTab);
+
+  // Pages that show Rust-side data ask for it when they open (AUDIT-09).
+  let dataPage = '';
+  const renderShellLive = () => {
+    const name = state.page === 'internal' ? (state.pageName || '') : '';
+    if (name !== dataPage) {
+      dataPage = name;
+      if (name === 'history') {
+        state.historyQuery = '';
+        window.odysseyBridge?.(JSON.stringify({ type: 'query-history' }));
+      } else if (name === 'extensions') {
+        window.odysseyBridge?.(JSON.stringify({ type: 'get-extensions' }));
+      }
+    }
+    requestRender(app, state);
+  };
+
+  const fmtBytes = (n) => {
+    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
+    if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(n >= 100 * 1024 ** 2 ? 0 : 1)} MB`;
+    if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+    return `${n} B`;
+  };
+
+  const applyDownload = (msg) => {
+    let d = state.downloads.find((x) => x.id === String(msg.id));
+    if (!d) {
+      d = { id: String(msg.id), name: msg.file_name || 'Download', path: msg.path, received: 0, total: null };
+      state.downloads.unshift(d);
+    }
+    d.name = msg.file_name || d.name;
+    if (msg.path) d.path = msg.path;
+    if (msg.received > 0) d.received = msg.received;
+    if (msg.total != null) d.total = msg.total;
+    d.speed = msg.speed || 0;
+    d.cancellable = true;
+    if (msg.complete) {
+      d.active = false; d.done = true; d.failed = false; d.detail = 'Done';
+    } else if (msg.cancelled) {
+      d.active = false; d.done = false; d.failed = true; d.detail = 'Cancelled';
+    } else {
+      d.active = true; d.done = false;
+      d.progress = d.total ? Math.min(1, d.received / d.total) : 0;
+      const connections = state.settings?.connections || 8;
+      const seg = d.total && d.total >= 8 * 1024 * 1024 && connections > 1;
+      const parts = [d.total ? `${fmtBytes(d.received)} of ${fmtBytes(d.total)}` : fmtBytes(d.received)];
+      if (d.speed > 0) parts.push(`${fmtBytes(d.speed)}/s`);
+      if (seg) parts.push(`${connections} connections`);
+      d.detail = parts.join(', ');
+    }
+    if (state.downloads.length > 20) state.downloads.length = 20;
+    if (state.downloads.some((x) => x.active)) state.downloadsOpen = state.downloadsOpen ?? true;
+  };
 
   onMessage((msg) => {
     if (!msg || typeof msg !== 'object') return;
@@ -36,6 +92,7 @@ export async function startLive() {
         tab.url = msg.url;
       }
       state.activeTab = msg.view;
+      state.shields = 0;
       const url = tab.url || msg.url || '';
       if (url && url !== 'about:blank' && !url.startsWith('odyssey://')) {
         state.page = 'web';
@@ -54,7 +111,7 @@ export async function startLive() {
         state.page = 'none';
         state.helm = { kind: 'empty' };
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'view-shown') {
       state.activeTab = msg.view;
       const tab = state.tabs?.find((t) => t.id === msg.view);
@@ -76,13 +133,9 @@ export async function startLive() {
         state.page = 'none';
         state.helm = { kind: 'empty' };
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'helm-focus') {
-      const input = document.querySelector('.helm-search-input, .helm-address, .helm');
-      if (input) {
-        input.focus();
-        if (input.select) input.select();
-      }
+      focusHelm();
     } else if (msg.type === 'find-in-page-prompt') {
       import('./pagebasics.js').then(({ toggleFindBar }) => {
         toggleFindBar(app, msg.view || state.activeTab);
@@ -121,7 +174,7 @@ export async function startLive() {
           }
         }
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'url') {
       if (!state.tabs) state.tabs = [];
       let tab = state.tabs.find((t) => t.id === msg.view);
@@ -129,6 +182,7 @@ export async function startLive() {
         tab = { id: msg.view, title: 'New tab' };
         state.tabs.push(tab);
       }
+      if (tab.url !== msg.url && state.activeTab === msg.view) state.shields = 0;
       tab.url = msg.url;
       if (state.activeTab === msg.view || state.activeTab == null) {
         state.activeTab = msg.view;
@@ -159,13 +213,13 @@ export async function startLive() {
           }
         }
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'title') {
       if (state.tabs) {
         const tab = state.tabs.find((t) => t.id === msg.view);
         if (tab) tab.title = msg.title;
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'loading') {
       if (state.activeTab === msg.view && state.helm && state.helm.kind === 'address') {
         state.isLoading = msg.loading;
@@ -174,37 +228,40 @@ export async function startLive() {
       }
     } else if (msg.type === 'settings-loaded') {
       state.settings = msg.settings;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'space-changed') {
       state.activeSpace = msg.space;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'history-loaded') {
       state.history = msg.groups;
-      renderShell(app, state);
+      renderShellLive();
+    } else if (msg.type === 'download-progress') {
+      applyDownload(msg);
+      renderShellLive();
     } else if (msg.type === 'closed-tabs-updated') {
       state.closed = msg.tabs;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'shields-status') {
       if (state.activeTab === msg.view || state.activeTab == null) {
         state.shields = msg.count;
         state.shieldsEnabled = msg.enabled;
-        renderShell(app, state);
+        renderShellLive();
       }
     } else if (msg.type === 'tab-sleeping') {
       if (state.tabs) {
         const tab = state.tabs.find((t) => t.id === msg.view);
         if (tab) tab.sleeping = msg.sleeping;
       }
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'extensions-loaded') {
       state.extensions = msg.extensions;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'ai-config-loaded') {
       state.aiConfig = msg.config;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'ai-test-result') {
       state.aiTestResult = msg;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'ai-event') {
       if (msg.event) {
         if (!state.answer) {
@@ -224,32 +281,32 @@ export async function startLive() {
         }
         if (msg.event.type === 'delta') {
           state.answer.text += msg.event.data;
-          renderShell(app, state);
+          renderShellLive();
         } else if (msg.event.type === 'source') {
           const s = msg.event.data?.title || msg.event.data?.url;
           if (s && !state.answer.sources.includes(s)) {
             state.answer.sources.push(s);
-            renderShell(app, state);
+            renderShellLive();
           }
         } else if (msg.event.type === 'error') {
           state.answer.text = `Error: ${msg.event.data}`;
-          renderShell(app, state);
+          renderShellLive();
         }
       }
     } else if (msg.type === 'vault-loaded') {
       state.vaultEntries = msg.entries;
-      renderShell(app, state);
+      renderShellLive();
     } else if (msg.type === 'vault-credentials') {
       state.revealedPassword = { id: msg.id, username: msg.username, password: msg.password };
-      renderShell(app, state);
+      renderShellLive();
     }
   });
 
   renderShell(app, state);
 
   window.addEventListener('resize', () => {
-    state.sky = generateSky('newtab', window.innerWidth || 1280, window.innerHeight || 800);
-    renderShell(app, state);
+    state.sky = generateSky(isPrivate ? 'private' : 'newtab', window.innerWidth || 1280, window.innerHeight || 800);
+    renderShellLive();
   });
 
   if (typeof window.odysseyBridge === 'function') {

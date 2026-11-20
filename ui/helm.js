@@ -369,7 +369,18 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
         const action = item.paused ? 'resume' : 'pause';
         onControl?.(item.id || item.path, action);
       });
-      row.append(info, pauseBtn);
+      if (item.cancellable) {
+        const cancelBtn = el('button');
+        cancelBtn.setAttribute('aria-label', 'Cancel download');
+        cancelBtn.style.cssText = 'border:0;background:none;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);';
+        cancelBtn.append(ico('M6 6l12 12M18 6L6 18', 16));
+        cancelBtn.addEventListener('click', () => onControl?.(item.id || item.path, 'cancel'));
+        row.append(info, pauseBtn, cancelBtn);
+      } else {
+        row.append(info, pauseBtn);
+      }
+    } else if (item.failed) {
+      row.append(info);
     } else {
       const openBtn = el('button', null, 'Open');
       openBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;font-size:13px;color:var(--accent);padding:6px 2px;';

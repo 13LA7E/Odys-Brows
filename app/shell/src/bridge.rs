@@ -71,6 +71,8 @@ pub enum FromUi {
     /// Window controls from the notch (P2-02).
     MinimizeWindow,
     MaximizeWindow,
+    /// Open a private window (a second process with `--private`, AUDIT-26).
+    OpenPrivateWindow,
     CloseWindow,
     /// Rail width change from collapse/expand (P2-05).
     SetRailWidth {
@@ -302,6 +304,7 @@ pub enum ToUi {
         speed: i64,
         complete: bool,
         cancelled: bool,
+        path: String,
     },
     HistoryLoaded {
         groups: Vec<history::DayGroup>,
@@ -422,6 +425,7 @@ pub fn event_to_ui(e: &Event) -> Option<ToUi> {
             speed: info.bytes_per_second,
             complete: info.complete,
             cancelled: info.cancelled,
+            path: info.path,
         },
         _ => return None,
     })
@@ -584,5 +588,133 @@ mod tests {
             }),
             None
         );
+    }
+
+    /// Every message the UI source sends must be accepted by `FromUi`: known type, known field
+    /// names. (A dash/underscore mix-up once silently broke find-in-page.)
+    #[test]
+    fn ui_messages_match_the_bridge_contract() {
+        let ui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&ui).unwrap().filter_map(Result::ok) {
+            let path = entry.path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.extension().and_then(|e| e.to_str()) != Some("js")
+                || name == "fixtures.js"
+                || name == "selftest.js"
+            {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).unwrap();
+            for (ty, keys) in sent_messages(&src) {
+                checked += 1;
+                let bare = format!(r#"{{"type":"{ty}"}}"#);
+                if let Err(e) = parse(&bare) {
+                    assert!(
+                        !e.contains("unknown variant"),
+                        "{name}: unknown message type '{ty}'"
+                    );
+                }
+                for key in keys {
+                    let msg = format!(r#"{{"type":"{ty}","{key}":null}}"#);
+                    if let Err(e) = parse(&msg) {
+                        assert!(
+                            !e.contains("unknown field"),
+                            "{name}: message '{ty}' sends field '{key}' that Rust does not accept ({e})"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            checked > 20,
+            "expected to find UI messages, found {checked}"
+        );
+    }
+
+    /// Finds `{ type: 'x', a, b: 1 }` objects passed to `odysseyBridge(JSON.stringify(` or `send(`.
+    fn sent_messages(src: &str) -> Vec<(String, Vec<String>)> {
+        let bytes = src.as_bytes();
+        let mut out = Vec::new();
+        let mut from = 0;
+        while let Some(rel) = src[from..].find("type: '") {
+            let at = from + rel;
+            from = at + 7;
+            let end_ty = match src[from..].find('\'') {
+                Some(e) => from + e,
+                None => break,
+            };
+            let ty = src[from..end_ty].to_string();
+            // Walk back to the unmatched `{`.
+            let mut depth = 0i32;
+            let mut start = None;
+            for i in (0..at).rev() {
+                match bytes[i] {
+                    b'}' => depth += 1,
+                    b'{' if depth == 0 => {
+                        start = Some(i);
+                        break;
+                    }
+                    b'{' => depth -= 1,
+                    _ => {}
+                }
+            }
+            let Some(start) = start else { continue };
+            let before = &src[start.saturating_sub(40)..start];
+            if !(before.contains("JSON.stringify(") || before.trim_end().ends_with("send(")) {
+                continue;
+            }
+            // Walk forward to the matching `}` collecting top-level keys.
+            let mut depth = 0i32;
+            let mut keys = Vec::new();
+            let mut token = String::new();
+            let mut quote: Option<u8> = None;
+            let mut expecting_key = true;
+            for &b in &bytes[start + 1..] {
+                if let Some(q) = quote {
+                    if b == q {
+                        quote = None;
+                        if depth == 0 && expecting_key && q != b'`' {
+                            // quoted key such as 'match-case'
+                        }
+                    } else if depth == 0 && expecting_key {
+                        token.push(b as char);
+                    }
+                    continue;
+                }
+                match b {
+                    b'\'' | b'"' | b'`' => quote = Some(b),
+                    b'{' | b'(' | b'[' => depth += 1,
+                    b'}' | b')' | b']' => {
+                        if depth == 0 {
+                            let t = token.trim().to_string();
+                            if expecting_key && !t.is_empty() {
+                                keys.push(t);
+                            }
+                            break;
+                        }
+                        depth -= 1;
+                    }
+                    b':' if depth == 0 && expecting_key => {
+                        keys.push(token.trim().to_string());
+                        token.clear();
+                        expecting_key = false;
+                    }
+                    b',' if depth == 0 => {
+                        let t = token.trim().to_string();
+                        if expecting_key && !t.is_empty() {
+                            keys.push(t); // shorthand `{ id }`
+                        }
+                        token.clear();
+                        expecting_key = true;
+                    }
+                    _ if depth == 0 && expecting_key => token.push(b as char),
+                    _ => {}
+                }
+            }
+            keys.retain(|k| k != "type" && !k.is_empty());
+            out.push((ty, keys));
+        }
+        out
     }
 }

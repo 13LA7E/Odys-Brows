@@ -848,6 +848,7 @@ wrap_download_handler! {
                 complete: false,
                 cancelled: false,
                 interrupted: false,
+                path: target_str.clone(),
             }));
 
             if segdl::enabled() && (url.starts_with("http://") || url.starts_with("https://")) {
@@ -860,6 +861,7 @@ wrap_download_handler! {
                 let view_id = self.id;
                 let url_for_emit = url.clone();
                 let file_name_for_emit = file_name;
+                let path_for_emit = target_str.clone();
                 let emit_fn: segdl::Emit = Arc::new(move |ev, payload| {
                     if ev == "download-started" {
                         let total = payload.get("total").and_then(|v| v.as_i64());
@@ -874,6 +876,7 @@ wrap_download_handler! {
                             complete: false,
                             cancelled: false,
                             interrupted: false,
+                            path: path_for_emit.clone(),
                         }));
                     } else if ev == "download-progress" {
                         let bytes = payload.get("bytes").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -893,6 +896,7 @@ wrap_download_handler! {
                             complete: false,
                             cancelled: false,
                             interrupted: false,
+                            path: path_for_emit.clone(),
                         }));
                     } else if ev == "download-finished" {
                         let success = payload
@@ -910,6 +914,7 @@ wrap_download_handler! {
                             complete: success,
                             cancelled: !success,
                             interrupted: false,
+                            path: path_for_emit.clone(),
                         }));
                     }
                 });
@@ -986,6 +991,7 @@ wrap_download_handler! {
                 complete,
                 cancelled,
                 interrupted,
+                path: full_path.clone(),
             }));
         }
     }
@@ -1112,6 +1118,11 @@ wrap_keyboard_handler! {
                     }
                     if let Some(s) = is_keyboard_shortcut { *s = 1; }
                     return 1;
+                } else if key == 0x4E && is_shift {
+                    // Ctrl+Shift+N
+                    emit(Event::ShortcutNewPrivateWindow);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
                 } else if key == 0x57 || key == 0x73 {
                     // Ctrl+W / Ctrl+F4
                     emit(Event::ShortcutCloseTab { view: self.id });
@@ -1185,7 +1196,12 @@ wrap_keyboard_handler! {
                     return 1;
                 }
             } else if !is_ctrl && !is_alt {
-                if key == 0x74 {
+                if key == 0x75 {
+                    // F6 focuses the address bar without Ctrl too
+                    emit(Event::ShortcutFocusAddress);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x74 {
                     // F5
                     emit(Event::ShortcutReload { view: self.id });
                     if let Some(s) = is_keyboard_shortcut { *s = 1; }
@@ -1266,6 +1282,21 @@ impl CefEngine {
                 })
                 .unwrap_or((0, 0))
         })
+    }
+
+    /// Move keyboard focus from a page window to our UI (Ctrl+L, F6). Pages are separate
+    /// top-level windows, so the UI's own `focus()` can't take OS focus by itself (AUDIT-08).
+    pub fn focus_ui(&self) {
+        let (main, ui) = STATE.with(|s| {
+            let st = s.borrow();
+            (st.main.clone(), st.ui.clone())
+        });
+        if let Some(main) = main {
+            main.activate();
+        }
+        if let Some(ui) = ui {
+            ui.request_focus();
+        }
     }
 
     /// Close the main window (and with it every page), ending [`run`].
@@ -1669,6 +1700,15 @@ wrap_app! {
                     Some(&CefString::from("enable-features")),
                     Some(&CefString::from("IntensiveWakeUpThrottling,WebContentsDiscard")),
                 );
+                // AUDIT-01: page views are separate top-level windows that cover our UI window.
+                // Chromium's native occlusion tracking would treat the UI as hidden and stop
+                // painting it, leaving the Helm and notch blank. Keep it painting.
+                cmd.append_switch_with_value(
+                    Some(&CefString::from("disable-features")),
+                    Some(&CefString::from("CalculateNativeWinOcclusion")),
+                );
+                cmd.append_switch(Some(&CefString::from("disable-backgrounding-occluded-windows")));
+                cmd.append_switch(Some(&CefString::from("disable-renderer-backgrounding")));
                 cmd.append_switch_with_value(
                     Some(&CefString::from("js-flags")),
                     Some(&CefString::from("--max_old_space_size=512")),

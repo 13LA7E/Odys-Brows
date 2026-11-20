@@ -111,12 +111,42 @@ pub struct ClosedTabRecord {
     pub opener: Option<ViewId>,
 }
 
+const AI_KEY_NAME: &str = "ai-api-key";
+
 fn load_ai_config(dir: &Path) -> ai::AiConfig {
     let path = dir.join("ai.json");
-    let Ok(data) = std::fs::read_to_string(path) else {
-        return ai::AiConfig::default();
-    };
-    serde_json::from_str(&data).unwrap_or_default()
+    let mut config: ai::AiConfig = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default();
+    // The key lives in the OS secure store, never in ai.json (D-014).
+    config.api_key = vault::secrets::get(AI_KEY_NAME).ok().flatten();
+    config
+}
+
+/// Applies a config sent by the UI. A save with no key keeps the stored key; an explicit
+/// empty string clears it. Returns an error text if the secure store failed.
+fn apply_ai_config(
+    current: &ai::AiConfig,
+    mut incoming: ai::AiConfig,
+) -> (ai::AiConfig, Option<String>) {
+    let mut error = None;
+    match incoming.api_key.take() {
+        None => incoming.api_key = current.api_key.clone(),
+        Some(k) if k.trim().is_empty() => {
+            if let Err(e) = vault::secrets::delete(AI_KEY_NAME) {
+                error = Some(e);
+            }
+        }
+        Some(k) => match vault::secrets::set(AI_KEY_NAME, k.trim()) {
+            Ok(()) => incoming.api_key = Some(k.trim().to_string()),
+            Err(e) => {
+                error = Some(e);
+                incoming.api_key = current.api_key.clone();
+            }
+        },
+    }
+    (incoming, error)
 }
 
 fn save_ai_config(dir: &Path, config: &ai::AiConfig) {
@@ -144,7 +174,17 @@ struct Shell {
     ai_client: Arc<ai::AiClient>,
     ai_config: ai::AiConfig,
     ai_cancel: Arc<AtomicBool>,
+    zoom_index: HashMap<ViewId, usize>,
+    download_paths: HashMap<u32, String>,
+    last_persist: std::cell::Cell<Option<std::time::Instant>>,
+    persist_dirty: std::cell::Cell<bool>,
 }
+
+/// Chrome's zoom steps (percent / 100).
+const ZOOM_LEVELS: [f64; 15] = [
+    0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
+];
+const ZOOM_DEFAULT: usize = 7;
 
 impl Default for Shell {
     fn default() -> Self {
@@ -168,11 +208,39 @@ impl Default for Shell {
             ai_client: Arc::new(ai::AiClient::new()),
             ai_config: ai_cfg,
             ai_cancel: Arc::new(AtomicBool::new(false)),
+            zoom_index: HashMap::new(),
+            download_paths: HashMap::new(),
+            last_persist: std::cell::Cell::new(None),
+            persist_dirty: std::cell::Cell::new(false),
         }
     }
 }
 
 impl Shell {
+    /// Moves one Chrome zoom step (`dir` < 0 out, > 0 in, 0 reset) and returns the factor.
+    fn zoom_step(&mut self, view: ViewId, dir: i32) -> f64 {
+        let cur = self.zoom_index.get(&view).copied().unwrap_or(ZOOM_DEFAULT);
+        let next = match dir {
+            0 => ZOOM_DEFAULT,
+            d if d > 0 => (cur + 1).min(ZOOM_LEVELS.len() - 1),
+            _ => cur.saturating_sub(1),
+        };
+        self.zoom_index.insert(view, next);
+        ZOOM_LEVELS[next]
+    }
+
+    fn space_tabs(&self) -> Vec<ViewId> {
+        self.tabs
+            .iter()
+            .filter(|t| t.space == self.active_space)
+            .map(|t| t.view)
+            .collect()
+    }
+
+    fn is_sleeping(&self, view: ViewId) -> bool {
+        self.tabs.iter().any(|t| t.view == view && t.sleeping)
+    }
+
     fn contains(&self, view: ViewId) -> bool {
         self.tabs.iter().any(|t| t.view == view)
     }
@@ -250,7 +318,7 @@ impl Shell {
     }
 
     fn relight_last_closed(&mut self) -> Option<(String, Option<ViewId>)> {
-        let record = self.closed_tabs.pop_back()?;
+        let record = self.closed_tabs.pop_front()?;
         Some((record.url, record.opener))
     }
 
@@ -281,10 +349,28 @@ impl Shell {
             .collect()
     }
 
+    /// Marks the session changed and writes it at most about once a second; `flush_session`
+    /// (called by a timer) writes what is still pending.
     fn persist_session(&self) {
         if self.is_private {
             return;
         }
+        self.persist_dirty.set(true);
+        let due = self
+            .last_persist
+            .get()
+            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(1));
+        if due {
+            self.flush_session();
+        }
+    }
+
+    fn flush_session(&self) {
+        if self.is_private || !self.persist_dirty.get() {
+            return;
+        }
+        self.persist_dirty.set(false);
+        self.last_persist.set(Some(std::time::Instant::now()));
         let session = self.to_session_data();
         let dir = profile_dir();
         if let Err(e) = save_session_atomic(&dir, &session) {
@@ -385,6 +471,15 @@ impl Shell {
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
+        if self.is_sleeping(view) {
+            // The engine loads about:blank to free memory; the real URL stays ours.
+            return;
+        }
+        if let Some(name) = url.strip_prefix("odyssey://") {
+            let title = internal_page_title(name);
+            self.tab_titles.insert(view, title.clone());
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::Title { view, title }));
+        }
         if !url.is_empty() {
             self.tab_urls.insert(view, url.to_string());
             CefEngine.send_to_ui(&bridge::to_json(&ToUi::Url {
@@ -431,6 +526,9 @@ impl Shell {
     }
 
     fn on_title_changed(&mut self, view: ViewId, title: &str) {
+        if self.is_sleeping(view) {
+            return;
+        }
         self.tab_titles.insert(view, title.to_string());
         if self.is_private {
             return;
@@ -512,10 +610,60 @@ impl Shell {
         }
     }
 
+    /// Creates a tab. A background tab is created without being shown.
+    fn open_tab(
+        &mut self,
+        engine: &mut CefEngine,
+        url: &str,
+        opener: Option<ViewId>,
+        background: bool,
+    ) {
+        let view = engine.create_view(if url.starts_with("odyssey://") {
+            ""
+        } else {
+            url
+        });
+        self.tabs
+            .push(Tab::with_details(view, opener, self.active_space, false));
+        if !url.is_empty() {
+            self.tab_urls.insert(view, url.to_string());
+        }
+        engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
+            view,
+            opener,
+            url: (!url.is_empty()).then(|| url.to_string()),
+        }));
+        if background {
+            engine.set_visible(view, false);
+        } else {
+            self.show(engine, view);
+            engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view }));
+        }
+        if !url.is_empty() {
+            self.on_url_changed(view, url);
+        }
+        self.persist_session();
+    }
+
     fn handle(&mut self, engine: &mut CefEngine, message: FromUi) {
         let known = |s: &Shell, v: ViewId| s.contains(v);
         match message {
             FromUi::Open { url, opener } => {
+                // Internal pages are single: reuse the open one instead of adding another.
+                if url.starts_with("odyssey://") {
+                    let existing = self
+                        .tabs
+                        .iter()
+                        .find(|t| {
+                            self.tab_urls.get(&t.view).map(String::as_str) == Some(url.as_str())
+                        })
+                        .map(|t| t.view);
+                    if let Some(v) = existing {
+                        self.show(engine, v);
+                        engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: v }));
+                        return;
+                    }
+                }
                 let view = engine.create_view(if url.starts_with("odyssey://") {
                     ""
                 } else {
@@ -603,29 +751,25 @@ impl Shell {
                 }
             }
             FromUi::NextTab => {
-                if !self.tabs.is_empty() {
+                let ids = self.space_tabs();
+                if !ids.is_empty() {
                     let cur_idx = self
                         .shown
-                        .and_then(|cur| self.tabs.iter().position(|t| t.view == cur))
+                        .and_then(|cur| ids.iter().position(|v| *v == cur))
                         .unwrap_or(0);
-                    let next_idx = (cur_idx + 1) % self.tabs.len();
-                    let target = self.tabs[next_idx].view;
+                    let target = ids[(cur_idx + 1) % ids.len()];
                     self.show(engine, target);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: target }));
                 }
             }
             FromUi::PrevTab => {
-                if !self.tabs.is_empty() {
+                let ids = self.space_tabs();
+                if !ids.is_empty() {
                     let cur_idx = self
                         .shown
-                        .and_then(|cur| self.tabs.iter().position(|t| t.view == cur))
+                        .and_then(|cur| ids.iter().position(|v| *v == cur))
                         .unwrap_or(0);
-                    let prev_idx = if cur_idx == 0 {
-                        self.tabs.len() - 1
-                    } else {
-                        cur_idx - 1
-                    };
-                    let target = self.tabs[prev_idx].view;
+                    let target = ids[(cur_idx + ids.len() - 1) % ids.len()];
                     self.show(engine, target);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: target }));
                 }
@@ -635,10 +779,14 @@ impl Shell {
                     engine.close_view(v);
                 }
             }
+            FromUi::OpenPrivateWindow => open_private_window(),
             FromUi::MinimizeWindow => engine.minimize_window(),
             FromUi::MaximizeWindow => engine.toggle_maximize_window(),
             FromUi::CloseWindow => engine.close_window(),
             FromUi::SetRailWidth { width } => {
+                if width == self.rail_width {
+                    return;
+                }
                 self.rail_width = width;
                 if let Some(view) = self.shown {
                     engine.set_bounds(view, page_bounds(engine, self.rail_width));
@@ -688,10 +836,21 @@ impl Shell {
                 }
             }
             FromUi::DownloadControl { id, action } => {
-                if !segdl::control(&id, &action) {
-                    let _ = id
-                        .parse::<u32>()
-                        .map(|dl_id| engine.download_control(dl_id, &action));
+                // The UI sends the engine's numeric id; our multi-connection downloader is
+                // keyed by the file path, so look the path up first (AUDIT-05).
+                match id.parse::<u32>() {
+                    Ok(n) => {
+                        let handled = self
+                            .download_paths
+                            .get(&n)
+                            .is_some_and(|p| segdl::control(p, &action));
+                        if !handled {
+                            engine.download_control(n, &action);
+                        }
+                    }
+                    Err(_) => {
+                        segdl::control(&id, &action);
+                    }
                 }
             }
             FromUi::OpenDownload { path } => {
@@ -784,7 +943,12 @@ impl Shell {
                 let infos = self.closed_tab_infos();
                 engine.send_to_ui(&bridge::to_json(&ToUi::ClosedTabsUpdated { tabs: infos }));
             }
-            FromUi::SetZoom { view, factor } if known(self, view) => engine.set_zoom(view, factor),
+            FromUi::SetZoom { view, factor } if known(self, view) => {
+                if let Some(i) = ZOOM_LEVELS.iter().position(|z| (z - factor).abs() < 0.01) {
+                    self.zoom_index.insert(view, i);
+                }
+                engine.set_zoom(view, factor)
+            }
             FromUi::FindInPage {
                 view,
                 text,
@@ -886,12 +1050,21 @@ impl Shell {
                 engine.send_to_ui(&bridge::to_json(&ToUi::AiConfigLoaded { config: ui_cfg }));
             }
             FromUi::AiSaveConfig { config } => {
-                self.ai_config = config;
-                save_ai_config(&profile_dir(), &self.ai_config);
+                let (cfg, err) = apply_ai_config(&self.ai_config, config);
+                if let Some(e) = err {
+                    eprintln!("AI key: {e}");
+                }
+                self.ai_config = cfg;
+                if !self.is_private {
+                    save_ai_config(&profile_dir(), &self.ai_config);
+                }
                 let ui_cfg = ai::AiSettingsUi::from(&self.ai_config);
                 engine.send_to_ui(&bridge::to_json(&ToUi::AiConfigLoaded { config: ui_cfg }));
             }
-            FromUi::AiTestConnection { config } => {
+            FromUi::AiTestConnection { mut config } => {
+                if config.api_key.as_deref().is_none_or(|k| k.is_empty()) {
+                    config.api_key = self.ai_config.api_key.clone();
+                }
                 let client = self.ai_client.clone();
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
@@ -1027,7 +1200,11 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         let mut s = shell.borrow_mut();
         let mut created_views = Vec::new();
         for tab in &saved_session.tabs {
-            let view = CefEngine.create_view(&tab.url);
+            let view = CefEngine.create_view(if tab.url.starts_with("odyssey://") {
+                ""
+            } else {
+                &tab.url
+            });
             created_views.push(view);
             s.tabs
                 .push(Tab::with_details(view, None, tab.space, tab.pinned));
@@ -1052,7 +1229,8 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         }
     }
 
-    let pending_events = Rc::new(RefCell::new(Vec::new()));
+    let pending_events: Rc<RefCell<VecDeque<engine_api::Event>>> =
+        Rc::new(RefCell::new(VecDeque::new()));
     let pending_events_sink = pending_events.clone();
     let events_shell = shell.clone();
     fn dispatch_engine_event(s: &mut Shell, event: &engine_api::Event) {
@@ -1073,6 +1251,11 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             }
             engine_api::Event::TitleChanged { view, title } => {
                 s.on_title_changed(*view, title);
+            }
+            engine_api::Event::Download(info) => {
+                if !info.path.is_empty() {
+                    s.download_paths.insert(info.id, info.path.clone());
+                }
             }
             engine_api::Event::AudioChanged { view, playing } => {
                 if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
@@ -1106,7 +1289,9 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::ShortcutPrevTab => {
                 s.handle(&mut CefEngine, FromUi::PrevTab);
             }
+            engine_api::Event::ShortcutNewPrivateWindow => open_private_window(),
             engine_api::Event::ShortcutFocusAddress => {
+                CefEngine.focus_ui();
                 CefEngine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
             }
             engine_api::Event::ShortcutOpenHistory => {
@@ -1140,13 +1325,29 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 CefEngine.print(*view);
             }
             engine_api::Event::ShortcutZoomIn { view } => {
-                CefEngine.set_zoom(*view, 1.1);
+                let f = s.zoom_step(*view, 1);
+                CefEngine.set_zoom(*view, f);
             }
             engine_api::Event::ShortcutZoomOut { view } => {
-                CefEngine.set_zoom(*view, 0.9);
+                let f = s.zoom_step(*view, -1);
+                CefEngine.set_zoom(*view, f);
             }
             engine_api::Event::ShortcutZoomReset { view } => {
-                CefEngine.set_zoom(*view, 1.0);
+                let f = s.zoom_step(*view, 0);
+                CefEngine.set_zoom(*view, f);
+            }
+            engine_api::Event::NewWindowRequested {
+                opener,
+                url,
+                kind,
+                user_gesture,
+            } => {
+                // Pop-ups nobody asked for are blocked (EDGE_CASES §2).
+                if !*user_gesture || url.is_empty() {
+                    return;
+                }
+                let background = *kind == engine_api::NewWindowKind::BackgroundTab;
+                s.open_tab(&mut CefEngine, url, Some(*opener), background);
             }
             _ => {}
         }
@@ -1159,7 +1360,9 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::UrlChanged { .. }
                 | engine_api::Event::TitleChanged { .. }
                 | engine_api::Event::AudioChanged { .. }
+                | engine_api::Event::Download(_)
                 | engine_api::Event::ShortcutNewTab
+                | engine_api::Event::ShortcutNewPrivateWindow
                 | engine_api::Event::ShortcutCloseTab { .. }
                 | engine_api::Event::ShortcutReload { .. }
                 | engine_api::Event::ShortcutBack { .. }
@@ -1176,15 +1379,27 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::ShortcutZoomIn { .. }
                 | engine_api::Event::ShortcutZoomOut { .. }
                 | engine_api::Event::ShortcutZoomReset { .. }
+                | engine_api::Event::NewWindowRequested { .. }
         )
     };
 
     engine.set_event_sink(move |event| {
+        let sleeping_noise = match &event {
+            engine_api::Event::UrlChanged { view, .. }
+            | engine_api::Event::TitleChanged { view, .. } => events_shell
+                .try_borrow()
+                .map(|s| s.is_sleeping(*view))
+                .unwrap_or(false),
+            _ => false,
+        };
+        if sleeping_noise {
+            return;
+        }
         if is_shell_event(&event) {
             if let Ok(mut s) = events_shell.try_borrow_mut() {
                 dispatch_engine_event(&mut s, &event);
             } else {
-                pending_events_sink.borrow_mut().push(event.clone());
+                pending_events_sink.borrow_mut().push_back(event.clone());
             }
         }
         if let Some(message) = bridge::event_to_ui(&event) {
@@ -1200,7 +1415,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             Err(reason) => eprintln!("bridge: ignored a malformed message: {reason}"),
         }
         loop {
-            let next_event = drain_pending.borrow_mut().pop();
+            let next_event = drain_pending.borrow_mut().pop_front();
             match next_event {
                 Some(ev) => {
                     if let Ok(mut s) = ui_shell.try_borrow_mut() {
@@ -1221,6 +1436,16 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             schedule_sleep_timer(timer_shell);
         });
     }
+    fn schedule_flush_timer(shell: Rc<RefCell<Shell>>) {
+        let timer_shell = shell.clone();
+        CefEngine.after(1_000, move || {
+            if let Ok(s) = timer_shell.try_borrow() {
+                s.flush_session();
+            }
+            schedule_flush_timer(timer_shell);
+        });
+    }
+    schedule_flush_timer(shell.clone());
     schedule_sleep_timer(shell);
 }
 
@@ -1253,7 +1478,7 @@ fn main() {
             ui_suffix: if ipc_selftest {
                 "#ipc-selftest".into()
             } else if is_private {
-                "?fixture=Private".into()
+                "?private=1".into()
             } else {
                 String::new()
             },
@@ -1402,6 +1627,29 @@ pub fn load_session_or_default(dir: &Path) -> SessionData {
     }
 }
 
+/// Tab title for an `odyssey://<name>` page.
+fn internal_page_title(name: &str) -> String {
+    let name = name.trim_matches('/');
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        None => "New tab".to_string(),
+    }
+}
+
+/// A private window is its own process with an in-memory profile, so nothing it does can reach
+/// the normal profile on disk.
+fn open_private_window() {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if let Err(e) = std::process::Command::new(exe).arg("--private").spawn() {
+                eprintln!("Couldn't open a private window: {e}");
+            }
+        }
+        Err(e) => eprintln!("Couldn't find our own program: {e}"),
+    }
+}
+
 /// Reveal a downloaded file in the system file explorer (EDGE_CASES §5).
 pub fn show_in_folder(path: &Path) -> Result<(), String> {
     if !path.exists() {
@@ -1426,32 +1674,127 @@ pub fn show_in_folder(path: &Path) -> Result<(), String> {
     }
 }
 
+/// File types that run code when opened. These are never opened from the Downloads list
+/// (EDGE_CASES §4 external programs): the user can use Show in folder instead.
+pub fn is_executable_name(path: &Path) -> bool {
+    const RISKY: &[&str] = &[
+        "exe", "com", "bat", "cmd", "msi", "scr", "pif", "lnk", "vbs", "vbe", "js", "jse", "wsf",
+        "wsh", "ps1", "psm1", "reg", "hta", "cpl", "jar", "sh", "desktop", "appimage", "run",
+        "dll", "msc", "gadget",
+    ];
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| RISKY.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// The program and argument used to open a file. The path is passed as one argument and never
+/// goes through a shell, so `&`, `^` or `%` in a file name can't start anything else.
+pub fn open_command(path: &Path) -> (&'static str, std::ffi::OsString) {
+    if cfg!(windows) {
+        ("explorer.exe", path.as_os_str().to_owned())
+    } else {
+        ("xdg-open", path.as_os_str().to_owned())
+    }
+}
+
 /// Open a downloaded file with the default associated application (EDGE_CASES §5).
 pub fn open_file(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err("File does not exist".into());
     }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &path.to_string_lossy()])
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        Ok(())
+    if is_executable_name(path) {
+        return Err("Programs aren't opened from Downloads. Use Show in folder instead.".into());
     }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
+    let (program, arg) = open_command(path);
+    std::process::Command::new(program)
+        .arg(arg)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn internal_pages_get_titles() {
+        assert_eq!(internal_page_title("settings"), "Settings");
+        assert_eq!(internal_page_title("history/"), "History");
+    }
+
+    #[test]
+    fn relight_last_closed_reopens_the_most_recent() {
+        let mut shell = Shell::default();
+        for (v, url) in [(1, "https://one.example"), (2, "https://two.example")] {
+            shell.tabs.push(Tab::new(v, None));
+            shell.tab_urls.insert(v, url.into());
+            shell.close_tab(v);
+        }
+        let (url, _) = shell.relight_last_closed().unwrap();
+        assert_eq!(url, "https://two.example");
+    }
+
+    #[test]
+    fn zoom_steps_through_chrome_levels() {
+        let mut shell = Shell::default();
+        assert_eq!(shell.zoom_step(1, 1), 1.1);
+        assert_eq!(shell.zoom_step(1, 1), 1.25);
+        assert_eq!(shell.zoom_step(1, -1), 1.1);
+        assert_eq!(shell.zoom_step(1, 0), 1.0);
+        assert_eq!(shell.zoom_step(2, -1), 0.9);
+    }
+
+    #[test]
+    fn filename_with_ampersand_is_one_argument_and_programs_are_refused() {
+        let p = Path::new("C:\\Downloads\\a&calc.exe&.txt");
+        let (program, arg) = open_command(p);
+        assert!(program == "explorer.exe" || program == "xdg-open");
+        assert_eq!(arg, p.as_os_str());
+        assert!(!is_executable_name(p));
+        assert!(is_executable_name(Path::new("setup.EXE")));
+        assert!(is_executable_name(Path::new("run.bat")));
+    }
+
+    #[test]
+    fn sleeping_tab_keeps_its_url() {
+        let mut shell = Shell::default();
+        let mut t = Tab::new(1, None);
+        t.sleeping = true;
+        shell.tabs.push(t);
+        shell.tab_urls.insert(1, "https://real.example/page".into());
+        shell.on_url_changed(1, "about:blank");
+        shell.on_title_changed(1, "");
+        assert_eq!(shell.tab_urls[&1], "https://real.example/page");
+    }
+
+    #[test]
+    fn next_tab_stays_in_the_active_space() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab::with_details(1, None, 0, false));
+        shell.tabs.push(Tab::with_details(2, None, 1, false));
+        shell.tabs.push(Tab::with_details(3, None, 0, false));
+        shell.active_space = 0;
+        assert_eq!(shell.space_tabs(), vec![1, 3]);
+    }
+
+    #[test]
+    fn ai_save_without_key_keeps_the_existing_key() {
+        let current = ai::AiConfig {
+            api_key: Some("sk-existing".into()),
+            ..ai::AiConfig::default()
+        };
+        let incoming = ai::AiConfig {
+            model: "m".into(),
+            api_key: None,
+            ..ai::AiConfig::default()
+        };
+        let (merged, err) = apply_ai_config(&current, incoming);
+        assert!(err.is_none());
+        assert_eq!(merged.api_key.as_deref(), Some("sk-existing"));
+        assert_eq!(merged.model, "m");
+    }
 
     #[test]
     fn save_and_load_settings_round_trip() {

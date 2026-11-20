@@ -36,7 +36,12 @@ if (-not $cefDirs) {
 if ($cefDirs) {
     $cefDir = $cefDirs[0].FullName
     Write-Host "Found CEF binaries at: $cefDir"
-    Copy-Item (Join-Path $cefDir "*") -Destination $payloadDir -Recurse -Force
+    # Runtime files only (AUDIT-24): the SDK folders, import library and bootstrap tools are build-time.
+    $devOnly = @('include', 'cmake', 'libcef_dll', 'CMakeLists.txt', 'archive.json', 'bootstrap.exe', 'bootstrapc.exe', '*.lib')
+    Get-ChildItem $cefDir -Force | Where-Object {
+        $n = $_.Name
+        -not ($devOnly | Where-Object { $n -like $_ })
+    } | ForEach-Object { Copy-Item $_.FullName -Destination $payloadDir -Recurse -Force }
 } else {
     Write-Warning "CEF runtime files not located automatically. Ensure libcef.dll is in the payload."
 }

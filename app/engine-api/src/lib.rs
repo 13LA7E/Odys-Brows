@@ -60,6 +60,8 @@ pub struct DownloadInfo {
     pub complete: bool,
     pub cancelled: bool,
     pub interrupted: bool,
+    /// Where the file is (or will be) saved.
+    pub path: String,
 }
 
 /// Something that happened in a page view. Delivered on the UI thread, in order.
@@ -164,6 +166,7 @@ pub enum Event {
         view: ViewId,
     },
     ShortcutRelightClosedTab,
+    ShortcutNewPrivateWindow,
     ShortcutPrint {
         view: ViewId,
     },

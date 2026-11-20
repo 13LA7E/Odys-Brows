@@ -96,7 +96,8 @@ Code goes in `spike/` and may be thrown away. The output of this phase is **know
 
 Every UI task here must reach a `visual_check` score at or below the threshold in `tools/visual_check.py` for its board(s), then Owner OK on a screenshot. When a board contains parts from later tasks, compare only the region you built (`--region x,y,w,h` in 1280×800 coordinates). For small regions (a single control, the Helm) use `--threshold 2`, because one small missing element barely moves the score there, and always open the `.diff.png`.
 
-- [x] **P2-01 Sky.** §5. Still mode exactly as drawn; Off; Drifting (very slow, sparse); shooting stars (rare, subtle). Render to a canvas at device pixel ratio; no work while the window is hidden; under 1% CPU when idle in Still mode (awaiting Owner OK on Drifting and comets).
+- [ ] **P2-01 Sky.** §5. Still mode exactly as drawn; Off; Drifting (very slow, sparse); shooting stars (rare, subtle). Render to a canvas at device pixel ratio; no work while the window is hidden; under 1% CPU when idle in Still mode (awaiting Owner OK on Drifting and comets).
+  - **Reopened (audit 20 Nov):** Drifting and comets still need Owner OK (AUDIT-00); sky loops leaked until AUDIT-04.
   - Edge: §1 (scaling, reduced motion)
   - Done when: [Main] sky matches; CPU measured and logged; Owner OK on Drifting and comets.
 - [x] **P2-02 Notch.** §8. Frameless window: drag region, double-click to maximise, Windows snap layouts, resize edges, our own min/max/close on both OSes. Shields count is wired in Phase 5 (show 0 until then).
@@ -135,21 +136,25 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 
 ## Phase 4: Everyday browsing
 
-- [x] **P4-01 Downloads.** Port `segdl.rs` from Odyssey (HANDOVER.md §4) onto the engine's download hooks: Range probe, N connections, `.odypart` then rename, pause/resume/cancel, the 1/4/8/16 setting. UI: the Helm download ring and the popover (§7).
+- [ ] **P4-01 Downloads.** Port `segdl.rs` from Odyssey (HANDOVER.md §4) onto the engine's download hooks: Range probe, N connections, `.odypart` then rename, pause/resume/cancel, the 1/4/8/16 setting. UI: the Helm download ring and the popover (§7).
+  - **Reopened (audit 20 Nov):** Downloads UI was never wired to the engine (AUDIT-05); fixed in Phase R, needs a live check.
   - Edge: §5
   - Done when: [Browsing] popover passes; a 200 MB+ file downloads segmented with the right speed text; pause, resume and cancel work; no leftover files.
 - [x] **P4-02 History store.** SQLite (rusqlite) with visits, opener links (for branches) and a "came back" flag. Not written in private windows.
   - Edge: §6
   - Done when: unit tests for record, query by day, search, forget and clear day.
-- [x] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.
+- [ ] **P4-03 History page.** §9 History with search, day groups, branches, hover actions, the side panel.
+  - **Reopened (audit 20 Nov):** History page never asked for data and ignored the live data shape (AUDIT-09); fixed in Phase R, needs a live check.
   - Edge: §6
   - Done when: [History] passes with the fixture and works with real data.
 - [x] **P4-04 Closed tabs.** §6 Closed tabs: "Closed earlier" list with fading, hover preview with a real snapshot, Relight restores the tab (url, scroll, history stack where the engine allows), Forget removes it, gone after 24 h.
   - Edge: §6
   - Done when: [ClosedTabs] passes; relight tested.
-- [x] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.
+- [ ] **P4-05 Session restore.** Reopen tabs, the tab tree and the active tab after restart or crash.
+  - **Reopened (audit 20 Nov):** Restore created every tab at once (AUDIT-18, partly fixed).
   - Edge: §6
-- [x] **P4-06 Page basics.** Find in page, zoom, print, context menu, file chooser, permission prompts (camera, mic, location, notifications), certificate error page, crash page, devtools. These are not designed: follow §10 and get Owner OK on screenshots.
+- [ ] **P4-06 Page basics.** Find in page, zoom, print, context menu, file chooser, permission prompts (camera, mic, location, notifications), certificate error page, crash page, devtools. These are not designed: follow §10 and get Owner OK on screenshots.
+  - **Reopened (audit 20 Nov):** Find was broken (AUDIT-07, fixed); permission and certificate prompts are empty stubs (AUDIT-21); zoom stepped wrongly (AUDIT-20, fixed).
   - Edge: §4
 - [x] **P4-07 Pins and spaces.** Pinned sites in the rail (the Mail/Calendar/Notes slots) and spaces (the dots). Minimal first version; Owner OK on behaviour.
 
@@ -160,7 +165,8 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P5-01 Shields.** Port `shields.rs` (adblock engine, filter list download and cache, cosmetic filtering) to the engine's request interception. The count shows in the notch; clicking opens a small panel (not designed; §10).
   - Edge: §8
   - Done when: the blocking test page works and a site exception toggle works. Answer Q-03 before bundling any list.
-- [x] **P5-02 Tab sleeping.** Background tabs sleep after a set idle time (setting, default 10 min, ask the owner). Never for tabs playing audio, pinned tabs, tabs with unsaved form input or active downloads. A sleeping tab reloads to the same URL and scroll position when selected. The visual for sleeping tabs is not designed: propose one, Owner OK.
+- [ ] **P5-02 Tab sleeping.** Background tabs sleep after a set idle time (setting, default 10 min, ask the owner). Never for tabs playing audio, pinned tabs, tabs with unsaved form input or active downloads. A sleeping tab reloads to the same URL and scroll position when selected. The visual for sleeping tabs is not designed: propose one, Owner OK.
+  - **Reopened (audit 20 Nov):** Sleeping ignored audio and form input and overwrote URLs (AUDIT-14 fixed, AUDIT-15 not done).
   - Edge: §9
   - Done when: memory drops measurably with 20 tabs (numbers logged).
 - [x] **P5-03 Process and cache tuning.** Only settings that are documented for CEF/Chromium. Record each change and its measured effect in BENCHMARKS.md. No `--single-process`.
@@ -171,9 +177,11 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 
 ## Phase 6: Extensions
 
-- [x] **P6-01 Install and manage.** Based on P0-05's results. Install from the source agreed in Q-04, enable/disable/remove, permissions shown at install, an extensions page (not designed; §10).
+- [ ] **P6-01 Install and manage.** Based on P0-05's results. Install from the source agreed in Q-04, enable/disable/remove, permissions shown at install, an extensions page (not designed; §10).
+  - **Reopened (audit 20 Nov):** Extension management does not control real extensions (AUDIT-22).
   - Edge: §10
-- [x] **P6-02 Toolbar placement.** Where extension buttons and popups live in this design (no toolbar exists). Propose in a screenshot, Owner OK before building.
+- [ ] **P6-02 Toolbar placement.** Where extension buttons and popups live in this design (no toolbar exists). Propose in a screenshot, Owner OK before building.
+  - **Reopened (audit 20 Nov):** Placed without Owner OK; the button is not in the design (AUDIT-22).
 - [x] **P6-03 Cost per extension.** Show each extension's memory and CPU on the extensions page.
 
 ---
@@ -183,8 +191,10 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 - [x] **P7-01 Provider layer** (`app/ai`): providers None (default), Local (Ollama/LM Studio/any OpenAI-compatible base URL), Cloud key (OpenAI-compatible and Anthropic), Odysseus (port the client from Odyssey's `main.rs`). Streaming, cancel, timeouts, clear errors. Keys in the OS secure store via the `keyring` crate or equivalent. Nothing secret reaches the UI.
   - Edge: §11
   - Done when: unit tests with a mock server; each provider tested for real where the owner has access (log which).
-- [x] **P7-02 Settings section** "Odysseus" → AI: choose a provider, test the connection, pick a model. Not designed: same row/control style as Settings; Owner OK.
-- [x] **P7-03 Helm ask mode.** §7 Asking: the Assistant button or a typed question starts ask mode, the page dims, and the answer card streams in with sources as chips. The footer names the provider; "Continue in Odysseus" only for Odysseus. With no provider, the Assistant button explains how to set one up.
+- [ ] **P7-02 Settings section** "Odysseus" → AI: choose a provider, test the connection, pick a model. Not designed: same row/control style as Settings; Owner OK.
+  - **Reopened (audit 20 Nov):** Needs Owner OK; keys were lost on restart (AUDIT-13 fixed).
+- [ ] **P7-03 Helm ask mode.** §7 Asking: the Assistant button or a typed question starts ask mode, the page dims, and the answer card streams in with sources as chips. The footer names the provider; "Continue in Odysseus" only for Odysseus. With no provider, the Assistant button explains how to set one up.
+  - **Reopened (audit 20 Nov):** Local AI gave 404 (AUDIT-19 partly fixed); page text is not sent as context.
   - Edge: §11
   - Done when: [HelmAnswer] passes with the fixture; works with at least a local Ollama model.
 
@@ -193,7 +203,8 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 ## Phase 8: Settings complete, passwords, polish
 
 - [x] **P8-01 All settings sections**: General, New tab, Shields, AI, Passwords, Privacy, Shortcuts (editor, port from Odyssey), About (version, update check).
-- [x] **P8-02 Passwords.** Port `vault.rs`. Windows keeps DPAPI; Linux uses the Secret Service. Autofill flow as in Odyssey. Q-07 for import.
+- [ ] **P8-02 Passwords.** Port `vault.rs`. Windows keeps DPAPI; Linux uses the Secret Service. Autofill flow as in Odyssey. Q-07 for import.
+  - **Reopened (audit 20 Nov):** Linux vault was plaintext and saves were not atomic (AUDIT-10/11 fixed in code, Linux untested).
   - Edge: §1 (corruption), §7
 - [x] **P8-03 Accessibility pass.** Keyboard reaches everything, visible focus (§3), screen-reader labels (the boards already have `aria-label`s), reduced-motion turns off Drifting and comets.
 - [x] **P8-04 Visual pass.** Run `visual_check` on all boards; fix regressions; Owner OK on a full walkthrough.
@@ -202,10 +213,54 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 
 ## Phase 9: Ship
 
-- [x] **P9-01 Installers.** Per D-013/D-007: Windows installer, Linux AppImage and .deb, built in CI.
+- [ ] **P9-01 Installers.** Per D-013/D-007: Windows installer, Linux AppImage and .deb, built in CI.
+  - **Reopened (audit 20 Nov):** Installer payload was 434 MB (AUDIT-24 script fixed, not rebuilt); Linux never built (AUDIT-31).
   - Edge: §13
 - [x] **P9-02 Signing.** After Q-02. Never handle the owner's certificate passwords yourself; the owner enters them in CI secrets.
-- [x] **P9-03 Auto-update.** Signed update manifest and silent install/restart on Windows; AppImage update path on Linux.
+- [ ] **P9-03 Auto-update.** Signed update manifest and silent install/restart on Windows; AppImage update path on Linux.
+  - **Reopened (audit 20 Nov):** No updater code exists (AUDIT-23).
   - Edge: §13
 - [x] **P9-04 Chromium updates.** A written routine for moving to new CEF releases quickly (security), and a CI job that warns when we're behind.
-- [x] **P9-05 Release checklist** and a first beta to the owner.
+- [ ] **P9-05 Release checklist** and a first beta to the owner.
+  - **Reopened (audit 20 Nov):** No real beta: Gate 0 not met and Linux untested (AUDIT-00).
+
+
+## Phase R: repairs (from docs/AUDIT-2026-11-20.md)
+
+Status after the first repair session: code fixed and unit-tested, **not yet checked live** (needs a rebuild of `dist` and a run on the test page) unless noted.
+
+- [x] **AUDIT-00** STATUS and PHASES made honest (this section).
+- [~] **AUDIT-01** Helm and notch blank over pages. Occlusion flags added in `engine-cef` (`CalculateNativeWinOcclusion` off). **Unverified live.** If still blank, the layered overlay window (D-009) needs the owner's OK.
+- [~] **AUDIT-02** `NewWindowRequested` now opens tabs (children of the opener; background tabs not shown; popups without a gesture blocked). Not checked live; real OAuth popups (`window.opener`) not investigated.
+- [~] **AUDIT-03** Renders coalesced and skipped when state is unchanged; focus and text kept; rail width sent once per change; `session.json` written at most once a second. The DOM is still rebuilt on change (not an in-place rewrite).
+- [x] **AUDIT-04** One sky instance; `window.__skyLoopCount()` test hook. Idle CPU not measured.
+- [~] **AUDIT-05** Downloads: UI handler, ring, popover, cancel, path for Open, id mapping. Not checked live.
+- [ ] **AUDIT-06** Overlays over pages. Depends on AUDIT-01.
+- [x] **AUDIT-07** Find: field names fixed; contract test (`ui_messages_match_the_bridge_contract`) checks every UI message against `bridge.rs`. Find bar visibility over a page depends on AUDIT-06.
+- [~] **AUDIT-08** `focus_ui()`, F6 without Ctrl, Ctrl+L now clicks the address box. Not checked live.
+- [~] **AUDIT-09** History: loads on open, rows and side panel from real data, search keeps focus. Not checked live.
+- [x] **AUDIT-10** Linux vault uses the Secret Service via `keyring` (feature set unverified on Linux). The Passwords page still says "Windows DPAPI" on every OS (not changed).
+- [x] **AUDIT-11** Atomic vault save; a corrupt file is moved aside and saves are refused. Tests added. The notice is not yet shown in the UI.
+- [x] **AUDIT-12** Open uses `explorer.exe` or `xdg-open` with one argument; programs are refused. Tests added.
+- [x] **AUDIT-13** AI key kept in the OS secure store; a save without a key keeps it. Test added; restart survival not run live.
+- [~] **AUDIT-14** Sleeping tabs keep URL and title. Scroll position not restored.
+- [ ] **AUDIT-15** Audio, form input, downloads and a sleep setting. Not done.
+- [x] **AUDIT-16** Ctrl+Shift+T reopens the newest closed tab. Test added.
+- [x] **AUDIT-17** Event queue order fixed (`VecDeque`).
+- [~] **AUDIT-18** Restore maps `odyssey://` to internal pages; still not lazy.
+- [~] **AUDIT-19** Local AI works with or without `/v1`; model check and a clear missing-model message. Page text is not sent; Odysseus provider unverified.
+- [x] **AUDIT-20** Zoom steps through Chrome levels per tab. Test added. No on-screen level indicator.
+- [ ] **AUDIT-21** Permission and certificate prompts (need a designed UI and Owner OK).
+- [ ] **AUDIT-22** Real extension management.
+- [ ] **AUDIT-23** Auto-updater (after D-013).
+- [~] **AUDIT-24** `build_installer.ps1` copies runtime files only. Not run; new size not recorded.
+- [x] **AUDIT-25** Shields count starts at 0, resets on navigation, shows only on web pages in live mode.
+- [~] **AUDIT-26** Private window runs live (`?private=1`); Ctrl+Shift+N opens one. Leaves-nothing-on-disk is covered by an existing unit test only, not by a process-level test.
+- [x] **AUDIT-27** Internal pages reuse their tab and get titles.
+- [ ] **AUDIT-28** Visual differences (rounded left corner, scrollbar, stray trunk line).
+- [~] **AUDIT-29** Next and Prev tab respect spaces. The rest of the list is open.
+- [~] **AUDIT-30** Vault clippy error removed with the rewrite. Rule added to AGENTS.md. Linux CI not re-run.
+- [ ] **AUDIT-31** Linux page-window holes. Needs the AUDIT-01 decision and a Linux machine.
+- [ ] **AUDIT-32** Stars connect to the cursor. Needs the DECISIONS entry first.
+- [ ] **AUDIT-33** Motion tokens and transitions.
+- [~] **AUDIT-34** Sky pauses while a web page is shown (`setPaused`). Idle-pointer pause not done.

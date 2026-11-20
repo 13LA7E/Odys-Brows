@@ -3,6 +3,17 @@
 // Drifting and Shooting Stars (comets) run slow, subtle animations when enabled,
 // paused immediately whenever the window or tab is hidden or when reduced motion is preferred.
 
+// Every sky that exists, so a test can check that only one animation loop runs (AUDIT-04).
+const liveSkies = new Set();
+
+/** Number of sky animation loops currently running. */
+export function skyLoopCount() {
+  let n = 0;
+  for (const s of liveSkies) if (s.isRunning()) n += 1;
+  return n;
+}
+if (typeof window !== 'undefined') window.__skyLoopCount = skyLoopCount;
+
 export function createSky(container, options = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'sky';
@@ -74,6 +85,7 @@ export function createSky(container, options = {}) {
   let nextCometTime = performance.now() + 15000 + Math.random() * 15000;
   let currentComet = null;
   let isDestroyed = false;
+  let paused = false;
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -113,7 +125,7 @@ export function createSky(container, options = {}) {
 
   function renderFrame(now) {
     if (isDestroyed) return;
-    if (document.hidden) {
+    if (document.hidden || paused) {
       rafId = null;
       return;
     }
@@ -204,7 +216,7 @@ export function createSky(container, options = {}) {
   }
 
   function start() {
-    if (rafId) return;
+    if (rafId || paused || isDestroyed) return;
     lastTime = performance.now();
     rafId = requestAnimationFrame(renderFrame);
   }
@@ -242,21 +254,26 @@ export function createSky(container, options = {}) {
     container.append(canvas);
   }
 
-  return {
+  const handle = {
     canvas,
-    setMode(newMode) {
-      if (mode === newMode) return;
-      // Stop old loop if any
-      stop();
-      return createSky(container, { ...options, mode: newMode, stars });
+    isRunning: () => rafId !== null,
+    /** Pause while nothing can see the sky (a web page covers it); resume when shown (AUDIT-34). */
+    setPaused(p) {
+      if (paused === p || isDestroyed) return;
+      paused = p;
+      if (p) stop();
+      else if (mode === 'drifting' || (enableComets && !prefersReducedMotion.matches)) start();
     },
     destroy() {
       isDestroyed = true;
       stop();
+      liveSkies.delete(handle);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       canvas.remove();
     },
   };
+  liveSkies.add(handle);
+  return handle;
 }
 
 export function generateSky(type, width = 1280, height = 800) {

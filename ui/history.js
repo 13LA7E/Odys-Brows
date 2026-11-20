@@ -17,6 +17,8 @@ function svg(tag, attrs) {
   return e;
 }
 
+let searchOpen = false;
+
 const STAR_PATH = 'M12 2C12.8 8.5 15.5 11.2 22 12C15.5 12.8 12.8 15.5 12 22C11.2 15.5 8.5 12.8 2 12C8.5 11.2 11.2 8.5 12 2Z';
 
 /** Convert live DayGroups from Rust bridge into rows for renderHistory */
@@ -86,16 +88,22 @@ export function renderHistory(container, historyState = {}, callbacks = {}) {
   const searchSpan = el('span', 'history-search-placeholder', searchPlaceholder);
   searchSpan.style.cssText = 'cursor:text;flex:1;';
   searchBar.append(searchIconSvg, searchSpan);
-  searchBar.addEventListener('click', () => {
+  const openSearchInput = () => {
+    searchOpen = true;
     const input = el('input');
     input.type = 'text';
     input.value = historyState.searchQuery || '';
     input.placeholder = searchPlaceholder;
     input.style.cssText = 'border:0;background:none;color:var(--text);font:inherit;font-size:15px;outline:none;flex:1;padding:0;margin:0;';
     input.addEventListener('input', (e) => callbacks.onSearch?.(e.target.value));
-    searchBar.replaceChild(input, searchSpan);
+    searchBar.replaceChild(input, searchBar.querySelector('.history-search-placeholder') || input);
     input.focus();
+  };
+  searchBar.addEventListener('click', () => {
+    if (!searchBar.querySelector('input')) openSearchInput();
   });
+  // A re-render (new results arrive) must not close the field the user is typing in.
+  if (searchOpen && historyState.searchQuery != null) openSearchInput();
   container.append(searchBar);
 
   // 3. Calculate layout coordinates for day groups and rows

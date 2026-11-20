@@ -60,7 +60,7 @@ export function toggleFindBar(root, activeViewId) {
         view: activeViewId || 1,
         text,
         forward,
-        'match-case': false,
+        match_case: false,
         next,
       }));
     }
@@ -141,7 +141,7 @@ export function closeFindBar(activeViewId) {
       window.odysseyBridge(JSON.stringify({
         type: 'stop-finding',
         view: activeViewId || 1,
-        'clear-selection': true,
+        clear_selection: true,
       }));
     }
   }
@@ -233,6 +233,12 @@ export function renderErrorPage(container, info = {}, onReload = null) {
   container.append(wrap);
 }
 
+/** Put the caret in the Helm with the address selected (Ctrl+L, F6). */
+export function focusHelm() {
+  const box = document.querySelector('.helm-address');
+  if (box) box.click();
+}
+
 /** Register global keyboard shortcuts across chrome and page basics. */
 export function initPageBasicsShortcuts(getRoot, getActiveViewId) {
   window.addEventListener('keydown', (e) => {
@@ -257,10 +263,11 @@ export function initPageBasicsShortcuts(getRoot, getActiveViewId) {
       }
     } else if ((isCtrl && !e.altKey && (e.key === 'l' || e.key === 'L')) || e.key === 'F6') {
       e.preventDefault();
-      const input = document.querySelector('.helm-search-input, .helm-address, .helm');
-      if (input) {
-        input.focus();
-        if (input.select) input.select();
+      focusHelm();
+    } else if (isCtrl && !e.altKey && e.shiftKey && (e.key === 'n' || e.key === 'N')) {
+      e.preventDefault();
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify({ type: 'open-private-window' }));
       }
     } else if ((isCtrl && !e.altKey && (e.key === 'r' || e.key === 'R')) || e.key === 'F5') {
       e.preventDefault();

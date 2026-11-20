@@ -69,6 +69,29 @@ pub enum AiEvent {
     Error(String),
 }
 
+/// `llama3` matches `llama3:latest` (Ollama adds a tag).
+pub fn model_installed(models: &[String], wanted: &str) -> bool {
+    models
+        .iter()
+        .any(|m| m == wanted || m.strip_suffix(":latest") == Some(wanted))
+}
+
+pub fn missing_model_message(model: &str) -> String {
+    format!("Model {model} isn't installed. Run `ollama pull {model}` or pick another model.")
+}
+
+/// Root of an Ollama-style server: no trailing slash and no `/v1` (so `/api/tags` and
+/// `/v1/chat/completions` both work whichever form the user typed).
+pub fn local_root(endpoint: &str) -> String {
+    let t = endpoint.trim().trim_end_matches('/');
+    let t = t.strip_suffix("/v1").unwrap_or(t);
+    if t.is_empty() {
+        "http://127.0.0.1:11434".to_string()
+    } else {
+        t.to_string()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AiClient {
     http: reqwest::Client,
@@ -95,11 +118,7 @@ impl AiClient {
         match config.provider {
             ProviderKind::None => Ok("AI is disabled.".to_string()),
             ProviderKind::Local => {
-                let base = if config.endpoint.trim().is_empty() {
-                    "http://127.0.0.1:11434"
-                } else {
-                    config.endpoint.trim().trim_end_matches('/')
-                };
+                let base = local_root(&config.endpoint);
                 let url = format!("{base}/api/tags");
                 let resp = self
                     .http
@@ -108,10 +127,29 @@ impl AiClient {
                     .send()
                     .await
                     .map_err(|e| format!("Cannot reach local AI at {base}: {e}"))?;
-                if resp.status().is_success() {
-                    Ok("Connected to local AI.".to_string())
+                if !resp.status().is_success() {
+                    return Err(format!("Local AI returned status {}", resp.status()));
+                }
+                let body: Value = resp.json().await.unwrap_or(Value::Null);
+                let models: Vec<String> = body["models"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|m| m["name"].as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let wanted = config.model.trim();
+                if !wanted.is_empty() && !model_installed(&models, wanted) {
+                    return Err(missing_model_message(wanted));
+                }
+                if models.is_empty() {
+                    Ok("Connected to local AI, but no models are installed yet.".to_string())
                 } else {
-                    Err(format!("Local AI returned status {}", resp.status()))
+                    Ok(format!(
+                        "Connected to local AI. Models: {}",
+                        models.join(", ")
+                    ))
                 }
             }
             ProviderKind::Cloud => {
@@ -208,11 +246,7 @@ impl AiClient {
             ProviderKind::None => unreachable!(),
             ProviderKind::Local => {
                 self.stream_openai_compatible(
-                    if config.endpoint.trim().is_empty() {
-                        "http://127.0.0.1:11434/v1"
-                    } else {
-                        config.endpoint.trim().trim_end_matches('/')
-                    },
+                    &format!("{}/v1", local_root(&config.endpoint)),
                     if config.model.trim().is_empty() {
                         "llama3"
                     } else {
@@ -429,7 +463,12 @@ impl AiClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            sink(AiEvent::Error(format!("Provider responded with {status}")));
+            let msg = if status == reqwest::StatusCode::NOT_FOUND && base_url.contains("11434") {
+                missing_model_message(model)
+            } else {
+                format!("Provider responded with {status}")
+            };
+            sink(AiEvent::Error(msg));
             sink(AiEvent::Done);
             return;
         }
@@ -563,6 +602,21 @@ impl AiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_root_accepts_both_forms() {
+        assert_eq!(local_root(""), "http://127.0.0.1:11434");
+        assert_eq!(
+            local_root("http://127.0.0.1:11434/"),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(
+            local_root("http://127.0.0.1:11434/v1"),
+            "http://127.0.0.1:11434"
+        );
+        assert!(model_installed(&["llama3:latest".to_string()], "llama3"));
+        assert!(!model_installed(&["mistral:latest".to_string()], "llama3"));
+    }
 
     #[tokio::test]
     async fn disabled_provider_reports_graceful_error() {

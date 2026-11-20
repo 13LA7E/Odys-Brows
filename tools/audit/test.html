@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Audit test page with a deliberately very long title to check ellipsis handling in the trail rail and helm</title>
+<style>body{font:16px system-ui;padding:30px;background:#fff;color:#111}a,button{display:block;margin:10px 0;font-size:16px}</style></head><body>
+<h1>Constellations audit page</h1>
+<a id="blank" href="https://example.org/" target="_blank">1. target=_blank link (example.org)</a>
+<button id="wopen" onclick="window.open('https://example.net/','_blank')">2. window.open (example.net)</button>
+<a id="dl" href="https://ash-speed.hetzner.com/100MB.bin">3. Download 100 MB test file</a>
+<a id="dlsmall" href="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" download>4. Download small PDF</a>
+<button onclick="alert('alert works')">5. alert()</button>
+<button onclick="document.getElementById('c').textContent = confirm('confirm?')">6. confirm()</button> <span id="c"></span>
+<a href="mailto:test@example.com">7. mailto link</a>
+<a href="https://expired.badssl.com/">8. Expired certificate</a>
+<a href="https://this-domain-does-not-exist-xyz.invalid/">9. Unreachable host</a>
+<button onclick="navigator.geolocation.getCurrentPosition(p=>document.getElementById('g').textContent='ok',e=>document.getElementById('g').textContent='err '+e.message)">10. Geolocation permission</button> <span id="g"></span>
+<p>Findme findme FINDME</p>
+<div style="height:1500px"></div><p>Bottom of page</p>
+</body></html>

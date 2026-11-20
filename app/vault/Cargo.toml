@@ -15,3 +15,10 @@ base64.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+
+# Reason: OS credential store (Linux Secret Service, Windows Credential Manager) for AUDIT-10/13.
+# The Linux feature set is unverified (never built on Linux yet).
+[dependencies.keyring]
+version = "3.6"
+default-features = false
+features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"]
