@@ -3,6 +3,13 @@
 // Drifting and Shooting Stars (comets) run slow, subtle animations when enabled,
 // paused immediately whenever the window or tab is hidden or when reduced motion is preferred.
 
+// The drift is a few pixels per second, so while nothing is going on the sky repaints only this
+// often; redrawing the whole window 60 times a second for it cost most of a CPU core in the GPU
+// process. It speeds up (still capped) while the pointer moves, a click effect runs or a comet crosses.
+const SKY_IDLE_FRAME_MS = 200; // nothing going on: 5 frames a second (the drift is < 1 px per step)
+const SKY_ACTIVE_FRAME_MS = 33; // pointer, click effect or comet: 30 frames a second
+const SKY_ACTIVE_WINDOW_MS = 1500;
+
 // Every sky that exists, so a test can check that only one animation loop runs (AUDIT-04).
 const liveSkies = new Set();
 
@@ -96,6 +103,7 @@ export function createSky(container, options = {}) {
 
   let rafId = null;
   let lastTime = 0;
+  let waitTimer = 0;
   let nextCometTime = performance.now() + 15000 + Math.random() * 15000;
   let currentComet = null;
   let isDestroyed = false;
@@ -307,7 +315,13 @@ export function createSky(container, options = {}) {
     ctx.globalAlpha = 1.0;
 
     if (mode === 'drifting' || (enableComets && canAnimate) || rings.length || parts.length) {
-      rafId = requestAnimationFrame(renderFrame);
+      // A timer, not a callback on every display refresh: waking the browser 60 times a second
+      // keeps its compositor busy even when nothing is drawn. The timer fires, one frame is drawn.
+      const busy = performance.now() - lastActivity < SKY_ACTIVE_WINDOW_MS || rings.length || parts.length || currentComet;
+      rafId = -1;
+      waitTimer = setTimeout(() => {
+        rafId = requestAnimationFrame(renderFrame);
+      }, busy ? SKY_ACTIVE_FRAME_MS : SKY_IDLE_FRAME_MS);
     } else {
       rafId = null;
     }
@@ -320,6 +334,7 @@ export function createSky(container, options = {}) {
   }
 
   function stop() {
+    clearTimeout(waitTimer);
     if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = null;
@@ -353,6 +368,11 @@ export function createSky(container, options = {}) {
     mouse.tx = (e.clientX / (window.innerWidth || width) - 0.5) * 2;
     mouse.ty = (e.clientY / (window.innerHeight || height) - 0.5) * 2;
     onActivity();
+    // Waiting out a slow idle frame: draw now, the pointer just came back.
+    if (rafId === -1 && mode === 'drifting') {
+      clearTimeout(waitTimer);
+      rafId = requestAnimationFrame(renderFrame);
+    }
   }
   function onPointerLeave() { mouse.inside = false; }
   window.addEventListener('pointermove', onPointerMove, { passive: true });
