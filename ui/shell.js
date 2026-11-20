@@ -157,7 +157,8 @@ window.__renderCount = 0;
 
 function signature(state) {
   try {
-    return JSON.stringify(state, (k, v) => (k === 'sky' ? undefined : v));
+    // The window size is part of what is drawn (the sky is made for it), so a resize must render.
+    return JSON.stringify(state, (k, v) => (k === 'sky' ? undefined : v)) + `|${window.innerWidth}x${window.innerHeight}`;
   } catch (_) {
     return String(Math.random());
   }
@@ -249,11 +250,6 @@ function skyOptions(state) {
   const comets = state.shootingStars ?? state.settings?.shootingStars ?? false;
   const cursor = state.settings?.starsFollowCursor !== false;
   return { mode, comets: !!comets, cursor };
-}
-
-/** The sky handle, so the page can add a click burst on the empty new-tab background. */
-export function getSky() {
-  return skyHandle;
 }
 
 function mountSky(state, add) {

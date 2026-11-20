@@ -5,9 +5,9 @@
 
 // The drift is a few pixels per second, so while nothing is going on the sky repaints only this
 // often; redrawing the whole window 60 times a second for it cost most of a CPU core in the GPU
-// process. It speeds up (still capped) while the pointer moves, a click effect runs or a comet crosses.
+// process. It speeds up (still capped) while the pointer moves or a comet crosses.
 const SKY_IDLE_FRAME_MS = 200; // nothing going on: 5 frames a second (the drift is < 1 px per step)
-const SKY_ACTIVE_FRAME_MS = 33; // pointer, click effect or comet: 30 frames a second
+const SKY_ACTIVE_FRAME_MS = 33; // pointer or comet: 30 frames a second
 const SKY_ACTIVE_WINDOW_MS = 1500;
 
 // Every sky that exists, so a test can check that only one animation loop runs (AUDIT-04).
@@ -90,15 +90,13 @@ export function createSky(container, options = {}) {
   // Stars have no depth in our data; a bigger star counts as nearer (Odyssey's `z`).
   for (const st of stars) st.z = Math.max(0, Math.min(1, ((st.r || 1) - 0.5) / 0.9));
 
-  // Cursor-linked stars (AUDIT-32, ported from Odyssey ui/fx.js, same numbers). Only while the
+  // Cursor-linked stars (AUDIT-32, ported from Odyssey ui/fx.js, same numbers; no click effect). Only while the
   // sky drifts, never in fixture mode, never with reduced motion. Nothing is allocated per frame.
   const cursorOpt = options.cursor !== false && !isFixture;
   const mouse = { x: -1e4, y: -1e4, tx: 0, ty: 0, sx: 0, sy: 0, inside: false };
   const nearX = new Float32Array(9);
   const nearY = new Float32Array(9);
   const nearD = new Float32Array(9);
-  const rings = [];
-  const parts = [];
   const accentColor = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ffffff').trim();
 
   let rafId = null;
@@ -243,81 +241,12 @@ export function createSky(container, options = {}) {
       }
     }
 
-    // Click on the empty new-tab background: a ring and a few particles.
-    if (rings.length || parts.length) {
-      for (let i = rings.length - 1; i >= 0; i--) {
-        const r = rings[i];
-        r.r += dt * 280;
-        r.a -= dt * 1.1;
-        if (r.a <= 0) { rings.splice(i, 1); continue; }
-        ctx.globalAlpha = r.a * 0.6;
-        ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.fillStyle = '#ffffff';
-      for (let i = parts.length - 1; i >= 0; i--) {
-        const q = parts[i];
-        q.life += dt;
-        if (q.life >= q.max) { parts.splice(i, 1); continue; }
-        q.x += q.vx * dt;
-        q.y += q.vy * dt;
-        ctx.globalAlpha = (1 - q.life / q.max) * 0.8;
-        ctx.fillRect(q.x - q.r, q.y - q.r, q.r * 2, q.r * 2);
-      }
-    }
-
-    // Shooting stars (rare, subtle comets across new tab)
-    if (enableComets && canAnimate) {
-      if (!currentComet && now >= nextCometTime) {
-        // Spawn a new comet
-        const startX = 200 + Math.random() * (width - 400);
-        const startY = 50 + Math.random() * 200;
-        const angle = (25 + Math.random() * 20) * (Math.PI / 180); // gentle downward slant
-        currentComet = {
-          x: startX,
-          y: startY,
-          angle,
-          length: 50,
-          speed: 380, // px per second
-          distance: 0,
-          maxDistance: 280,
-          alpha: 0,
-        };
-      }
-
-      if (currentComet) {
-        currentComet.distance += currentComet.speed * dt;
-        currentComet.x += Math.cos(currentComet.angle) * currentComet.speed * dt;
-        currentComet.y += Math.sin(currentComet.angle) * currentComet.speed * dt;
-
-        // Fade in then fade out
-        const frac = currentComet.distance / currentComet.maxDistance;
-        if (frac < 0.2) {
-          currentComet.alpha = (frac / 0.2) * 0.45;
-        } else if (frac > 0.7) {
-          currentComet.alpha = (1 - (frac - 0.7) / 0.3) * 0.45;
-        } else {
-          currentComet.alpha = 0.45;
-        }
-
-        drawComet(currentComet);
-
-        if (frac >= 1) {
-          currentComet = null;
-          nextCometTime = now + 15000 + Math.random() * 15000;
-        }
-      }
-    }
-
     ctx.globalAlpha = 1.0;
 
-    if (mode === 'drifting' || (enableComets && canAnimate) || rings.length || parts.length) {
+    if (mode === 'drifting' || (enableComets && canAnimate)) {
       // A timer, not a callback on every display refresh: waking the browser 60 times a second
       // keeps its compositor busy even when nothing is drawn. The timer fires, one frame is drawn.
-      const busy = performance.now() - lastActivity < SKY_ACTIVE_WINDOW_MS || rings.length || parts.length || currentComet;
+      const busy = performance.now() - lastActivity < SKY_ACTIVE_WINDOW_MS || currentComet;
       rafId = -1;
       waitTimer = setTimeout(() => {
         rafId = requestAnimationFrame(renderFrame);
@@ -407,19 +336,6 @@ export function createSky(container, options = {}) {
   const handle = {
     canvas,
     isRunning: () => rafId !== null,
-    /** Ring and 16 particles where the empty new-tab background was clicked (AUDIT-32). */
-    burst(x, y) {
-      if (!(cursorOpt && mode === 'drifting') || prefersReducedMotion.matches || isDestroyed) return;
-      rings.push({ x, y, r: 0, a: 1 });
-      for (let i = 0; i < 16; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const sp = 30 + Math.random() * 120;
-        parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.5 + Math.random() * 0.8, r: 0.6 + Math.random() });
-      }
-      start();
-    },
-    /** Test hook: pretend the last activity was `ms` ago. */
-    __ageActivity(ms) { lastActivity = performance.now() - ms; },
     /** Pause while nothing can see the sky (a web page covers it); resume when shown (AUDIT-34). */
     setPaused(p) {
       if (paused === p || isDestroyed) return;
