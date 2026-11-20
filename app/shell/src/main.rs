@@ -555,6 +555,7 @@ impl Shell {
                             self.on_url_changed(v, &url);
                         } else {
                             engine.navigate(v, &url);
+                            self.show(engine, v);
                             self.on_url_changed(v, &url);
                         }
                     }

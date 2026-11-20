@@ -223,7 +223,30 @@ fn place(id: ViewId) {
     });
 }
 
+thread_local! {
+    static IN_PLACE_ALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 fn place_all() {
+    let reentered = IN_PLACE_ALL.with(|g| {
+        if g.get() {
+            true
+        } else {
+            g.set(true);
+            false
+        }
+    });
+    if reentered {
+        return;
+    }
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            IN_PLACE_ALL.with(|g| g.set(false));
+        }
+    }
+    let _guard = Guard;
+
     STATE.with(|s| {
         let s = s.borrow();
         if let (Some(main), Some(ui)) = (s.main.as_ref(), s.ui.as_ref()) {

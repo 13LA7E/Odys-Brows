@@ -120,6 +120,19 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Layout Mutual Recursion Stack Overflow, Navigation Visibility, Dev Runner Build Step, and Sky Uniformity
+- Did:
+  1. Fixed stack overflow crash: Added `IN_PLACE_ALL` thread-local re-entrancy guard to `place_all()` in `app/engine-cef/src/lib.rs`. Previously `place_all()` called `main.layout()`, which synchronously invoked `ViewDelegate::on_layout_changed()`, calling `place_all()` again and causing an infinite mutual recursion stack overflow crash (STATUS_STACK_OVERFLOW 0xC00000FD).
+  2. Fixed web view bounds and visibility on navigation: In `app/shell/src/main.rs`, added `self.show(engine, v)` to `FromUi::Navigate`. Navigating to a URL from an empty new tab previously left `v` hidden (`visible: false`) with bounds uninitialized.
+  3. Fixed stale dev runner binary: In `tools/run-dev.ps1`, added an automatic `cargo build $(if ($Release) { '--release' }) --bin constellations` step before launching. This guarantees that running `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1` never runs a stale, un-updated binary from hours prior.
+  4. Fixed sky uniform density: In `ui/sky.js`, added `maxStarX <= 1280` check before padding extra stars, ensuring mathematically uniform star coverage across the entire monitor width.
+- Verified:
+  - `tools\check.ps1` PASSED all 6 stages (cargo fmt, clippy warning-free, all 50 unit and integration tests passing, 16 JS syntax checks passing, token check passing, visual check passing).
+  - Built fresh release executable `cargo build --release --bin constellations` and updated `dist\Constellations\`.
+  - Ran `target\debug\constellations.exe` without stack overflow or crash.
+- Next: Launch `powershell -ExecutionPolicy Bypass -File tools\run-dev.ps1` or `Constellations.bat` to test live.
+- Commit: pending
+
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Disappearing Controls Over Web Pages, Keyboard Shortcuts, Settings/Tab Navigation, and Sky Density
 - Did: resolved all 4 critical bugs reported with live user screenshot evidence:
   1. Window controls and search bar (Helm) disappearing over web pages:

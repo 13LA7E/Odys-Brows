@@ -25,9 +25,10 @@ export function createSky(container, options = {}) {
   ctx.scale(dpr, dpr);
 
   let stars = options.stars ? options.stars.map((s) => ({ ...s })) : [];
+  const maxStarX = stars.length > 0 ? Math.max(...stars.map((s) => s.x)) : 0;
   if (!options.stars && mode !== 'off') {
     stars = generateSky(options.type || (isPrivate ? 'private' : 'newtab'), width, height);
-  } else if (!isFixture && mode !== 'off' && (width > 1280 || height > 800)) {
+  } else if (!isFixture && mode !== 'off' && (width > 1280 || height > 800) && maxStarX <= 1280) {
     const baseCount = stars.length || 170;
     const extraCount = Math.round(((width * height - 1280 * 800) / (1280 * 800)) * baseCount);
     if (extraCount > 0) {
