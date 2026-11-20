@@ -11,7 +11,9 @@
 //! All CEF callbacks and all [`Engine`] calls run on the UI thread, so state is thread-local.
 
 use cef::*;
-use engine_api::{DownloadInfo, Engine, Event, NewWindowKind, Rect as ViewRect, ViewId};
+use engine_api::{
+    DownloadInfo, Engine, Event, NewWindowKind, PermissionKind, Rect as ViewRect, ViewId,
+};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -31,7 +33,11 @@ pub struct StartOptions {
     pub ui_suffix: String,
     /// Window title (the product name; one place, DESIGN.md §11).
     pub title: String,
+    /// Unpacked extension folders to load at start (`--load-extension`, verified in P0-05).
+    pub extension_paths: Vec<String>,
 }
+
+static EXTENSION_PATHS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 /// Why the engine could not start, in words we can show the user.
 #[derive(Debug)]
@@ -69,6 +75,9 @@ struct Page {
     visible: bool,
     sleeping: bool,
     saved_url: Option<String>,
+    /// Last scroll position the page reported (for restoring after sleep).
+    scroll_y: f64,
+    restore_scroll: Option<f64>,
 }
 
 #[derive(Default)]
@@ -83,6 +92,15 @@ struct State {
     /// URL prefix of our UI folder; only frames under it get the bridge (P1-03).
     ui_prefix: String,
     shields: Option<Arc<shields::Shields>>,
+    /// Permission prompts waiting for the user's answer, by prompt id.
+    perm_callbacks: HashMap<u64, PermissionPromptCallback>,
+    /// Certificate errors waiting for the user's answer, by our own id.
+    cert_callbacks: HashMap<u64, Callback>,
+    next_cert_id: u64,
+    /// Rectangles (main-window DIP, corner radius) where our UI draws over the page area. Page
+    /// windows cover the UI, so each of these is cut out of them (AUDIT-06).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    overlay_holes: Vec<(ViewRect, i32)>,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -148,7 +166,13 @@ mod win32 {
 }
 
 #[cfg(windows)]
-fn update_page_window_region(win: &Window, width: i32, height: i32) {
+fn update_page_window_region(
+    win: &Window,
+    width: i32,
+    height: i32,
+    origin_x: i32,
+    holes: &[(ViewRect, i32)],
+) {
     unsafe {
         let h = win.window_handle().0 as isize;
         if h == 0 {
@@ -159,7 +183,10 @@ fn update_page_window_region(win: &Window, width: i32, height: i32) {
         let w = (width as f32 * dpi).round() as i32;
         let h_px = (height as f32 * dpi).round() as i32;
 
-        let base_rgn = win32::CreateRectRgn(0, 0, w, h_px);
+        // Rounded left corners (DESIGN.md §4: 16 0 0 16). The rectangle is made wider than the
+        // window so only the left corners show as rounded.
+        let r2 = (32.0 * dpi).round() as i32;
+        let base_rgn = win32::CreateRoundRectRgn(0, 0, w + r2, h_px + 1, r2, r2);
 
         // Notch in top-right corner: height 34 DIP, width 224 DIP.
         // Cutting out the notch leaves the main window's notch controls (shields, minimize,
@@ -189,6 +216,22 @@ fn update_page_window_region(win: &Window, width: i32, height: i32) {
             win32::DeleteObject(helm_rgn);
         }
 
+        // Our UI's open overlays (popovers, cards, find bar): cut them out too.
+        for (r, radius) in holes {
+            let x0 = (((r.x - origin_x) as f32) * dpi).round() as i32;
+            let y0 = ((r.y as f32) * dpi).round() as i32;
+            let x1 = x0 + ((r.width as f32) * dpi).round() as i32;
+            let y1 = y0 + ((r.height as f32) * dpi).round() as i32;
+            if x1 <= 0 || y1 <= 0 || x0 >= w || y0 >= h_px {
+                continue;
+            }
+            let d = ((*radius as f32) * 2.0 * dpi).round() as i32;
+            let rgn =
+                win32::CreateRoundRectRgn(x0.max(0), y0.max(0), x1.min(w), y1.min(h_px), d, d);
+            win32::CombineRgn(base_rgn, base_rgn, rgn, win32::RGN_DIFF);
+            win32::DeleteObject(rgn);
+        }
+
         win32::SetWindowRgn(h, base_rgn, 1);
     }
 }
@@ -215,7 +258,7 @@ fn place(id: ViewId) {
         }));
         if page.visible {
             #[cfg(windows)]
-            update_page_window_region(win, pw, ph);
+            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes);
             win.show();
         } else {
             win.hide();
@@ -734,8 +777,43 @@ wrap_display_handler! {
         fn on_title_change(&self, _browser: Option<&mut Browser>, title: Option<&CefString>) {
             emit(Event::TitleChanged { view: self.id, title: title.map(CefString::to_string).unwrap_or_default() });
         }
+
+        // Pages have no bridge. The small script we inject (FORM_WATCH_JS) reports one boolean
+        // through the console; a page could fake it, which would only stop its own tab sleeping.
+        fn on_console_message(
+            &self,
+            _browser: Option<&mut Browser>,
+            _level: LogSeverity,
+            message: Option<&CefString>,
+            _source: Option<&CefString>,
+            _line: ::std::os::raw::c_int,
+        ) -> ::std::os::raw::c_int {
+            let text = message.map(CefString::to_string).unwrap_or_default();
+            if let Some(v) = text.strip_prefix("__ody_form__:") {
+                emit(Event::FormInputChanged { view: self.id, has_input: v == "1" });
+                return 1;
+            }
+            if let Some(v) = text.strip_prefix("__ody_scroll__:") {
+                let y = v.parse::<f64>().unwrap_or(0.0).max(0.0);
+                STATE.with(|s| {
+                    if let Some(p) = s.borrow_mut().pages.get_mut(&self.id) {
+                        p.scroll_y = y;
+                    }
+                });
+                return 1;
+            }
+            if let Some(v) = text.strip_prefix("__ody_audio__:") {
+                emit(Event::AudioChanged { view: self.id, playing: v == "1" });
+                return 1;
+            }
+            0
+        }
     }
 }
+
+/// Reports two booleans through the console: unsubmitted text in a form field, and audio playing
+/// (media elements or a running AudioContext created after load). Used to keep tabs awake.
+const FORM_WATCH_JS: &str = "(function(){try{var f=false,au=false,ctxs=[];function r(k,v){console.debug('__ody_'+k+'__:'+(v?1:0));}document.addEventListener('input',function(e){var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)&&!f){f=true;r('form',true);}},true);document.addEventListener('submit',function(){if(f){f=false;r('form',false);}},true);var AC=window.AudioContext||window.webkitAudioContext;if(AC){var P=function(){var c=new (Function.prototype.bind.apply(AC,[null].concat([].slice.call(arguments))))();ctxs.push(c);return c;};P.prototype=AC.prototype;window.AudioContext=P;}setInterval(function(){var on=false;var m=document.querySelectorAll('audio,video');for(var i=0;i<m.length;i++){var e=m[i];if(!e.paused&&!e.ended&&!e.muted&&e.volume>0&&e.readyState>2){on=true;break;}}if(!on){for(var j=0;j<ctxs.length;j++){if(ctxs[j].state==='running'){on=true;break;}}}if(on!==au){au=on;r('audio',on);}},2000);var st;addEventListener('scroll',function(){clearTimeout(st);st=setTimeout(function(){console.debug('__ody_scroll__:'+Math.round(window.scrollY));},400);},{passive:true,capture:true});}catch(e){}})();";
 
 wrap_load_handler! {
     struct PageLoad { id: ViewId }
@@ -756,6 +834,25 @@ wrap_load_handler! {
                 return;
             }
             let url_str = CefString::from(&f.url()).to_string();
+            // A new document starts with no typed input.
+            emit(Event::FormInputChanged { view: self.id, has_input: false });
+            emit(Event::AudioChanged { view: self.id, playing: false });
+            // After a wake, put the page back where it was; otherwise a new document starts at 0.
+            let restore = STATE.with(|s| {
+                s.borrow_mut().pages.get_mut(&self.id).and_then(|p| {
+                    if p.sleeping {
+                        return None;
+                    }
+                    let r = p.restore_scroll.take();
+                    p.scroll_y = r.unwrap_or(0.0);
+                    r
+                })
+            });
+            if let Some(y) = restore.filter(|y| *y > 0.0) {
+                let js = format!("scrollTo(0,{y});setTimeout(function(){{scrollTo(0,{y});}},700);");
+                f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
+            }
+            f.execute_java_script(Some(&CefString::from(FORM_WATCH_JS)), None, 0);
             let shields = STATE.with(|s| s.borrow().shields.clone());
             if let Some(sh) = shields {
                 let css = sh.cosmetic_css(&url_str);
@@ -997,10 +1094,104 @@ wrap_download_handler! {
     }
 }
 
+/// The permission kind we show the user for CEF's permission bit mask.
+fn permission_kind(mask: u32) -> PermissionKind {
+    use sys::cef_permission_request_types_t as T;
+    if mask & T::CEF_PERMISSION_TYPE_CAMERA_STREAM as u32 != 0 {
+        PermissionKind::Camera
+    } else if mask & T::CEF_PERMISSION_TYPE_MIC_STREAM as u32 != 0 {
+        PermissionKind::Microphone
+    } else if mask & T::CEF_PERMISSION_TYPE_GEOLOCATION as u32 != 0 {
+        PermissionKind::Location
+    } else if mask & T::CEF_PERMISSION_TYPE_NOTIFICATIONS as u32 != 0 {
+        PermissionKind::Notifications
+    } else if mask & T::CEF_PERMISSION_TYPE_CLIPBOARD as u32 != 0 {
+        PermissionKind::Clipboard
+    } else {
+        PermissionKind::Other
+    }
+}
+
+/// Plain words for the common certificate errors.
+fn certificate_error_text(code: i32) -> String {
+    match code {
+        -200 => "The certificate doesn't match the site's address.".to_string(),
+        -201 => "The site's certificate has expired or isn't valid yet.".to_string(),
+        -202 => "The certificate wasn't issued by an authority we trust.".to_string(),
+        -203 => "The certificate contains errors.".to_string(),
+        -207 => "The certificate type isn't allowed.".to_string(),
+        -208 => "The certificate has been revoked.".to_string(),
+        -210 => "The certificate is weak.".to_string(),
+        other => format!("The site's certificate can't be trusted (error {other})."),
+    }
+}
+
+wrap_permission_handler! {
+    struct PagePermission { id: ViewId }
+
+    impl PermissionHandler {
+        fn on_show_permission_prompt(
+            &self,
+            _browser: Option<&mut Browser>,
+            prompt_id: u64,
+            requesting_origin: Option<&CefString>,
+            requested_permissions: u32,
+            callback: Option<&mut PermissionPromptCallback>,
+        ) -> ::std::os::raw::c_int {
+            let Some(cb) = callback else { return 0 };
+            let cb = cb.clone();
+            STATE.with(|s| s.borrow_mut().perm_callbacks.insert(prompt_id, cb));
+            emit(Event::PermissionRequested {
+                view: self.id,
+                request: prompt_id,
+                origin: requesting_origin.map(CefString::to_string).unwrap_or_default(),
+                kind: permission_kind(requested_permissions),
+            });
+            1
+        }
+
+        fn on_dismiss_permission_prompt(
+            &self,
+            _browser: Option<&mut Browser>,
+            prompt_id: u64,
+            _result: PermissionRequestResult,
+        ) {
+            STATE.with(|s| s.borrow_mut().perm_callbacks.remove(&prompt_id));
+        }
+    }
+}
+
 wrap_request_handler! {
     struct PageRequest { id: ViewId }
 
     impl RequestHandler {
+        fn on_certificate_error(
+            &self,
+            _browser: Option<&mut Browser>,
+            cert_error: Errorcode,
+            request_url: Option<&CefString>,
+            _ssl_info: Option<&mut Sslinfo>,
+            callback: Option<&mut Callback>,
+        ) -> ::std::os::raw::c_int {
+            let Some(cb) = callback else { return 0 };
+            let cb = cb.clone();
+            let code = sys::cef_errorcode_t::from(cert_error) as i32;
+            let request = STATE.with(|s| {
+                let mut s = s.borrow_mut();
+                s.next_cert_id += 1;
+                let id = s.next_cert_id;
+                s.cert_callbacks.insert(id, cb);
+                id
+            });
+            emit(Event::CertificateError {
+                view: self.id,
+                request,
+                url: request_url.map(CefString::to_string).unwrap_or_default(),
+                error: certificate_error_text(code),
+            });
+            1
+        }
+
         fn resource_request_handler(
             &self,
             _browser: Option<&mut Browser>,
@@ -1184,7 +1375,12 @@ wrap_keyboard_handler! {
                     return 1;
                 }
             } else if is_alt && !is_ctrl {
-                if key == 0x25 {
+                if key == 0x73 {
+                    // Alt+F4 closes the whole browser, not just this page's window
+                    emit(Event::ShortcutQuit);
+                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                    return 1;
+                } else if key == 0x25 {
                     // Alt+Left
                     emit(Event::ShortcutBack { view: self.id });
                     if let Some(s) = is_keyboard_shortcut { *s = 1; }
@@ -1240,6 +1436,9 @@ wrap_client! {
         fn request_handler(&self) -> Option<RequestHandler> {
             Some(PageRequest::new(self.id))
         }
+        fn permission_handler(&self) -> Option<PermissionHandler> {
+            Some(PagePermission::new(self.id))
+        }
     }
 }
 
@@ -1282,6 +1481,29 @@ impl CefEngine {
                 })
                 .unwrap_or((0, 0))
         })
+    }
+
+    /// Tell the engine where our UI is drawing over the page area, so those rectangles are cut
+    /// out of the page windows (AUDIT-06). Rectangles are main-window DIP plus a corner radius.
+    pub fn set_overlay_rects(&self, rects: Vec<(ViewRect, i32)>) {
+        let changed = STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            let same = s.overlay_holes.len() == rects.len()
+                && s.overlay_holes.iter().zip(&rects).all(|(a, b)| {
+                    a.1 == b.1
+                        && a.0.x == b.0.x
+                        && a.0.y == b.0.y
+                        && a.0.width == b.0.width
+                        && a.0.height == b.0.height
+                });
+            if !same {
+                s.overlay_holes = rects;
+            }
+            !same
+        });
+        if changed {
+            place_all();
+        }
     }
 
     /// Move keyboard focus from a page window to our UI (Ctrl+L, F6). Pages are separate
@@ -1366,6 +1588,8 @@ impl Engine for CefEngine {
                     visible: false,
                     sleeping: false,
                     saved_url: None,
+                    scroll_y: 0.0,
+                    restore_scroll: None,
                 },
             );
             id
@@ -1503,12 +1727,27 @@ impl Engine for CefEngine {
         });
     }
 
-    fn answer_permission(&mut self, _request: u64, _allow: bool) {
-        // Permission prompt answer callback stub (default CEF handles standard permissions)
+    fn answer_permission(&mut self, request: u64, allow: bool) {
+        let cb = STATE.with(|s| s.borrow_mut().perm_callbacks.remove(&request));
+        if let Some(cb) = cb {
+            let result = if allow {
+                sys::cef_permission_request_result_t::CEF_PERMISSION_RESULT_ACCEPT
+            } else {
+                sys::cef_permission_request_result_t::CEF_PERMISSION_RESULT_DENY
+            };
+            cb.cont(result.into());
+        }
     }
 
-    fn answer_certificate_error(&mut self, _request: u64, _proceed: bool) {
-        // Certificate error prompt answer callback stub
+    fn answer_certificate_error(&mut self, request: u64, proceed: bool) {
+        let cb = STATE.with(|s| s.borrow_mut().cert_callbacks.remove(&request));
+        if let Some(cb) = cb {
+            if proceed {
+                cb.cont();
+            } else {
+                cb.cancel();
+            }
+        }
     }
 
     fn download_control(&mut self, id: u32, action: &str) {
@@ -1609,6 +1848,7 @@ impl Engine for CefEngine {
             let page = s.pages.get_mut(&view)?;
             if page.sleeping {
                 page.sleeping = false;
+                page.restore_scroll = Some(page.scroll_y);
                 page.saved_url.take()
             } else {
                 None
@@ -1691,10 +1931,19 @@ wrap_app! {
     impl App {
         fn on_before_command_line_processing(
             &self,
-            _process_type: Option<&CefString>,
+            process_type: Option<&CefString>,
             command_line: Option<&mut CommandLine>,
         ) {
+            let is_browser = process_type.map(CefString::to_string).unwrap_or_default().is_empty();
             if let Some(cmd) = command_line {
+                if is_browser
+                    && let Some(paths) = EXTENSION_PATHS.get().filter(|p| !p.is_empty())
+                {
+                    cmd.append_switch_with_value(
+                        Some(&CefString::from("load-extension")),
+                        Some(&CefString::from(paths.join(",").as_str())),
+                    );
+                }
                 // P5-03: Process and cache tuning (documented Chromium flags)
                 cmd.append_switch_with_value(
                     Some(&CefString::from("disk-cache-size")),
@@ -1771,6 +2020,7 @@ pub fn run(
     }
 
     let options = options();
+    let _ = EXTENSION_PATHS.set(options.extension_paths.clone());
     if !options.in_memory && !options.profile_dir.as_os_str().is_empty() {
         let _ = std::fs::create_dir_all(&options.profile_dir);
     }

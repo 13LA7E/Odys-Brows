@@ -36,15 +36,35 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
   const loadUnpackedBtn = el('button', 'btn-load-unpacked', 'Load unpacked');
   loadUnpackedBtn.style.cssText =
     'padding:8px 16px;background:var(--surface);border:1px solid var(--w-border);color:var(--text);border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;';
-  loadUnpackedBtn.addEventListener('click', () => {
-    const path = window.prompt('Enter the absolute folder path containing manifest.json (Manifest V3):');
-    if (path && actions.onLoadUnpacked) {
-      actions.onLoadUnpacked(path.trim());
-    }
-  });
   topActions.append(loadUnpackedBtn);
   header.append(titleCol, topActions);
   wrap.append(header);
+
+  // A folder path field (window.prompt is not reliable in our UI window).
+  const loadRow = el('div', 'extensions-load-row');
+  loadRow.style.cssText = 'display:none;gap:10px;align-items:center;margin:-12px 0 24px 0;';
+  const pathInput = el('input');
+  pathInput.type = 'text';
+  pathInput.placeholder = 'Folder with manifest.json (Manifest V3)';
+  pathInput.style.cssText = 'flex:1;height:38px;border-radius:8px;border:1px solid var(--w-border);background:var(--w-field);color:var(--text);font:inherit;font-size:13.5px;padding:0 12px;outline:none;';
+  const goBtn = el('button', null, 'Load');
+  goBtn.style.cssText = 'padding:8px 16px;background:var(--surface);border:1px solid var(--w-border);color:var(--accent);border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;';
+  const submit = () => {
+    const path = pathInput.value.trim();
+    if (path && actions.onLoadUnpacked) actions.onLoadUnpacked(path);
+  };
+  goBtn.addEventListener('click', submit);
+  pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  loadRow.append(pathInput, goBtn);
+  loadUnpackedBtn.addEventListener('click', () => {
+    loadRow.style.display = loadRow.style.display === 'none' ? 'flex' : 'none';
+    if (loadRow.style.display === 'flex') pathInput.focus();
+  });
+  wrap.append(loadRow);
+
+  const note = el('p', null, 'Extensions are loaded when Constellations starts. Changes here apply the next time you start it.');
+  note.style.cssText = 'font-size:13px;color:var(--text-muted);margin:0 0 20px 0;';
+  wrap.append(note);
 
   // Extension list or empty state
   if (!extensions || extensions.length === 0) {
@@ -53,7 +73,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       'padding:48px;border:1px dashed var(--w-border);border-radius:14px;text-align:center;color:var(--text-muted);';
     empty.append(
       el('div', null, 'No extensions installed yet.'),
-      el('div', null, 'You can load unpacked Manifest V3 extensions or install directly from the Chrome Web Store.')
+      el('div', null, 'You can load unpacked Manifest V3 extensions from a folder.')
     );
     empty.lastChild.style.cssText = 'font-size:13px;margin-top:6px;opacity:0.75;';
     wrap.append(empty);
@@ -95,14 +115,20 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       const descEl = el('p', null, ext.description || 'No description provided.');
       descEl.style.cssText = 'font-size:13.5px;color:var(--text-muted);margin:6px 0 12px 0;line-height:1.45;';
 
-      // P6-03 Cost per extension: memory and CPU
+      // P6-03 Cost per extension: shown only when it is really measured (it is not yet, so
+      // no numbers are invented).
       const statsRow = el('div', 'extension-stats');
       statsRow.style.cssText = 'display:flex;gap:14px;font-size:12px;color:var(--text-soft);margin-bottom:10px;';
-      const memChip = el('span', null, `${ext.memory_mb.toFixed(1)} MB RAM`);
-      const cpuChip = el('span', null, `${ext.cpu_pct.toFixed(1)}% CPU`);
-      memChip.style.cssText = 'background:var(--w-chip);padding:2px 8px;border-radius:4px;';
-      cpuChip.style.cssText = 'background:var(--w-chip);padding:2px 8px;border-radius:4px;';
-      statsRow.append(memChip, cpuChip);
+      if (ext.memory_mb > 0) {
+        const memChip = el('span', null, `${ext.memory_mb.toFixed(1)} MB RAM`);
+        memChip.style.cssText = 'background:var(--w-chip);padding:2px 8px;border-radius:4px;';
+        statsRow.append(memChip);
+      }
+      if (ext.cpu_pct > 0) {
+        const cpuChip = el('span', null, `${ext.cpu_pct.toFixed(1)}% CPU`);
+        cpuChip.style.cssText = 'background:var(--w-chip);padding:2px 8px;border-radius:4px;';
+        statsRow.append(cpuChip);
+      }
 
       // Permissions pills
       const permsRow = el('div');

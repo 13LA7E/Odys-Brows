@@ -9,7 +9,7 @@ import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js'
 import { renderSettings, applyAccent } from './settings.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab } from './newtab.js';
-import { initPageBasicsShortcuts, renderErrorPage } from './pagebasics.js';
+import { initPageBasicsShortcuts, renderErrorPage, renderPromptCard } from './pagebasics.js';
 import { renderExtensionsPage } from './extensions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -533,6 +533,20 @@ export function renderShell(root, state) {
     root.append(renderAnswerCard(state.answer));
   }
 
+  // Permission and certificate questions for the tab being shown (AUDIT-21).
+  const prompt = (state.prompts || []).find((p) => p.view === state.activeTab);
+  if (prompt) {
+    root.append(renderPromptCard(prompt, (answer) => {
+      state.prompts = state.prompts.filter((p) => p !== prompt);
+      if (typeof window.odysseyBridge === 'function') {
+        window.odysseyBridge(JSON.stringify(prompt.kind === 'permission'
+          ? { type: 'answer-permission', request: prompt.request, allow: answer }
+          : { type: 'answer-certificate', request: prompt.request, proceed: answer }));
+      }
+      renderShell(root, state);
+    }));
+  }
+
   // Helm toolbar. The download ring follows the active download (AUDIT-05).
   const activeDl = (state.downloads || []).find((d) => d.active);
   const helmState = activeDl && state.helm?.kind === 'address'
@@ -648,6 +662,44 @@ export function renderShell(root, state) {
   }
 
   restoreFocus(root, focused);
+  watchOverlays(root, state);
+}
+
+// --- Overlays over the page (AUDIT-06) ---------------------------------------------------
+// Page windows cover our UI, so each open popover or card tells Rust where it is and a hole is
+// cut there. A DOM observer keeps it current for things drawn outside renderShell (find bar,
+// hover previews).
+const OVERLAY_SELECTOR = '.downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card';
+let overlayObserver = null;
+let lastOverlayJson = '[]';
+let overlayTimer = 0;
+
+function reportOverlays() {
+  if (typeof window.odysseyBridge !== 'function') return;
+  const rects = [...document.querySelectorAll(OVERLAY_SELECTOR)].map((e) => {
+    const r = e.getBoundingClientRect();
+    const radius = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
+    return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height), radius: Math.round(radius) };
+  }).filter((r) => r.width > 0 && r.height > 0);
+  const json = JSON.stringify(rects);
+  if (json === lastOverlayJson) return;
+  lastOverlayJson = json;
+  window.odysseyBridge(JSON.stringify({ type: 'set-overlay-rects', rects }));
+}
+
+function watchOverlays(root, state) {
+  if (!state.live) return;
+  window.__overlayRects = () => JSON.parse(lastOverlayJson);
+  if (!overlayObserver) {
+    overlayObserver = new MutationObserver(() => {
+      clearTimeout(overlayTimer);
+      overlayTimer = setTimeout(reportOverlays, 30);
+    });
+    overlayObserver.observe(root, { childList: true, subtree: true });
+    window.addEventListener('resize', () => { clearTimeout(overlayTimer); overlayTimer = setTimeout(reportOverlays, 60); });
+  }
+  clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(reportOverlays, 30);
 }
 
 export function renderShieldsPanel(state, onClose) {

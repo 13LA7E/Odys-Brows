@@ -122,10 +122,12 @@ export function renderCollapsedRail(railEl, options = {}) {
       }
     });
   } else {
-    bgSvg.append(svg('line', {
-      x1: 28, y1: cys[0], x2: 28, y2: plusCy,
-      stroke: 'var(--w-trail)', 'stroke-width': 1,
-    }));
+    if (cys.length > 0) {
+      bgSvg.append(svg('line', {
+        x1: 28, y1: cys[0], x2: 28, y2: plusCy,
+        stroke: 'var(--w-trail)', 'stroke-width': 1,
+      }));
+    }
     bgSvg.append(svg('circle', {
       cx: 28, cy: plusCy, r: 10, fill: 'var(--bg)',
       stroke: 'var(--w-newtab-ring)', 'stroke-dasharray': '2.5 3',

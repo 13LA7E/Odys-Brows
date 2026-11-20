@@ -8,7 +8,7 @@
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
 | Current task | Rebuild `dist`, then live-check the Phase R items marked `[~]` in PHASES on `tools/audit/test.html`, starting with AUDIT-01 (blank Helm and notch over web pages). |
-| State | Phase R repairs are now **checked live** with `tools/live_check/` (6 scripts, about 60 assertions, all passing) except where PHASES says otherwise. Not verifiable by automation: AUDIT-01 (what is visible on screen) and real keyboard shortcuts (AUDIT-08, Ctrl+Shift+N). Open: 06, 15, 21, 22, 23, 28, 31, 32, 33. |
+| State | Phase R second pass done. **All live checks pass** (`tools/live_check/`, 10 scripts, about 100 checks). Open: AUDIT-01 (cannot be judged by automation), 03 (partial), 23 (blocked on D-013), 31 (Linux), 32 and 33 (blocked: the rule change they need was not allowed in this session). The app is installed for the current user and listed as "Constellations" in the Start menu. |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
 | Last pushed commit | f6d205e (before Phase R). |
@@ -110,6 +110,15 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 Copy this template for each session:
 
 ```
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Phase R, remaining audit items and packaging
+
+- **Did:** AUDIT-15, 21, 22, 06, 14 (scroll), 29, 28 (part), 34, 11 (notice); `tools/installer/install_local.ps1` and an icon (`tools/installer/constellations.ico`, embedded in the exe through `app/shell/app.rc`).
+- **Verified live** (`tools/live_check/`): audio, typed text and download keep a tab awake; scroll restored after wake; permission and certificate cards work end to end; holes in page windows appear and disappear with the cards; an unpacked extension runs after a restart and stops when disabled; sky stops when idle. The installed exe starts from the Start menu shortcut and `Get-StartApps` lists it.
+- **New dependency:** `embed-resource 3` (build-time, embeds the icon).
+- **Blocked:** AUDIT-32 and 33 need AGENTS.md and DESIGN §10 amended (D-024 drafted in the audit); that edit was blocked and was not retried. AUDIT-23 needs D-013.
+- **Needs the owner:** OK on the permission and certificate cards (screenshot), the extensions button in the notch, and whether `VaultReveal` and password autofill are wanted. Look at the Helm and notch over a page once (AUDIT-01).
+- **Not tested:** Linux, real key presses, another app in front when clicking the window.
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Phase R, live verification of all phases
 

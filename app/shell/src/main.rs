@@ -28,7 +28,13 @@ const RAIL_WIDTH: i32 = 56;
 
 /// Where the profile lives: `%LOCALAPPDATA%\<name>` on Windows, `$XDG_DATA_HOME/<name>` or
 /// `~/.local/share/<name>` on Linux, the temp folder as a last resort.
+static PROFILE_OVERRIDE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 fn profile_dir() -> PathBuf {
+    // `--profile-dir=` moves the shell's own files (settings, session, history, vault) too.
+    if let Some(p) = PROFILE_OVERRIDE.get() {
+        return p.clone();
+    }
     let base = if cfg!(windows) {
         std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
     } else {
@@ -179,6 +185,8 @@ struct Shell {
     ai_cancel: Arc<AtomicBool>,
     zoom_index: HashMap<ViewId, usize>,
     download_paths: HashMap<u32, String>,
+    /// Downloads in progress and the tab that started them (those tabs don't sleep).
+    active_downloads: HashMap<u32, Option<ViewId>>,
     /// The URL last written to history per tab, so one navigation isn't recorded twice.
     last_recorded: HashMap<ViewId, String>,
     last_persist: std::cell::Cell<Option<std::time::Instant>>,
@@ -215,6 +223,7 @@ impl Default for Shell {
             ai_cancel: Arc::new(AtomicBool::new(false)),
             zoom_index: HashMap::new(),
             download_paths: HashMap::new(),
+            active_downloads: HashMap::new(),
             last_recorded: HashMap::new(),
             last_persist: std::cell::Cell::new(None),
             persist_dirty: std::cell::Cell::new(false),
@@ -325,23 +334,46 @@ impl Shell {
     }
 
     fn relight_closed_tab(&mut self, id: u64) -> Option<(String, Option<ViewId>)> {
+        self.expire_closed();
         let pos = self.closed_tabs.iter().position(|c| c.id == id)?;
         let record = self.closed_tabs.remove(pos)?;
         Some((record.url, record.opener))
     }
 
     fn relight_last_closed(&mut self) -> Option<(String, Option<ViewId>)> {
+        self.expire_closed();
         let record = self.closed_tabs.pop_front()?;
         Some((record.url, record.opener))
     }
 
+    fn expire_closed(&mut self) {
+        let now = unix_now();
+        self.closed_tabs.retain(|c| now - c.closed_at < 86400);
+    }
+
+    /// Closed tabs saved in the last session (those under 24 hours old).
+    fn restore_closed(&mut self, saved: &[SavedClosed]) {
+        let now = unix_now();
+        for c in saved.iter().filter(|c| now - c.closed_at < 86400) {
+            let id = self.next_closed_id;
+            self.next_closed_id += 1;
+            self.closed_tabs.push_back(ClosedTabRecord {
+                id,
+                view: 0,
+                url: c.url.clone(),
+                title: c.title.clone(),
+                host: c.host.clone(),
+                closed_at: c.closed_at,
+                opener: None,
+            });
+        }
+    }
+
     fn closed_tab_infos(&self) -> Vec<bridge::ClosedTabInfo> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let now = unix_now();
         self.closed_tabs
             .iter()
+            .filter(|c| now - c.closed_at < 86400)
             .map(|c| {
                 let secs = (now - c.closed_at).max(0);
                 let closed_ago = if secs < 60 {
@@ -415,11 +447,24 @@ impl Shell {
             .shown
             .and_then(|v| self.tabs.iter().position(|t| t.view == v));
 
+        let now = unix_now();
+        let closed = self
+            .closed_tabs
+            .iter()
+            .filter(|c| now - c.closed_at < 86400)
+            .map(|c| SavedClosed {
+                url: c.url.clone(),
+                title: c.title.clone(),
+                host: c.host.clone(),
+                closed_at: c.closed_at,
+            })
+            .collect();
         SessionData {
             tabs,
             active_tab_index,
             rail_width: self.rail_width,
             active_space: self.active_space,
+            closed,
         }
     }
 
@@ -486,6 +531,15 @@ impl Shell {
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
         if self.is_sleeping(view) || (self.is_restore_pending(view) && url.starts_with("about:")) {
             // The engine loads about:blank to free memory; the real URL stays ours.
+            return;
+        }
+        if url.starts_with("about:")
+            && self
+                .tab_urls
+                .get(&view)
+                .is_some_and(|u| u.starts_with("odyssey://"))
+        {
+            // The blank page behind an internal page; the tab's address stays odyssey://.
             return;
         }
         if let Some(name) = url.strip_prefix("odyssey://") {
@@ -621,12 +675,15 @@ impl Shell {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
+        let downloading: Vec<ViewId> = self.active_downloads.values().flatten().copied().collect();
         for tab in &mut self.tabs {
-            // Edge cases §9: Never sleep active tab, tabs playing audio, pinned tabs, tabs with unsaved form input, or already sleeping
+            // Edge cases §9: Never sleep active tab, tabs playing audio, pinned tabs, tabs with
+            // unsaved form input, tabs with a download in progress, or already sleeping
             if Some(tab.view) == self.shown
                 || tab.pinned
                 || tab.has_audio
                 || tab.has_form_input
+                || downloading.contains(&tab.view)
                 || tab.sleeping
             {
                 continue;
@@ -731,6 +788,8 @@ impl Shell {
                             || url.starts_with("about:")
                             || url.is_empty()
                         {
+                            // Replace the page so it stops running (audio, timers).
+                            engine.navigate(v, "about:blank");
                             engine.set_visible(v, false);
                             self.on_url_changed(v, &url);
                         } else {
@@ -812,6 +871,30 @@ impl Shell {
                 }
             }
             FromUi::OpenPrivateWindow => open_private_window(),
+            FromUi::FocusWindow => engine.focus_ui(),
+            FromUi::SetOverlayRects { rects } => {
+                let rects = rects
+                    .iter()
+                    .take(16)
+                    .filter(|r| r.width > 0.0 && r.height > 0.0)
+                    .map(|r| {
+                        (
+                            Rect {
+                                x: r.x.floor() as i32,
+                                y: r.y.floor() as i32,
+                                width: r.width.ceil() as i32,
+                                height: r.height.ceil() as i32,
+                            },
+                            r.radius.round() as i32,
+                        )
+                    })
+                    .collect();
+                engine.set_overlay_rects(rects);
+            }
+            FromUi::AnswerPermission { request, allow } => engine.answer_permission(request, allow),
+            FromUi::AnswerCertificate { request, proceed } => {
+                engine.answer_certificate_error(request, proceed)
+            }
             FromUi::MinimizeWindow => engine.minimize_window(),
             FromUi::MaximizeWindow => engine.toggle_maximize_window(),
             FromUi::CloseWindow => engine.close_window(),
@@ -1032,7 +1115,12 @@ impl Shell {
             }
             FromUi::SetTabSleeping { view, sleeping } => {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.view == view) {
-                    if sleeping && Some(view) != self.shown && !tab.pinned && !tab.has_audio {
+                    if sleeping
+                        && Some(view) != self.shown
+                        && !tab.pinned
+                        && !tab.has_audio
+                        && !tab.has_form_input
+                    {
                         tab.sleeping = true;
                         engine.sleep(view);
                         engine.send_to_ui(&bridge::to_json(&ToUi::TabSleeping {
@@ -1149,11 +1237,17 @@ impl Shell {
             }
             FromUi::VaultList => {
                 let entries = self.vault.list();
-                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+                    entries,
+                    notice: self.vault.load_notice.clone(),
+                }));
             }
             FromUi::VaultListForOrigin { origin } => {
                 let entries = self.vault.list_for_origin(&origin);
-                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+                    entries,
+                    notice: self.vault.load_notice.clone(),
+                }));
             }
             FromUi::VaultAdd {
                 origin,
@@ -1163,7 +1257,10 @@ impl Shell {
                 if self.vault.add(&origin, &username, &password).is_ok() {
                     let _ = self.vault.save(&profile_dir().join("vault.json"));
                     let entries = self.vault.list();
-                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+                        entries,
+                        notice: self.vault.load_notice.clone(),
+                    }));
                 }
             }
             FromUi::VaultUpdate {
@@ -1175,14 +1272,20 @@ impl Shell {
                 if self.vault.update(&id, origin, username, password).is_ok() {
                     let _ = self.vault.save(&profile_dir().join("vault.json"));
                     let entries = self.vault.list();
-                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+                        entries,
+                        notice: self.vault.load_notice.clone(),
+                    }));
                 }
             }
             FromUi::VaultDelete { id } => {
                 if self.vault.delete(&id).is_ok() {
                     let _ = self.vault.save(&profile_dir().join("vault.json"));
                     let entries = self.vault.list();
-                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded { entries }));
+                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+                        entries,
+                        notice: self.vault.load_notice.clone(),
+                    }));
                 }
             }
             FromUi::VaultReveal { id } => {
@@ -1219,6 +1322,8 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         extensions: extensions::ExtensionsStore::load_or_default(&profile_dir()),
         ..Shell::default()
     }));
+
+    shell.borrow_mut().restore_closed(&saved_session.closed);
 
     if let Some(path) = urls_file {
         if let Ok(content) = std::fs::read_to_string(path) {
@@ -1293,6 +1398,16 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 if !info.path.is_empty() {
                     s.download_paths.insert(info.id, info.path.clone());
                 }
+                if info.complete || info.cancelled || info.interrupted {
+                    s.active_downloads.remove(&info.id);
+                } else {
+                    s.active_downloads.insert(info.id, info.view);
+                }
+            }
+            engine_api::Event::FormInputChanged { view, has_input } => {
+                if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
+                    t.has_form_input = *has_input;
+                }
             }
             engine_api::Event::AudioChanged { view, playing } => {
                 if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
@@ -1327,6 +1442,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 s.handle(&mut CefEngine, FromUi::PrevTab);
             }
             engine_api::Event::ShortcutNewPrivateWindow => open_private_window(),
+            engine_api::Event::ShortcutQuit => CefEngine.quit(),
             engine_api::Event::ShortcutFocusAddress => {
                 CefEngine.focus_ui();
                 CefEngine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
@@ -1398,8 +1514,10 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::TitleChanged { .. }
                 | engine_api::Event::AudioChanged { .. }
                 | engine_api::Event::Download(_)
+                | engine_api::Event::FormInputChanged { .. }
                 | engine_api::Event::ShortcutNewTab
                 | engine_api::Event::ShortcutNewPrivateWindow
+                | engine_api::Event::ShortcutQuit
                 | engine_api::Event::ShortcutCloseTab { .. }
                 | engine_api::Event::ShortcutReload { .. }
                 | engine_api::Event::ShortcutBack { .. }
@@ -1439,6 +1557,10 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 pending_events_sink.borrow_mut().push_back(event.clone());
             }
         }
+        // `on_url_changed` already tells the UI about a new URL; don't send it twice.
+        if matches!(event, engine_api::Event::UrlChanged { .. }) {
+            return;
+        }
         if let Some(message) = bridge::event_to_ui(&event) {
             CefEngine.send_to_ui(&bridge::to_json(&message));
         }
@@ -1467,8 +1589,10 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     fn schedule_sleep_timer(shell: Rc<RefCell<Shell>>) {
         let timer_shell = shell.clone();
         CefEngine.after(30_000, move || {
-            if let Ok(mut s) = timer_shell.try_borrow_mut() {
-                s.check_tab_sleeping(&mut CefEngine, 600);
+            if let Ok(mut s) = timer_shell.try_borrow_mut()
+                && let Some(secs) = sleep_timeout_secs(s.is_private)
+            {
+                s.check_tab_sleeping(&mut CefEngine, secs);
             }
             schedule_sleep_timer(timer_shell);
         });
@@ -1496,6 +1620,9 @@ fn main() {
         std::env::args().find_map(|a| a.strip_prefix("--profile-dir=").map(PathBuf::from));
     let urls_file_arg =
         std::env::args().find_map(|a| a.strip_prefix("--urls-file=").map(PathBuf::from));
+    if let Some(p) = &profile_arg {
+        let _ = PROFILE_OVERRIDE.set(p.clone());
+    }
     let start_profile = profile_arg.clone();
     let result = engine_cef::run(
         move || engine_cef::StartOptions {
@@ -1518,6 +1645,11 @@ fn main() {
                 "?private=1".into()
             } else {
                 String::new()
+            },
+            extension_paths: if is_private || any_selftest {
+                Vec::new()
+            } else {
+                extensions::ExtensionsStore::load_or_default(&profile_dir()).enabled_paths()
             },
             title: if is_private {
                 format!("{} (Private)", brand::NAME)
@@ -1619,6 +1751,24 @@ pub struct SessionData {
     pub rail_width: i32,
     #[serde(default)]
     pub active_space: usize,
+    /// Tabs closed in the last 24 hours, so Ctrl+Shift+T still works after a restart.
+    #[serde(default)]
+    pub closed: Vec<SavedClosed>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedClosed {
+    pub url: String,
+    pub title: String,
+    pub host: String,
+    pub closed_at: i64,
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 impl Default for SessionData {
@@ -1628,6 +1778,7 @@ impl Default for SessionData {
             active_tab_index: None,
             rail_width: RAIL_WIDTH,
             active_space: 0,
+            closed: Vec::new(),
         }
     }
 }
@@ -1662,6 +1813,21 @@ pub fn load_session_or_default(dir: &Path) -> SessionData {
         },
         Err(_) => SessionData::default(),
     }
+}
+
+/// Idle time before background tabs sleep, from the `sleepMinutes` setting (default 10;
+/// 0 means never).
+fn sleep_timeout_secs(is_private: bool) -> Option<i64> {
+    let settings = if is_private {
+        default_settings()
+    } else {
+        load_settings_or_default(&profile_dir())
+    };
+    let minutes = settings
+        .get("sleepMinutes")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10);
+    (minutes > 0).then_some(minutes as i64 * 60)
 }
 
 /// Tab title for an `odyssey://<name>` page.
@@ -1754,6 +1920,27 @@ pub fn open_file(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tabs_with_downloads_do_not_sleep() {
+        let mut shell = Shell::default();
+        let mut shown = Tab::new(1, None);
+        shown.last_active = 0;
+        let mut dl = Tab::new(2, None);
+        dl.last_active = 0;
+        shell.tabs.push(shown);
+        shell.tabs.push(dl);
+        shell.shown = Some(1);
+        shell.active_downloads.insert(7, Some(2));
+        shell.check_tab_sleeping(&mut CefEngine, 600);
+        assert!(
+            !shell.tabs[1].sleeping,
+            "tab with a download must stay awake"
+        );
+        shell.active_downloads.clear();
+        shell.check_tab_sleeping(&mut CefEngine, 600);
+        assert!(shell.tabs[1].sleeping);
+    }
 
     #[test]
     fn internal_pages_get_titles() {
@@ -2046,6 +2233,12 @@ mod tests {
             active_tab_index: Some(1),
             rail_width: 264,
             active_space: 1,
+            closed: vec![SavedClosed {
+                url: "https://closed.example".into(),
+                title: "Closed".into(),
+                host: "closed.example".into(),
+                closed_at: 1,
+            }],
         };
 
         assert!(save_session_atomic(&tmp_dir, &session).is_ok());

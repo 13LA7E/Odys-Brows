@@ -26,6 +26,17 @@ where
     }
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct OverlayRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    #[serde(default)]
+    pub radius: f64,
+}
+
 /// Messages our UI sends to Rust.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
@@ -73,6 +84,22 @@ pub enum FromUi {
     MaximizeWindow,
     /// Open a private window (a second process with `--private`, AUDIT-26).
     OpenPrivateWindow,
+    /// Bring our window forward and give it keyboard focus (a click while another app is on top).
+    FocusWindow,
+    /// Where the UI draws over the page area, so the page windows leave holes there (AUDIT-06).
+    SetOverlayRects {
+        rects: Vec<OverlayRect>,
+    },
+    /// The user's answer to a permission prompt (AUDIT-21).
+    AnswerPermission {
+        request: u64,
+        allow: bool,
+    },
+    /// The user's answer to a certificate error (AUDIT-21).
+    AnswerCertificate {
+        request: u64,
+        proceed: bool,
+    },
     CloseWindow,
     /// Rail width change from collapse/expand (P2-05).
     SetRailWidth {
@@ -282,6 +309,18 @@ pub enum ToUi {
         code: i32,
         text: String,
     },
+    PermissionRequest {
+        view: ViewId,
+        request: u64,
+        origin: String,
+        kind: String,
+    },
+    CertificateError {
+        view: ViewId,
+        request: u64,
+        url: String,
+        error: String,
+    },
     NewWindow {
         opener: ViewId,
         url: String,
@@ -346,6 +385,9 @@ pub enum ToUi {
     /// Vault entries loaded (P8-02).
     VaultLoaded {
         entries: Vec<vault::VaultEntrySummary>,
+        /// Set when the saved-logins file on disk was damaged (it was kept aside).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notice: Option<String>,
     },
     /// Revealed login credentials (P8-02).
     VaultCredentials {
@@ -409,6 +451,28 @@ pub fn event_to_ui(e: &Event) -> Option<ToUi> {
             url,
             background: kind == NewWindowKind::BackgroundTab,
             user_gesture,
+        },
+        Event::PermissionRequested {
+            view,
+            request,
+            origin,
+            kind,
+        } => ToUi::PermissionRequest {
+            view,
+            request,
+            origin,
+            kind: format!("{kind:?}").to_lowercase(),
+        },
+        Event::CertificateError {
+            view,
+            request,
+            url,
+            error,
+        } => ToUi::CertificateError {
+            view,
+            request,
+            url,
+            error,
         },
         Event::Closed { view } => ToUi::Closed { view },
         Event::ShieldsCountChanged { view, count } => ToUi::ShieldsStatus {

@@ -19,8 +19,8 @@ RequestExecutionLevel user
 
 ; Interface Settings
 !define MUI_ABORTWARNING
-!define MUI_ICON "..\..\design\preview\favicon.ico"
-!define MUI_UNICON "..\..\design\preview\favicon.ico"
+!define MUI_ICON "constellations.ico"
+!define MUI_UNICON "constellations.ico"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME

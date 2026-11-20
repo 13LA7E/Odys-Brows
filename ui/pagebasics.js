@@ -193,6 +193,52 @@ export function openDevTools(activeViewId) {
   }
 }
 
+/** A quiet card above the Helm for a permission or certificate question (AUDIT-21). Not in
+ *  the approved design: same language as the answer card; needs the owner's OK on a screenshot. */
+export function renderPromptCard(prompt, onAnswer) {
+  const card = el('div', 'permission-card');
+  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2);bottom:90px;width:440px;box-sizing:border-box;border-radius:20px;background:var(--surface);box-shadow:var(--shadow-popover);padding:20px 22px 16px;z-index:50;';
+
+  let host = prompt.origin || prompt.url || 'This site';
+  try { host = new URL(host).host || host; } catch (_) { /* keep as is */ }
+
+  const verbs = {
+    camera: 'use your camera',
+    microphone: 'use your microphone',
+    location: 'know your location',
+    notifications: 'show notifications',
+    clipboard: 'see what is on your clipboard',
+    other: 'use a browser feature',
+  };
+  const title = el('div', null, prompt.kind === 'permission'
+    ? `${host} wants to ${verbs[prompt.what] || verbs.other}`
+    : "This connection isn't private");
+  title.style.cssText = 'font-size:15.5px;line-height:1.5;color:var(--text);';
+  card.append(title);
+
+  if (prompt.kind === 'certificate') {
+    const body = el('div', null, `${prompt.error} Anything you send to ${host} could be seen by others.`);
+    body.style.cssText = 'font-size:13.5px;line-height:1.55;color:var(--text-muted);margin-top:8px;';
+    card.append(body);
+  }
+
+  const row = el('div');
+  row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:18px;';
+  const btn = (label, accent, answer) => {
+    const b = el('button', null, label);
+    b.style.cssText = `border:0;background:${accent ? 'var(--w-field)' : 'none'};font:inherit;font-size:13.5px;font-weight:500;padding:8px 16px;border-radius:8px;cursor:pointer;color:${accent ? 'var(--accent)' : 'var(--text-soft)'};`;
+    b.addEventListener('click', () => onAnswer(answer));
+    return b;
+  };
+  if (prompt.kind === 'permission') {
+    row.append(btn('Block', false, false), btn('Allow', true, true));
+  } else {
+    row.append(btn('Go back', false, false), btn('Continue anyway', true, true));
+  }
+  card.append(row);
+  return card;
+}
+
 /** Render a calm, quiet error or crash page inside the page panel (DESIGN.md §10, EDGE_CASES §4). */
 export function renderErrorPage(container, info = {}, onReload = null) {
   container.replaceChildren();

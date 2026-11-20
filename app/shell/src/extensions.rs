@@ -61,6 +61,18 @@ impl ExtensionsStore {
         list
     }
 
+    /// Folders of enabled unpacked extensions, passed to Chromium at start (`--load-extension`).
+    pub fn enabled_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self
+            .extensions
+            .values()
+            .filter(|e| e.enabled)
+            .filter_map(|e| e.path.clone())
+            .collect();
+        paths.sort();
+        paths
+    }
+
     pub fn toggle(&mut self, id: &str, enabled: bool) -> bool {
         if let Some(ext) = self.extensions.get_mut(id) {
             ext.enabled = enabled;
@@ -110,8 +122,9 @@ impl ExtensionsStore {
             enabled: true,
             permissions,
             icon: None,
-            memory_mb: 18.5,
-            cpu_pct: 0.1,
+            // Not measured yet: CEF gives no per-extension cost, so no number is invented.
+            memory_mb: 0.0,
+            cpu_pct: 0.0,
             path: Some(path.to_string_lossy().to_string()),
         };
 

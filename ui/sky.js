@@ -86,6 +86,8 @@ export function createSky(container, options = {}) {
   let currentComet = null;
   let isDestroyed = false;
   let paused = false;
+  let idle = false;
+  let lastActivity = performance.now();
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -125,7 +127,7 @@ export function createSky(container, options = {}) {
 
   function renderFrame(now) {
     if (isDestroyed) return;
-    if (document.hidden || paused) {
+    if (document.hidden || paused || idle) {
       rafId = null;
       return;
     }
@@ -216,7 +218,7 @@ export function createSky(container, options = {}) {
   }
 
   function start() {
-    if (rafId || paused || isDestroyed) return;
+    if (rafId || paused || idle || isDestroyed) return;
     lastTime = performance.now();
     rafId = requestAnimationFrame(renderFrame);
   }
@@ -238,6 +240,27 @@ export function createSky(container, options = {}) {
 
   document.addEventListener('visibilitychange', onVisibilityChange);
 
+  // Drifting with nobody around: stop after ~30 s without pointer or key activity and resume on
+  // the next one (AUDIT-34). The last frame stays drawn, so nothing flashes.
+  const IDLE_MS = 30000;
+  function onActivity() {
+    lastActivity = performance.now();
+    if (idle) {
+      idle = false;
+      if (mode === 'drifting' || (enableComets && !prefersReducedMotion.matches)) start();
+    }
+  }
+  window.addEventListener('pointermove', onActivity, { passive: true });
+  window.addEventListener('pointerdown', onActivity, { passive: true });
+  window.addEventListener('keydown', onActivity, { passive: true });
+  const idleTimer = setInterval(() => {
+    if (!idle && !paused && rafId !== null && performance.now() - lastActivity > IDLE_MS) {
+      idle = true;
+      stop();
+    }
+  }, 2000);
+  window.__skyIdleMs = IDLE_MS;
+
   // Initial draw / start
   if (mode === 'still' && (!enableComets || prefersReducedMotion.matches)) {
     // Draw immediately without RAF
@@ -257,6 +280,8 @@ export function createSky(container, options = {}) {
   const handle = {
     canvas,
     isRunning: () => rafId !== null,
+    /** Test hook: pretend the last activity was `ms` ago. */
+    __ageActivity(ms) { lastActivity = performance.now() - ms; },
     /** Pause while nothing can see the sky (a web page covers it); resume when shown (AUDIT-34). */
     setPaused(p) {
       if (paused === p || isDestroyed) return;
@@ -268,6 +293,10 @@ export function createSky(container, options = {}) {
       isDestroyed = true;
       stop();
       liveSkies.delete(handle);
+      clearInterval(idleTimer);
+      window.removeEventListener('pointermove', onActivity);
+      window.removeEventListener('pointerdown', onActivity);
+      window.removeEventListener('keydown', onActivity);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       canvas.remove();
     },

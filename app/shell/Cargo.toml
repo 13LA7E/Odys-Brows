@@ -23,3 +23,8 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
+
+# Reason: embeds the application icon (app.rc) in the Windows exe so the taskbar, Start menu and
+# search show it.
+[build-dependencies]
+embed-resource = "3"

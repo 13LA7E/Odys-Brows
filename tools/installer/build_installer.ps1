@@ -29,9 +29,14 @@ New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
 Copy-Item (Join-Path $root "target\release\constellations.exe") -Destination $payloadDir
 
 # 2. CEF Runtime DLLs & resources
-$cefDirs = Get-ChildItem (Join-Path $root "target\release\build\cef-dll-sys-*\out\cef_windows_x86_64") -Directory
-if (-not $cefDirs) {
-    $cefDirs = Get-ChildItem (Join-Path $root "target\debug\build\cef-dll-sys-*\out\cef_windows_x86_64") -Directory
+# cef-dll-sys unpacks the runtime into target\<profile>\build\cef-dll-sys\<hash>\out\cef_windows_x86_64.
+# Use the newest folder that holds libcef.dll (release first, then debug).
+$cefDirs = @()
+foreach ($profileName in 'release', 'debug') {
+    $found = Get-ChildItem (Join-Path $root "target\$profileName\build") -Recurse -Filter libcef.dll -ErrorAction SilentlyContinue |
+        Where-Object { $_.Directory.Name -eq 'cef_windows_x86_64' } |
+        Sort-Object LastWriteTime -Descending | ForEach-Object { $_.Directory }
+    if ($found) { $cefDirs = @($found); break }
 }
 if ($cefDirs) {
     $cefDir = $cefDirs[0].FullName

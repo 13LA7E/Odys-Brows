@@ -201,6 +201,19 @@ export function renderSettings(container, state, onUpdate) {
       })
     ));
 
+    // Tab sleeping (AUDIT-15)
+    const sleepLabel = { 5: '5 min', 10: '10 min', 30: '30 min', 0: 'Never' };
+    const sleepValue = { '5 min': 5, '10 min': 10, '30 min': 30, Never: 0 };
+    rows.append(makeRow(
+      'Put background tabs to sleep',
+      'Idle tabs free their memory. Tabs playing audio, with typed text or downloading stay awake.',
+      makeSegmented(['5 min', '10 min', '30 min', 'Never'], sleepLabel[settings.sleepMinutes ?? 10] || '10 min', (val) => {
+        settings.sleepMinutes = sleepValue[val];
+        saveSettings(settings);
+        renderSettings(container, state, onUpdate);
+      })
+    ));
+
     // On startup
     rows.append(makeRow(
       'On startup',
@@ -557,6 +570,12 @@ export function renderSettings(container, state, onUpdate) {
     });
     addBox.append(addHeading, inputsRow, saveLoginBtn);
     rows.append(addBox);
+
+    if (state.vaultNotice) {
+      const warn = el('div', null, state.vaultNotice);
+      warn.style.cssText = 'font-size:13.5px;color:var(--text-soft);background:var(--w-field);border-radius:10px;padding:12px 14px;margin-bottom:14px;line-height:1.5;';
+      rows.append(warn);
+    }
 
     // List of logins
     const entries = state.vaultEntries || [];

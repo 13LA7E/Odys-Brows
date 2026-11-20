@@ -101,6 +101,11 @@ pub enum Event {
         view: ViewId,
         playing: bool,
     },
+    /// A page has text typed into a form field that hasn't been submitted (blocks tab sleeping).
+    FormInputChanged {
+        view: ViewId,
+        has_input: bool,
+    },
     /// The page wants a new window or tab. The engine did *not* open it: the browser decides
     /// (and keeps `opener` to draw the Trail's branch). `user_gesture` is false for pop-ups the
     /// user didn't ask for (EDGE_CASES §2).
@@ -166,6 +171,7 @@ pub enum Event {
         view: ViewId,
     },
     ShortcutRelightClosedTab,
+    ShortcutQuit,
     ShortcutNewPrivateWindow,
     ShortcutPrint {
         view: ViewId,

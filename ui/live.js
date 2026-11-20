@@ -190,6 +190,10 @@ export async function startLive() {
         state.tabs.push(tab);
       }
       if (tab.url !== msg.url && state.activeTab === msg.view) state.shields = 0;
+      // A permission question belongs to the page that asked; a new page makes it stale.
+      if (tab.url !== msg.url && state.prompts) {
+        state.prompts = state.prompts.filter((p) => !(p.view === msg.view && p.kind === 'permission'));
+      }
       tab.url = msg.url;
       if (state.activeTab === msg.view || state.activeTab == null) {
         state.activeTab = msg.view;
@@ -241,6 +245,14 @@ export async function startLive() {
       renderShellLive();
     } else if (msg.type === 'history-loaded') {
       state.history = msg.groups;
+      renderShellLive();
+    } else if (msg.type === 'permission-request') {
+      state.prompts = (state.prompts || []).filter((p) => p.request !== msg.request);
+      state.prompts.push({ kind: 'permission', view: msg.view, request: msg.request, origin: msg.origin, what: msg.kind });
+      renderShellLive();
+    } else if (msg.type === 'certificate-error') {
+      state.prompts = (state.prompts || []).filter((p) => p.request !== msg.request);
+      state.prompts.push({ kind: 'certificate', view: msg.view, request: msg.request, url: msg.url, error: msg.error });
       renderShellLive();
     } else if (msg.type === 'download-progress') {
       applyDownload(msg);
@@ -302,6 +314,7 @@ export async function startLive() {
       }
     } else if (msg.type === 'vault-loaded') {
       state.vaultEntries = msg.entries;
+      state.vaultNotice = msg.notice || '';
       renderShellLive();
     } else if (msg.type === 'vault-credentials') {
       state.revealedPassword = { id: msg.id, username: msg.username, password: msg.password };
@@ -310,6 +323,11 @@ export async function startLive() {
   });
 
   renderShell(app, state);
+
+  // A click while another app is in front brings us forward (page windows are separate windows).
+  window.addEventListener('pointerdown', () => {
+    if (!document.hasFocus()) window.odysseyBridge?.(JSON.stringify({ type: 'focus-window' }));
+  }, true);
 
   window.addEventListener('resize', () => {
     state.sky = generateSky(isPrivate ? 'private' : 'newtab', window.innerWidth || 1280, window.innerHeight || 800);
