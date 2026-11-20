@@ -11,7 +11,7 @@
 | State | Phase R second pass done. **All live checks pass** (`tools/live_check/`, 10 scripts, about 100 checks). Open: AUDIT-01 (cannot be judged by automation), 03 (partial), 23 (blocked on D-013), 31 (Linux), 32 and 33 (blocked: the rule change they need was not allowed in this session). The app is installed for the current user and listed as "Constellations" in the Start menu. |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | f6d205e (before Phase R). |
+| Last pushed commit | bdfe1ce (Phase R second pass). |
 | Last agent | Claude Code / Sonnet 5.5 |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
