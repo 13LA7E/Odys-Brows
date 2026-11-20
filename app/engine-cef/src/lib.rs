@@ -157,7 +157,6 @@ mod win32 {
     }
     #[link(name = "gdi32")]
     unsafe extern "system" {
-        pub fn CreateRectRgn(x1: i32, y1: i32, x2: i32, y2: i32) -> isize;
         pub fn CreateRoundRectRgn(x1: i32, y1: i32, x2: i32, y2: i32, w: i32, h: i32) -> isize;
         pub fn CombineRgn(dst: isize, src1: isize, src2: isize, mode: i32) -> i32;
         pub fn DeleteObject(ho: isize) -> i32;
@@ -193,7 +192,11 @@ fn update_page_window_region(
         // maximize, close) visible and interactive.
         let notch_w = (224.0 * dpi).round() as i32;
         let notch_h = (34.0 * dpi).round() as i32;
-        let notch_rgn = win32::CreateRectRgn((w - notch_w).max(0), 0, w, notch_h);
+        // Only the bottom-left corner is rounded (--r-notch: 0 0 0 14px): the round rectangle is
+        // made taller and wider than the window so the other corners fall outside it.
+        let r2 = (28.0 * dpi).round() as i32;
+        let notch_rgn =
+            win32::CreateRoundRectRgn((w - notch_w).max(0), -r2, w + r2, notch_h + 1, r2, r2);
         win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
         win32::DeleteObject(notch_rgn);
 
