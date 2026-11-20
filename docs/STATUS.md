@@ -11,7 +11,7 @@
 | State | Complete implementation and verification of Phase 5 (Shields, tab sleeping, tuning, benchmarks), Phase 6 (Extensions management, toolbar placement, cost tracking), Phase 7 (AI provider layer, settings, Helm ask streaming), Phase 8 (All settings panels, DPAPI password vault, accessibility, visual pass), and Phase 9 (Packaging, Windows installer NSIS script, Linux AppImage/.deb builder, auto-update architecture, CEF upgrade routine, and release checklist). Passed `tools\check.ps1` (format, clippy warning-free, 46 unit/integration tests, node check, token check, visual check). |
 | Next step | Review with owner and build signed beta installer. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
-| Last pushed commit | 32428e8 (fix(engine,shell,ui): fix layout recursion stack overflow, view navigation visibility, dev runner build step, and sky uniformity). |
+| Last pushed commit | 2d9d16c (fix(engine,shell,ui): fix layout recursion stack overflow, view navigation visibility, dev runner build step, and sky uniformity). |
 | Last agent | Google Antigravity / Gemini 3.8 Flash |
 
 ## Gate 0 check (19 Nov 2026, autopilot)
