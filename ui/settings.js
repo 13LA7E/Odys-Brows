@@ -265,6 +265,18 @@ export function renderSettings(container, state, onUpdate) {
       })
     ));
 
+    // Cursor-linked stars (AUDIT-32)
+    rows.append(makeRow(
+      'Stars follow the cursor',
+      'Nearby stars light up and link to the cursor. Only while Stars is on Drifting.',
+      makeSwitch(settings.starsFollowCursor !== false, (val) => {
+        settings.starsFollowCursor = val;
+        saveSettings(settings);
+        if (onUpdate) onUpdate('starsFollowCursor', val);
+        renderSettings(container, state, onUpdate);
+      })
+    ));
+
     // 3. Accent (Swatches)
     const swatchesBox = el('div');
     swatchesBox.style.cssText = 'display:flex;gap:12px;';

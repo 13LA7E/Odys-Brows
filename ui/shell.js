@@ -242,10 +242,24 @@ function panelSig(state) {
   return o;
 }
 
+/** Sky options from live state, falling back to the saved settings. */
+function skyOptions(state) {
+  const mode = String(state.starsMode || state.settings?.stars || 'still').toLowerCase();
+  const comets = state.shootingStars ?? state.settings?.shootingStars ?? false;
+  const cursor = state.settings?.starsFollowCursor !== false;
+  return { mode, comets: !!comets, cursor };
+}
+
+/** The sky handle, so the page can add a click burst on the empty new-tab background. */
+export function getSky() {
+  return skyHandle;
+}
+
 function mountSky(state, add) {
   const first = state.sky && state.sky[0];
+  const so = skyOptions(state);
   const key = JSON.stringify([
-    state.starsMode || 'still', !!state.shootingStars, !!state.private,
+    so.mode, so.comets, so.cursor, !!state.private,
     window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
     first ? [first.x, first.y] : 0,
   ]);
@@ -253,8 +267,9 @@ function mountSky(state, add) {
     if (skyHandle) skyHandle.destroy();
     skyHandle = createSky(null, {
       stars: state.sky,
-      mode: state.starsMode || 'still',
-      shootingStars: state.shootingStars,
+      mode: so.mode,
+      shootingStars: so.comets,
+      cursor: so.cursor,
       private: state.private,
     });
     skyKey = key;

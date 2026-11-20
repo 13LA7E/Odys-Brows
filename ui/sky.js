@@ -80,6 +80,20 @@ export function createSky(container, options = {}) {
     stars[i].vy = Math.sin(angle) * speed;
   }
 
+  // Stars have no depth in our data; a bigger star counts as nearer (Odyssey's `z`).
+  for (const st of stars) st.z = Math.max(0, Math.min(1, ((st.r || 1) - 0.5) / 0.9));
+
+  // Cursor-linked stars (AUDIT-32, ported from Odyssey ui/fx.js, same numbers). Only while the
+  // sky drifts, never in fixture mode, never with reduced motion. Nothing is allocated per frame.
+  const cursorOpt = options.cursor !== false && !isFixture;
+  const mouse = { x: -1e4, y: -1e4, tx: 0, ty: 0, sx: 0, sy: 0, inside: false };
+  const nearX = new Float32Array(9);
+  const nearY = new Float32Array(9);
+  const nearD = new Float32Array(9);
+  const rings = [];
+  const parts = [];
+  const accentColor = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ffffff').trim();
+
   let rafId = null;
   let lastTime = 0;
   let nextCometTime = performance.now() + 15000 + Math.random() * 15000;
@@ -91,17 +105,17 @@ export function createSky(container, options = {}) {
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  function drawStar(st) {
+  function drawStar(st, x = st.x, y = st.y, o = st.o) {
     ctx.beginPath();
-    ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+    ctx.arc(x, y, st.r, 0, Math.PI * 2);
     if (st.ring) {
       ctx.strokeStyle = st.stroke || '#cdd9ee';
       ctx.lineWidth = st.w || 1.0;
-      ctx.globalAlpha = st.o;
+      ctx.globalAlpha = o;
       ctx.stroke();
     } else {
       ctx.fillStyle = st.fill || (isPrivate ? '#cdd9ee' : '#ffffff');
-      ctx.globalAlpha = st.o;
+      ctx.globalAlpha = o;
       ctx.fill();
     }
   }
@@ -152,6 +166,13 @@ export function createSky(container, options = {}) {
     lastTime = now;
 
     const canAnimate = !prefersReducedMotion.matches;
+    const useCursor = cursorOpt && mode === 'drifting' && canAnimate;
+    let nearCount = 0;
+    if (useCursor) {
+      const k = Math.min(1, dt * 3);
+      mouse.sx += (mouse.tx - mouse.sx) * k;
+      mouse.sy += (mouse.ty - mouse.sy) * k;
+    }
 
     for (const st of stars) {
       if (mode === 'drifting' && canAnimate) {
@@ -162,7 +183,82 @@ export function createSky(container, options = {}) {
         if (st.y < 0) st.y += height;
         if (st.y > height) st.y -= height;
       }
-      drawStar(st);
+      if (!useCursor) {
+        drawStar(st);
+        continue;
+      }
+      // Parallax against the cursor, scaled by depth: 16 px across, 11 px down at most.
+      const x = st.x - mouse.sx * st.z * 16;
+      const y = st.y - mouse.sy * st.z * 11;
+      let o = st.o;
+      if (mouse.inside && st.z > 0.4) {
+        const dx = x - mouse.x;
+        const dy = y - mouse.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 22500) {
+          o = Math.min(1, o + (1 - Math.sqrt(d2) / 150) * 0.6);
+          if (nearCount < 9) {
+            nearX[nearCount] = x;
+            nearY[nearCount] = y;
+            nearD[nearCount] = d2;
+            nearCount += 1;
+          }
+        }
+      }
+      drawStar(st, x, y, o);
+    }
+
+    if (useCursor && nearCount > 1) {
+      let nearest = 0;
+      for (let i = 1; i < nearCount; i++) if (nearD[i] < nearD[nearest]) nearest = i;
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < nearCount; i++) {
+        ctx.strokeStyle = i === nearest ? accentColor : '#ffffff';
+        ctx.globalAlpha = (1 - Math.sqrt(nearD[i]) / 150) * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(mouse.x, mouse.y);
+        ctx.lineTo(nearX[i], nearY[i]);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#ffffff';
+      for (let i = 0; i < nearCount; i++) {
+        for (let j = i + 1; j < nearCount; j++) {
+          const d = Math.hypot(nearX[i] - nearX[j], nearY[i] - nearY[j]);
+          if (d < 85) {
+            ctx.globalAlpha = (1 - d / 85) * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(nearX[i], nearY[i]);
+            ctx.lineTo(nearX[j], nearY[j]);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // Click on the empty new-tab background: a ring and a few particles.
+    if (rings.length || parts.length) {
+      for (let i = rings.length - 1; i >= 0; i--) {
+        const r = rings[i];
+        r.r += dt * 280;
+        r.a -= dt * 1.1;
+        if (r.a <= 0) { rings.splice(i, 1); continue; }
+        ctx.globalAlpha = r.a * 0.6;
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#ffffff';
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const q = parts[i];
+        q.life += dt;
+        if (q.life >= q.max) { parts.splice(i, 1); continue; }
+        q.x += q.vx * dt;
+        q.y += q.vy * dt;
+        ctx.globalAlpha = (1 - q.life / q.max) * 0.8;
+        ctx.fillRect(q.x - q.r, q.y - q.r, q.r * 2, q.r * 2);
+      }
     }
 
     // Shooting stars (rare, subtle comets across new tab)
@@ -210,7 +306,7 @@ export function createSky(container, options = {}) {
 
     ctx.globalAlpha = 1.0;
 
-    if (mode === 'drifting' || (enableComets && canAnimate)) {
+    if (mode === 'drifting' || (enableComets && canAnimate) || rings.length || parts.length) {
       rafId = requestAnimationFrame(renderFrame);
     } else {
       rafId = null;
@@ -250,7 +346,18 @@ export function createSky(container, options = {}) {
       if (mode === 'drifting' || (enableComets && !prefersReducedMotion.matches)) start();
     }
   }
-  window.addEventListener('pointermove', onActivity, { passive: true });
+  function onPointerMove(e) {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.inside = true;
+    mouse.tx = (e.clientX / (window.innerWidth || width) - 0.5) * 2;
+    mouse.ty = (e.clientY / (window.innerHeight || height) - 0.5) * 2;
+    onActivity();
+  }
+  function onPointerLeave() { mouse.inside = false; }
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  document.addEventListener('pointerleave', onPointerLeave);
+  window.addEventListener('blur', onPointerLeave);
   window.addEventListener('pointerdown', onActivity, { passive: true });
   window.addEventListener('keydown', onActivity, { passive: true });
   const idleTimer = setInterval(() => {
@@ -280,6 +387,17 @@ export function createSky(container, options = {}) {
   const handle = {
     canvas,
     isRunning: () => rafId !== null,
+    /** Ring and 16 particles where the empty new-tab background was clicked (AUDIT-32). */
+    burst(x, y) {
+      if (!(cursorOpt && mode === 'drifting') || prefersReducedMotion.matches || isDestroyed) return;
+      rings.push({ x, y, r: 0, a: 1 });
+      for (let i = 0; i < 16; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 30 + Math.random() * 120;
+        parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.5 + Math.random() * 0.8, r: 0.6 + Math.random() });
+      }
+      start();
+    },
     /** Test hook: pretend the last activity was `ms` ago. */
     __ageActivity(ms) { lastActivity = performance.now() - ms; },
     /** Pause while nothing can see the sky (a web page covers it); resume when shown (AUDIT-34). */
@@ -294,7 +412,9 @@ export function createSky(container, options = {}) {
       stop();
       liveSkies.delete(handle);
       clearInterval(idleTimer);
-      window.removeEventListener('pointermove', onActivity);
+      window.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerleave', onPointerLeave);
+      window.removeEventListener('blur', onPointerLeave);
       window.removeEventListener('pointerdown', onActivity);
       window.removeEventListener('keydown', onActivity);
       document.removeEventListener('visibilitychange', onVisibilityChange);

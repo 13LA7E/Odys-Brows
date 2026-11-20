@@ -1,5 +1,5 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { renderShell, requestRender } from './shell.js';
+import { renderShell, requestRender, getSky } from './shell.js';
 import { onMessage } from './bridge.js';
 import { initPageBasicsShortcuts, focusHelm } from './pagebasics.js';
 import { generateSky } from './sky.js';
@@ -333,6 +333,14 @@ export async function startLive() {
       renderShellLive();
     }
   }, 5000);
+
+  // Click on the empty new-tab background: a ring and a few particles (AUDIT-32).
+  app.addEventListener('pointerdown', (e) => {
+    if (state.page !== 'none') return;
+    const t = e.target;
+    const empty = t === app || (t.classList && (t.classList.contains('sky') || t.classList.contains('newtab-hint')));
+    if (empty) getSky()?.burst(e.clientX, e.clientY);
+  }, { passive: true });
 
   // A click while another app is in front brings us forward (page windows are separate windows).
   window.addEventListener('pointerdown', () => {
