@@ -111,6 +111,12 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: owner feedback on the polish
+
+- **Removed** the click effect (ring and particles) from the sky, as asked.
+- **Fixed** the empty right side: the sky was not regenerated when the window was resized or maximised, because my render-skip check ignored the sky and the window size. Now the size is part of the check. `tools/live_check/resize_sky.py` (maximise then restore, stars across the right 20%).
+- **Rounded** the notch: its hole in the page window now has the design's bottom-left radius (14 DIP). Checked with a real screen capture.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: AUDIT-01, 03, 32, 33, 34 (owner-approved D-024)
 
 - **Rules (Step 1):** the owner approved D-024 in the chat. I edited AGENTS.md, DESIGN.md section 10 and DECISIONS.md as asked (old wording kept and marked superseded in DESIGN.md), but the commit "D-024: approve motion and cursor-linked stars (owner request)" was **blocked** by the tool's permission check, twice, and I did not work around it. The three edits are in the working tree, uncommitted. To commit them: `git add AGENTS.md docs/DESIGN.md docs/DECISIONS.md && git commit -m "D-024: approve motion and cursor-linked stars (owner request)"`.
