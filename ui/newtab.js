@@ -55,19 +55,23 @@ export function formatDate(date = new Date()) {
  * Generate deterministic layout for a list of tabs.
  * Keeps clear of clock/hint block (left < 450, top < 350) and Helm (bottom < 100).
  */
-export function layoutConstellation(tabs = [], activeTabId = null) {
+export function layoutConstellation(tabs = [], activeTabId = null, bounds = {}) {
   if (!tabs || tabs.length === 0) return { points: [], edges: [] };
 
   const total = tabs.length;
+  const isFixture = document.body.classList.contains('fixture');
+  const winW = bounds.width || (isFixture ? 1280 : (window.innerWidth || 1280));
+  const winH = bounds.height || (isFixture ? 800 : (window.innerHeight || 800));
+
   const points = [];
   const edges = [];
   const idToIndex = new Map();
 
   // Bounding box for constellation
-  const minX = 500;
-  const maxX = 1140;
-  const minY = 200;
-  const maxY = 600;
+  const minX = Math.round(winW * (500 / 1280));
+  const maxX = Math.round(winW * (1140 / 1280));
+  const minY = Math.round(winH * (200 / 800));
+  const maxY = Math.round(winH * (600 / 800));
 
   if (total === 1) {
     const t = tabs[0];
@@ -75,8 +79,8 @@ export function layoutConstellation(tabs = [], activeTabId = null) {
       points: [{
         id: t.id,
         title: t.title || 'New tab',
-        x: 720,
-        y: 350,
+        x: Math.round(winW * (720 / 1280)),
+        y: Math.round(winH * (350 / 800)),
         radius: 3.2,
         isCurrent: true,
         showLabel: true,
@@ -235,10 +239,14 @@ export function renderNewTab(container, state, onSelectTab) {
   }
 
   // Constellation SVG overlay
+  const isFixture = document.body.classList.contains('fixture');
+  const winW = isFixture ? 1280 : (window.innerWidth || 1280);
+  const winH = isFixture ? 800 : (window.innerHeight || 800);
+
   const constelSvg = svg('svg', {
-    width: 1280,
-    height: 800,
-    viewBox: '0 0 1280 800',
+    width: winW,
+    height: winH,
+    viewBox: `0 0 ${winW} ${winH}`,
     style: 'position:absolute;left:0;top:0;pointer-events:none;',
     'aria-hidden': 'true',
   });

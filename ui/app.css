@@ -18,6 +18,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   border-radius: var(--r-page); overflow: hidden;
 }
 .page-web { background: var(--panel-web); }
+.page-web:not(:has(.page-site)) { background: var(--bg); }
 .page-internal { background: var(--panel-internal); }
 .page-site { position: absolute; inset: 0; }
 .page-dim { position: absolute; left: var(--rail); top: 0; right: 0; bottom: 0; border-radius: var(--r-page); background: var(--page-dim); }
@@ -29,6 +30,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   width: var(--helm-w); height: var(--helm-h); box-sizing: border-box;
   border-radius: var(--r-helm); background: var(--surface); box-shadow: var(--shadow-helm);
   display: flex; align-items: center; padding: 0 8px; gap: 2px;
+  z-index: 100;
 }
 .helm-address {
   flex: 1; min-width: 0; padding: 0 12px; display: flex; gap: 10px; align-items: center;
@@ -42,6 +44,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   position: absolute; top: 0; right: 0; height: var(--notch-h); background: var(--bg);
   border-radius: var(--r-notch); padding-left: 6px; display: flex; align-items: center;
   -webkit-app-region: drag;
+  z-index: 100;
 }
 .notch button {
   -webkit-app-region: no-drag;

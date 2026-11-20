@@ -206,6 +206,7 @@ export function renderShell(root, state) {
       onNewTab: () => {
         state.page = 'none';
         state.helm = { kind: 'empty' };
+        renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
         } else {
@@ -227,6 +228,10 @@ export function renderShell(root, state) {
         }
       },
       onOpenSettings: () => {
+        state.page = 'internal';
+        state.pageName = 'settings';
+        state.helm = { kind: 'address', address: { kind: 'internal', name: 'settings' } };
+        renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
         }
@@ -283,6 +288,7 @@ export function renderShell(root, state) {
       onNewTab: () => {
         state.page = 'none';
         state.helm = { kind: 'empty' };
+        renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: '' }));
         } else {
@@ -300,6 +306,10 @@ export function renderShell(root, state) {
         }
       },
       onOpenSettings: () => {
+        state.page = 'internal';
+        state.pageName = 'settings';
+        state.helm = { kind: 'address', address: { kind: 'internal', name: 'settings' } };
+        renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'open', url: 'odyssey://settings' }));
         }

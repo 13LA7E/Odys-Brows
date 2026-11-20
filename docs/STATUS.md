@@ -120,6 +120,19 @@ Copy this template for each session:
 - Commit: <hash> "<message>"  Pushed: yes/no (only finished tasks are pushed)
 ```
 
+### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: Fix Live Window Layout, Settings Navigation, and Fullscreen Sky
+- Did: fixed 4 severe live window & navigation issues reported by the user:
+  1. Main window full-screen layout & black cutouts: Added `window.set_to_fill_layout()` and `window.layout()` to `MainWindow` and `PageWindow` in `app/engine-cef/src/lib.rs`. Previously `ui` stayed fixed at preferred size 1280x800, so on wide/high-DPI screens the right and bottom were pure black, and `SetWindowRgn` cutouts over web pages exposed empty black background instead of the main window's Notch and Helm. With `set_to_fill_layout()` and Win32 `GetClientRect` DPI-accurate clipping, the UI now stretches to the full window and Notch controls / Helm align to the exact pixel.
+  2. Settings button navigation: in `app/shell/src/main.rs`, fixed `on_url_changed`, `FromUi::Open`, and `FromUi::Navigate` to properly record `odyssey://` internal URLs in `tab_urls`, hide the native web view, and dispatch `ToUi::Url` to the UI. In `ui/shell.js` and `ui/live.js`, immediately route `odyssey://settings` to `state.page = 'internal'` and `state.pageName = 'settings'`. Clicking the Settings button in either collapsed or wide rail now instantly displays the Settings panel.
+  3. New tab opening & view transitions: in `ui/shell.js`, clicking New Tab immediately resets local state to `page: 'none'` and `helm: { kind: 'empty' }` and notifies native engine. The native backend hides the previous web view and emits `view-opened`.
+  4. Sky generation on wide/4K displays: in `ui/sky.js`, dynamically generate uniform star fields filling `width > 1280` or `height > 800` when running in live mode, preserving deterministic fixture stars when in fixture mode. Added live window `resize` event listener in `ui/live.js`. Scaled new tab constellation layout in `ui/newtab.js` to full viewport dimensions.
+- Verified:
+  - `powershell -ExecutionPolicy Bypass -File tools\check.ps1` (6/6 steps PASSED: cargo fmt, clippy warning-free, 46 tests passing, node check, token check, visual check).
+  - Built optimized release binary `target\release\constellations.exe` and refreshed standalone staging at `dist\Constellations\`.
+- Edge cases: §1 (window sizes), §4 (live page clipping), §7 (internal routing), §8 (window controls), §9 (new tab sky) handled + tested.
+- Next: Launch `Constellations.bat` to confirm all 4 fixes in live environment.
+- Commit: to be committed. Pushed: pending.
+
 ### 2026-11-20: Google Antigravity / Gemini 3.8 Flash: P5-02 through P9-05 Full Completion
 - Did: completed all remaining phases (Phases 5, 6, 7, 8, and 9) across the entire project:
   - Phase 5:

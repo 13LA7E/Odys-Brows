@@ -8,8 +8,9 @@ export function createSky(container, options = {}) {
   canvas.className = 'sky';
   canvas.setAttribute('aria-hidden', 'true');
 
-  const width = options.width || 1280;
-  const height = options.height || 800;
+  const isFixture = document.body.classList.contains('fixture');
+  const width = options.width || (isFixture ? 1280 : (window.innerWidth || 1280));
+  const height = options.height || (isFixture ? 800 : (window.innerHeight || 800));
   const mode = options.mode || 'still'; // 'off' | 'still' | 'drifting'
   const enableComets = !!options.shootingStars;
   const isPrivate = !!options.private;
@@ -26,6 +27,35 @@ export function createSky(container, options = {}) {
   let stars = options.stars ? options.stars.map((s) => ({ ...s })) : [];
   if (!options.stars && mode !== 'off') {
     stars = generateSky(options.type || (isPrivate ? 'private' : 'newtab'), width, height);
+  } else if (!isFixture && mode !== 'off' && (width > 1280 || height > 800)) {
+    const baseCount = stars.length || 170;
+    const extraCount = Math.round(((width * height - 1280 * 800) / (1280 * 800)) * baseCount);
+    if (extraCount > 0) {
+      const radii = [0.6, 0.7, 0.8, 0.9, 1.1, 1.3];
+      const opacities = [0.25, 0.35, 0.45, 0.55, 0.7];
+      let seed = 12345;
+      function rand() {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      }
+      for (let i = 0; i < extraCount; i++) {
+        let x, y;
+        if (rand() < (width - 1280) / width) {
+          x = 1280 + rand() * (width - 1280);
+          y = rand() * height;
+        } else {
+          x = rand() * 1280;
+          y = 800 + rand() * (height - 800);
+        }
+        stars.push({
+          x,
+          y,
+          r: radii[Math.floor(rand() * radii.length)],
+          o: opacities[Math.floor(rand() * opacities.length)],
+          fill: isPrivate ? '#cdd9ee' : '#ffffff',
+        });
+      }
+    }
   }
 
   // Pre-calculate deterministic drift velocities (very slow: 0.02 - 0.06 px/frame)
@@ -227,16 +257,19 @@ export function createSky(container, options = {}) {
 }
 
 export function generateSky(type, width = 1280, height = 800) {
+  const isFixture = document.body.classList.contains('fixture');
   const stars = [];
   if (type === 'private') {
     const ringRadii = [1.6, 2.0, 2.6];
     const ringOpacities = [0.25, 0.35, 0.5];
     const dotRadii = [0.6, 0.8, 1.0];
     const dotOpacities = [0.2, 0.3, 0.4];
-    for (let i = 0; i < 120; i++) {
+    const totalCount = isFixture ? 120 : Math.round((width * height / (1280 * 800)) * 120);
+    const ringCount = Math.round(totalCount * 0.4);
+    for (let i = 0; i < totalCount; i++) {
       const x = Math.random() * width;
       const y = Math.random() * height;
-      if (i < 48) {
+      if (i < ringCount) {
         stars.push({
           x,
           y,
@@ -261,7 +294,7 @@ export function generateSky(type, width = 1280, height = 800) {
 
   const radii = [0.6, 0.7, 0.8, 0.9, 1.1, 1.3];
   const opacities = [0.25, 0.35, 0.45, 0.55, 0.7];
-  let n = 170;
+  let n = isFixture ? 170 : Math.round((width * height / (1280 * 800)) * 170);
   let maxX = width;
   if (type === 'expanded') {
     n = 46;

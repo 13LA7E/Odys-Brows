@@ -376,14 +376,23 @@ impl Shell {
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
+        if !url.is_empty() {
+            self.tab_urls.insert(view, url.to_string());
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::Url {
+                view,
+                url: url.to_string(),
+            }));
+        }
         if url.is_empty()
             || url.starts_with("odyssey://")
             || url.starts_with("odyssey-ui://")
             || url.starts_with("about:")
         {
+            if self.shown == Some(view) {
+                engine_api::Engine::set_visible(&mut CefEngine, view, false);
+            }
             return;
         }
-        self.tab_urls.insert(view, url.to_string());
         if self.shown == Some(view) {
             engine_api::Engine::set_bounds(
                 &mut CefEngine,
@@ -501,18 +510,30 @@ impl Shell {
                 let view = engine.create_view(&url);
                 self.tabs
                     .push(Tab::with_details(view, opener, self.active_space, false));
+                if !url.is_empty() {
+                    self.tab_urls.insert(view, url.clone());
+                }
                 self.show(engine, view);
+                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
                 if !url.is_empty() {
                     self.on_url_changed(view, &url);
                 }
-                engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened { view, opener }));
             }
             FromUi::Navigate { view, url } => {
                 let target = view.or(self.shown);
                 if let Some(v) = target {
                     if known(self, v) {
-                        engine.navigate(v, &url);
                         if !url.is_empty() {
+                            self.tab_urls.insert(v, url.clone());
+                        }
+                        if url.starts_with("odyssey://")
+                            || url.starts_with("about:")
+                            || url.is_empty()
+                        {
+                            engine.set_visible(v, false);
+                            self.on_url_changed(v, &url);
+                        } else {
+                            engine.navigate(v, &url);
                             self.on_url_changed(v, &url);
                         }
                     }
@@ -520,12 +541,13 @@ impl Shell {
                     let new_view = engine.create_view(&url);
                     self.tabs
                         .push(Tab::with_details(new_view, None, self.active_space, false));
+                    self.tab_urls.insert(new_view, url.clone());
                     self.show(engine, new_view);
-                    self.on_url_changed(new_view, &url);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: new_view,
                         opener: None,
                     }));
+                    self.on_url_changed(new_view, &url);
                 }
             }
             FromUi::Back { view } => {

@@ -132,10 +132,19 @@ fn maybe_quit() {
 
 #[cfg(windows)]
 mod win32 {
+    #[repr(C)]
+    pub struct WinRect {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
+    }
+
     #[link(name = "user32")]
     unsafe extern "system" {
         pub fn SetWindowRgn(h: isize, rgn: isize, redraw: i32) -> i32;
         pub fn GetDpiForWindow(h: isize) -> u32;
+        pub fn GetClientRect(h: isize, rect: *mut WinRect) -> i32;
     }
     #[link(name = "gdi32")]
     unsafe extern "system" {
@@ -155,15 +164,33 @@ fn update_page_window_region(win: &Window, width: i32, height: i32) {
             return;
         }
         let dpi = win32::GetDpiForWindow(h).max(96) as f32 / 96.0;
-        let w = (width as f32 * dpi).round() as i32;
-        let h_px = (height as f32 * dpi).round() as i32;
+
+        let mut rc = win32::WinRect {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        win32::GetClientRect(h, &mut rc);
+        let client_w = rc.right - rc.left;
+        let client_h = rc.bottom - rc.top;
+        let w = if client_w > 0 {
+            client_w
+        } else {
+            (width as f32 * dpi).round() as i32
+        };
+        let h_px = if client_h > 0 {
+            client_h
+        } else {
+            (height as f32 * dpi).round() as i32
+        };
 
         let base_rgn = win32::CreateRectRgn(0, 0, w, h_px);
 
-        // Notch in top-right corner: height 34 DIP, width 192 DIP.
+        // Notch in top-right corner: height 34 DIP, width 224 DIP.
         // Cutting out the notch leaves the main window's notch controls (shields, minimize,
         // maximize, close) visible and interactive.
-        let notch_w = (192.0 * dpi).round() as i32;
+        let notch_w = (224.0 * dpi).round() as i32;
         let notch_h = (34.0 * dpi).round() as i32;
         let notch_rgn = win32::CreateRectRgn((w - notch_w).max(0), 0, w, notch_h);
         win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
@@ -264,9 +291,11 @@ wrap_window_delegate! {
             let Some(window) = window else { return };
             window.set_background_color(0xFF000000);
             window.set_title(Some(&CefString::from(self.title.as_str())));
+            window.set_to_fill_layout();
             if let Some(ui) = self.ui.borrow().as_ref() {
                 window.add_child_view(Some(&mut View::from(ui)));
             }
+            window.layout();
             STATE.with(|s| {
                 let mut s = s.borrow_mut();
                 s.main = Some(window.clone());
@@ -278,7 +307,10 @@ wrap_window_delegate! {
             }
         }
 
-        fn on_window_bounds_changed(&self, _window: Option<&mut Window>, _bounds: Option<&Rect>) {
+        fn on_window_bounds_changed(&self, window: Option<&mut Window>, _bounds: Option<&Rect>) {
+            if let Some(w) = window {
+                w.layout();
+            }
             place_all();
         }
 
@@ -542,15 +574,22 @@ wrap_window_delegate! {
     impl WindowDelegate {
         fn on_window_created(&self, window: Option<&mut Window>) {
             let Some(window) = window else { return };
+            window.set_to_fill_layout();
             if let Some(v) = self.view.borrow().as_ref() {
                 window.add_child_view(Some(&mut View::from(v)));
             }
+            window.layout();
             STATE.with(|s| {
                 if let Some(p) = s.borrow_mut().pages.get_mut(&self.id) {
                     p.window = Some(window.clone());
                 }
             });
             place(self.id);
+        }
+        fn on_window_bounds_changed(&self, window: Option<&mut Window>, _bounds: Option<&Rect>) {
+            if let Some(w) = window {
+                w.layout();
+            }
         }
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
             *self.view.borrow_mut() = None;

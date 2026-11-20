@@ -95,10 +95,13 @@ export async function startLive() {
       }
       renderShell(app, state);
     } else if (msg.type === 'url') {
-      if (state.tabs) {
-        const tab = state.tabs.find((t) => t.id === msg.view);
-        if (tab) tab.url = msg.url;
+      if (!state.tabs) state.tabs = [];
+      let tab = state.tabs.find((t) => t.id === msg.view);
+      if (!tab) {
+        tab = { id: msg.view, title: 'New tab' };
+        state.tabs.push(tab);
       }
+      tab.url = msg.url;
       if (state.activeTab === msg.view || state.activeTab == null) {
         state.activeTab = msg.view;
         if (!msg.url || msg.url === 'about:blank') {
@@ -116,8 +119,15 @@ export async function startLive() {
               state.helm = { kind: 'address', address: { kind: 'web', host: u.host, path: u.pathname } };
             }
           } catch (_) {
-            state.page = 'web';
-            state.helm = { kind: 'address', address: { kind: 'web', host: msg.url, path: '' } };
+            if (msg.url.startsWith('odyssey://')) {
+              state.page = 'internal';
+              const name = msg.url.slice('odyssey://'.length).replace(/\/$/, '');
+              state.pageName = name;
+              state.helm = { kind: 'address', address: { kind: 'internal', name } };
+            } else {
+              state.page = 'web';
+              state.helm = { kind: 'address', address: { kind: 'web', host: msg.url, path: '' } };
+            }
           }
         }
       }
@@ -208,6 +218,10 @@ export async function startLive() {
   });
 
   renderShell(app, state);
+
+  window.addEventListener('resize', () => {
+    renderShell(app, state);
+  });
 
   if (typeof window.odysseyBridge === 'function') {
     window.odysseyBridge(JSON.stringify({ type: 'load-settings' }));
