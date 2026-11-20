@@ -82,6 +82,8 @@ export function applyAccent(accentName) {
   document.documentElement.style.setProperty('--accent', `var(${found.varName})`);
 }
 
+let lastSection = null;
+
 function makeRow(label, desc, controlEl) {
   const r = el('div');
   r.style.cssText = 'display:flex;align-items:center;gap:32px;padding:18px 0;';
@@ -178,6 +180,8 @@ export function renderSettings(container, state, onUpdate) {
 
   // Content area: left 300, top 64, width 560
   const content = el('div', 'settings-content');
+  if (lastSection !== null && lastSection !== currentSection) content.classList.add('section-in');
+  lastSection = currentSection;
   content.style.cssText = 'position:absolute;left:300px;top:64px;width:560px;padding-bottom:120px;';
 
   if (currentSection === 'General') {
@@ -265,18 +269,6 @@ export function renderSettings(container, state, onUpdate) {
       })
     ));
 
-    // Cursor-linked stars (AUDIT-32)
-    rows.append(makeRow(
-      'Stars follow the cursor',
-      'Nearby stars light up and link to the cursor. Only while Stars is on Drifting.',
-      makeSwitch(settings.starsFollowCursor !== false, (val) => {
-        settings.starsFollowCursor = val;
-        saveSettings(settings);
-        if (onUpdate) onUpdate('starsFollowCursor', val);
-        renderSettings(container, state, onUpdate);
-      })
-    ));
-
     // 3. Accent (Swatches)
     const swatchesBox = el('div');
     swatchesBox.style.cssText = 'display:flex;gap:12px;';
@@ -354,6 +346,19 @@ export function renderSettings(container, state, onUpdate) {
 
     selectWrap.append(selectBtn, dropdown);
     rows.append(makeRow('Faster downloads', 'Big files are fetched over several connections when the site allows it.', selectWrap));
+
+    // Cursor-linked stars (AUDIT-32)
+    // Not in the approved design (D-024), so fixture mode leaves it out.
+    if (!document.documentElement.classList.contains('fixture')) rows.append(makeRow(
+      'Stars follow the cursor',
+      'Nearby stars light up and link to the cursor. Only while Stars is on Drifting.',
+      makeSwitch(settings.starsFollowCursor !== false, (val) => {
+        settings.starsFollowCursor = val;
+        saveSettings(settings);
+        if (onUpdate) onUpdate('starsFollowCursor', val);
+        renderSettings(container, state, onUpdate);
+      })
+    ));
 
     content.append(rows);
   } else if (currentSection === 'New tab') {

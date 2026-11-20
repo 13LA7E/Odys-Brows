@@ -3,6 +3,28 @@
 
 const SVG = 'http://www.w3.org/2000/svg';
 
+// Which tabs are new since the last render and whether the active one changed, so only those
+// animate (nothing animates at start-up while the saved tabs are being replayed).
+// A node rebuilt while its enter animation is still running continues from where it was
+// (negative animation-delay) instead of restarting, so a render mid-animation can't flicker it.
+const seenTabs = new Map(); // id -> time the star first appeared (ms)
+let lastActiveTab = null;
+function railMotion(tabs, activeTab) {
+  const now = performance.now();
+  const booted = now > 2500;
+  const window = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-slow')) || 320;
+  const fresh = new Map(); // id -> ms already elapsed
+  for (const t of tabs) {
+    if (t.id == null) continue;
+    if (!seenTabs.has(t.id)) seenTabs.set(t.id, booted ? now : -1e9);
+    const elapsed = now - seenTabs.get(t.id);
+    if (elapsed < window + 40) fresh.set(t.id, Math.max(0, Math.round(elapsed)));
+  }
+  const activeChanged = booted && lastActiveTab !== null && lastActiveTab !== activeTab;
+  lastActiveTab = activeTab;
+  return { fresh, activeChanged };
+}
+
 export const STAR_PATH = 'M12 2C12.8 8.5 15.5 11.2 22 12C15.5 12.8 12.8 15.5 12 22C11.2 15.5 8.5 12.8 2 12C8.5 11.2 11.2 8.5 12 2Z';
 
 function el(tag, cls, text) {
@@ -70,6 +92,7 @@ export function renderCollapsedRail(railEl, options = {}) {
   } = options;
 
   railEl.replaceChildren();
+  const mo = railMotion(tabs, activeTab);
 
   const n = tabs.length || 1;
   const y0 = 214;
@@ -192,6 +215,10 @@ export function renderCollapsedRail(railEl, options = {}) {
   tabs.forEach((tab, i) => {
     const cy = cys[i];
     const b = el('button', 'rail-tab-btn');
+    if (mo.fresh.has(tab.id)) {
+      b.classList.add('star-enter');
+      b.style.animationDelay = `-${mo.fresh.get(tab.id)}ms`;
+    }
     const tabNum = i + 1;
     b.setAttribute('aria-label', `Tab ${tabNum}`);
     b.style.cssText = `position:absolute;left:12px;top:${cy - 16}px;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);background:transparent;`;
@@ -200,6 +227,7 @@ export function renderCollapsedRail(railEl, options = {}) {
       const isActive = (tab.id != null && tab.id === activeTab) || (tab.id == null && tabNum === activeTab);
       if (isActive) {
         const activeSvg = svg('svg', { width: 32, height: 32, viewBox: '0 0 32 32', 'aria-hidden': 'true' });
+        if (mo.activeChanged) activeSvg.setAttribute('class', 'ring-in');
         activeSvg.append(svg('circle', {
           cx: 16, cy: 16, r: 13, fill: 'var(--bg)', stroke: 'var(--accent)', 'stroke-opacity': '.4',
         }));
@@ -298,6 +326,7 @@ export function renderExpandedRail(railEl, options = {}) {
 
   railEl.replaceChildren();
 
+  const mo = railMotion(tabs, activeTab);
   const W = 264;
   const y0 = 150;
   const step = 44;
@@ -353,6 +382,9 @@ export function renderExpandedRail(railEl, options = {}) {
       bgSvg.append(svg('path', {
         d: `M28 ${py} V${cy - 8} Q28 ${cy} 36 ${cy} H46`,
         fill: 'none', stroke: 'var(--white)', 'stroke-opacity': '.16',
+        ...(mo.fresh.has(r.tab.id)
+          ? { class: 'branch-enter', pathLength: 1, style: `animation-delay:-${mo.fresh.get(r.tab.id)}ms` }
+          : {}),
       }));
     }
   });
@@ -387,6 +419,9 @@ export function renderExpandedRail(railEl, options = {}) {
     if (r.active) {
       bgSvg.append(svg('circle', {
         cx, cy, r: 12, fill: 'var(--bg)', stroke: 'var(--accent)', 'stroke-opacity': '.4',
+        ...(mo.fresh.has(r.tab.id)
+          ? { class: 'star-enter', style: `animation-delay:-${mo.fresh.get(r.tab.id)}ms` }
+          : mo.activeChanged ? { class: 'ring-in' } : {}),
       }));
       const innerStar = svg('svg', {
         x: cx - 8, y: cy - 8, width: 16, height: 16, viewBox: '0 0 24 24',
@@ -396,6 +431,9 @@ export function renderExpandedRail(railEl, options = {}) {
     } else {
       bgSvg.append(svg('circle', {
         cx, cy, r: 3.5, fill: 'var(--node)',
+        ...(mo.fresh.has(r.tab.id)
+          ? { class: 'star-enter', style: `animation-delay:-${mo.fresh.get(r.tab.id)}ms` }
+          : {}),
       }));
     }
   });

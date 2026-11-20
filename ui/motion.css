@@ -1,0 +1,68 @@
+/* Motion (D-024). Values come from tokens.css. Only opacity, transform and colours move, and
+   only on elements that persist (see regions in shell.js): nothing here is applied to a node that
+   is rebuilt on every update. Fixture mode and prefers-reduced-motion turn it down or off. */
+
+@property --rail { syntax: '<length>'; inherits: true; initial-value: 56px; }
+#app { transition: --rail var(--dur-slow) var(--ease-in-out); }
+
+@keyframes ody-rise { from { opacity: 0; transform: translateY(var(--rise)); } to { opacity: 1; transform: none; } }
+@keyframes ody-rise-small { from { opacity: 0; transform: translateY(var(--rise-small)); } to { opacity: 1; transform: none; } }
+@keyframes ody-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ody-star-in { from { opacity: 0; transform: scale(var(--enter-scale)); } to { opacity: 1; transform: none; } }
+@keyframes ody-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ody-load { 0% { transform: scaleX(.08); opacity: .9; } 55% { transform: scaleX(1); opacity: .55; } 100% { transform: scaleX(.08); opacity: .9; } }
+@keyframes ody-pulse { 0% { transform: scale(1); } 40% { transform: scale(1.14); } 100% { transform: scale(1); } }
+
+/* Hover and press: a soft wash (inset shadow, so it follows each button's own shape and never
+   fights the inline backgrounds), plus a small press scale on round buttons. */
+button, .history-row {
+  transition: box-shadow var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+button:hover:not(:disabled), .history-row:hover { box-shadow: inset 0 0 0 100vmax var(--hover-wash); }
+button:active:not(:disabled) { box-shadow: inset 0 0 0 100vmax var(--press-wash); }
+.helm button:active, .notch button:active, .rail button:active, .downloads-popover button:active,
+.permission-card button:active { transform: scale(var(--press-scale)); }
+
+/* Cards and popovers: rise and fade in once, fade out before they leave the DOM. */
+.enter { animation: ody-rise var(--dur-base) var(--ease-out) both; }
+.downloads-popover.enter, .shields-popover.enter, .find-bar.enter, .closed-preview-card.enter { animation-name: ody-rise-small; }
+.page-dim.enter { animation-name: ody-fade; }
+.leaving {
+  opacity: 0; transform: translateY(var(--rise-small)); pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+.page-dim.leaving { transform: none; }
+
+/* Page and settings-section switches: a short cross-fade of the content. */
+.page-in, .section-in { animation: ody-fade var(--dur-base) var(--ease-out) both; }
+
+/* The trail: a new star grows in once, a new branch draws in once, the active ring fades. */
+.star-enter { transform-box: fill-box; transform-origin: center; animation: ody-star-in var(--dur-slow) var(--ease-out) both; }
+.branch-enter { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ody-draw var(--dur-slow) var(--ease-out) forwards; }
+.ring-in { animation: ody-fade var(--dur-base) var(--ease-out) both; }
+
+/* Loading: a thin line under the Helm's address, not a spinner. */
+.helm.is-loading::after {
+  content: ''; position: absolute; left: 28px; right: 28px; bottom: 5px; height: 2px; border-radius: 1px;
+  background: var(--accent); transform-origin: left; animation: ody-load 1.3s var(--ease-in-out) infinite;
+}
+
+/* Download ring: smooth progress, one pulse when it completes. */
+.helm-dl-progress { transition: stroke-dasharray var(--dur-base) linear; }
+.helm-dl-btn.pulse { animation: ody-pulse var(--dur-slow) var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  #app { transition: none; }
+  button:active { transform: none !important; }
+  .enter, .page-in, .section-in, .star-enter { animation-name: ody-fade; }
+  .branch-enter { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .leaving { transform: none; }
+  .helm.is-loading::after { animation: none; opacity: .6; }
+  .helm-dl-btn.pulse { animation: none; }
+}
+
+/* Fixture and visual-check mode, and anything that sets data-motion="off". */
+:root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after {
+  transition: none !important; animation: none !important;
+}

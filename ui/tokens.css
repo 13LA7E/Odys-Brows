@@ -88,3 +88,20 @@
   --accent: var(--accent-lilac);
   --bg: var(--bg-private);
 }
+
+/* Motion (D-024, owner-approved). Every timing and amount for motion lives here: change a value
+   and it changes everywhere. Only opacity, transform and colours are ever animated. */
+:root {
+  --dur-fast: 120ms;   /* hover and press */
+  --dur-base: 200ms;   /* popovers, cards, page fades */
+  --dur-slow: 320ms;   /* rail width, new stars, branch lines */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+  --rise: 8px;         /* cards rise this far while fading in */
+  --rise-small: 6px;   /* popovers */
+  --press-scale: .97;  /* round buttons while pressed */
+  --enter-scale: .6;   /* a new tab star grows from this */
+  --hover-wash: rgba(255, 255, 255, .07);
+  --press-wash: rgba(255, 255, 255, .11);
+}
+

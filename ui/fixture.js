@@ -13,6 +13,7 @@ export async function startFixture(board) {
     return;
   }
   document.documentElement.classList.add('fixture');
+  document.documentElement.dataset.motion = 'off'; // keeps visual_check stable
   const sky = await (await fetch('fixtures/sky.json')).json();
   const page = data.page === 'web'
     ? await (await fetch(`fixtures/page-${board}.html`)).text()

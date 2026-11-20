@@ -150,6 +150,7 @@ export function renderPrivateCopy(copy = {}) {
 let skyHandle = null;
 let skyKey = '';
 let lastRailWidth = null;
+let lastPanelKind = null;
 let lastSignature = '';
 let renderQueued = false;
 window.__renderCount = 0;
@@ -336,8 +337,13 @@ export function renderShell(root, state) {
   const railWidth = state.rail === 'expanded' ? 264 : 56;
   root.style.setProperty('--rail', `${railWidth}px`);
   if (typeof window.odysseyBridge === 'function' && railWidth !== lastRailWidth) {
+    const grow = railWidth > (lastRailWidth ?? 0);
     lastRailWidth = railWidth;
-    window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: railWidth }));
+    const send = () => window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: railWidth }));
+    // The page window jumps at once; when the rail shrinks, wait so the rail's width animation
+    // isn't cut off by it.
+    if (grow || document.documentElement.dataset.motion === 'off') send();
+    else setTimeout(send, cssMs('--dur-slow', 320));
   }
 
   mountSky(state, add);
@@ -404,7 +410,7 @@ export function renderShell(root, state) {
         state.rail = 'expanded';
         renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
-          window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: 264 }));
+          /* the width is sent by renderShell */
         }
       },
       onOpenSettings: () => {
@@ -482,7 +488,7 @@ export function renderShell(root, state) {
         state.rail = 'collapsed';
         renderShell(root, state);
         if (typeof window.odysseyBridge === 'function') {
-          window.odysseyBridge(JSON.stringify({ type: 'set-rail-width', width: 56 }));
+          /* the width is sent by renderShell (after the rail has shrunk) */
         }
       },
       onOpenSettings: () => {
@@ -515,6 +521,11 @@ export function renderShell(root, state) {
   if (state.page !== 'none') {
     const panelNode = region('panel', panelSig(state), () => {
     const panel = el('section', `page page-${state.page}`);
+    const panelKind = `${state.page}:${state.pageName || ''}`;
+    if (panelKind !== lastPanelKind) {
+      if (lastPanelKind !== null && document.documentElement.dataset.motion !== 'off') panel.classList.add('page-in');
+      lastPanelKind = panelKind;
+    }
     panel.setAttribute('aria-label', 'Page');
     if (state.pageError) {
       renderErrorPage(panel, state.pageError, () => {
@@ -662,10 +673,13 @@ export function renderShell(root, state) {
 
   // Helm toolbar. The download ring follows the active download (AUDIT-05).
   const activeDl = (state.downloads || []).find((d) => d.active);
-  const helmState = activeDl && state.helm?.kind === 'address'
-    ? { ...state.helm, download: activeDl.progress ?? 0 }
+  const recentlyDone = !activeDl && state.dlDoneAt && Date.now() - state.dlDoneAt < 1200;
+  const helmState = (activeDl || recentlyDone) && state.helm?.kind === 'address'
+    ? { ...state.helm, download: activeDl ? (activeDl.progress ?? 0) : 1, downloadDone: !activeDl }
     : (state.helm || { kind: 'empty' });
-  add(region('helm', helmState, () => renderHelm(helmState, {
+  // The ring's progress is updated in place below (so it can animate), not by rebuilding the Helm.
+  const helmSig = { ...helmState, download: helmState.download != null ? 'ring' : null };
+  add(region('helm', helmSig, () => renderHelm(helmState, {
     onBack: () => {
       if (typeof window.odysseyBridge === 'function') {
         window.odysseyBridge(JSON.stringify({ type: 'back', view: state.activeTab }));
@@ -779,6 +793,12 @@ export function renderShell(root, state) {
 
   for (const k of [...regionCache.keys()]) if (!regionsUsed.has(k)) regionCache.delete(k);
   reconcile(root, nodes);
+  const ring = root.querySelector('.helm-dl-progress');
+  if (ring && helmState.download != null) {
+    const d = 69.1 * Math.max(0, Math.min(1, helmState.download));
+    ring.setAttribute('stroke-dasharray', `${d.toFixed(1)} ${(69.1 - d).toFixed(1)}`);
+  }
+  root.querySelector('.helm')?.classList.toggle('is-loading', !!state.isLoading && state.page === 'web');
   restoreFocus(root, focused);
   watchOverlays(root, state);
 }

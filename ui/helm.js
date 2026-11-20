@@ -276,7 +276,7 @@ export function renderHelm(state, handlers = {}) {
   // Download ring (if active downloading)
   if (state.download != null) {
     const pct = Math.round(state.download * 100);
-    const ringBtn = el('button', 'helm-dl-btn');
+    const ringBtn = el('button', state.downloadDone ? 'helm-dl-btn pulse' : 'helm-dl-btn');
     ringBtn.setAttribute('aria-label', `Downloads, ${pct} percent`);
     ringBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;position:relative;color:var(--text-soft);';
 
@@ -294,7 +294,7 @@ export function renderHelm(state, handlers = {}) {
     }));
     ringSvg.append(svg('circle', {
       cx: 16, cy: 16, r: 11, fill: 'none', stroke: 'var(--accent)',
-      'stroke-width': 2, 'stroke-linecap': 'round',
+      'stroke-width': 2, 'stroke-linecap': 'round', class: 'helm-dl-progress',
       'stroke-dasharray': `${d} ${dashRest}`, transform: 'rotate(-90 16 16)',
     }));
     ringBtn.append(ringSvg);

@@ -54,6 +54,7 @@ export async function startLive() {
 
   const applyDownload = (msg) => {
     let d = state.downloads.find((x) => x.id === String(msg.id));
+    const wasActive = !!d && d.active;
     if (!d) {
       d = { id: String(msg.id), name: msg.file_name || 'Download', path: msg.path, received: 0, total: null };
       state.downloads.unshift(d);
@@ -66,6 +67,11 @@ export async function startLive() {
     d.cancellable = true;
     if (msg.complete) {
       d.active = false; d.done = true; d.failed = false; d.detail = 'Done';
+      if (wasActive) {
+        // The ring stays for a moment at 100% and pulses once.
+        state.dlDoneAt = Date.now();
+        setTimeout(() => { state.dlTick = Date.now(); renderShellLive(); }, 1300);
+      }
     } else if (msg.cancelled) {
       d.active = false; d.done = false; d.failed = true; d.detail = 'Cancelled';
     } else {
@@ -234,6 +240,7 @@ export async function startLive() {
     } else if (msg.type === 'loading') {
       if (state.activeTab === msg.view && state.helm && state.helm.kind === 'address') {
         state.isLoading = msg.loading;
+        document.querySelector('.helm')?.classList.toggle('is-loading', !!msg.loading && state.page === 'web');
         state.canGoBack = msg.can_go_back;
         state.canGoForward = msg.can_go_forward;
       }
