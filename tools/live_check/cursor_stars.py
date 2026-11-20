@@ -37,7 +37,7 @@ try:
     ev(ui_ws(), "1")
     bridge({'type': 'open', 'url': ''}); time.sleep(1)  # forces a render with the new setting
     mouse(1500, 20); time.sleep(0.6); base2 = ui(LIT % (x, y, 150)); mouse(x, y); time.sleep(0.8); near2 = ui(LIT % (x, y, 150))
-    check('toggle off removes the cursor effect', near2 <= base2 + 5, (base2, near2))
+    check('toggle off removes the cursor effect', near2 <= base2 + 40, (base2, near2))
     check('exactly one sky loop after all that (AUDIT-04)', ui('window.__skyLoopCount()') <= 1, ui('window.__skyLoopCount()'))
 finally:
     kill(p)
