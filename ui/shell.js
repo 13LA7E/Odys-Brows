@@ -426,7 +426,9 @@ export function renderShell(root, state) {
       panel.append(site);
     } else if (state.page === 'internal') {
       const pageName = state.pageName || state.helm?.address?.name;
-      if (pageName === 'history' || state.history) {
+      // Fixtures have no page name and pick by the data they carry; live mode goes by name only.
+      const byData = state.live !== true;
+      if (pageName === 'history' || (byData && state.history)) {
         let historyView = state.history;
         if (state.live) {
           // Live data arrives as day groups from Rust (AUDIT-09).
@@ -469,7 +471,7 @@ export function renderShell(root, state) {
             }
           },
         });
-      } else if (pageName === 'settings' || state.settings) {
+      } else if (pageName === 'settings' || (byData && state.settings)) {
         renderSettings(panel, state, (field, val) => {
           if (field === 'stars') {
             state.starsMode = val.toLowerCase();

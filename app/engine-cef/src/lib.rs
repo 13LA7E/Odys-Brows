@@ -1580,23 +1580,27 @@ impl Engine for CefEngine {
     }
 
     fn sleep(&mut self, view: ViewId) {
-        STATE.with(|s| {
+        // Don't call into CEF while STATE is borrowed: load_url fires callbacks that borrow it
+        // again, which froze the whole app.
+        let frame = STATE.with(|s| {
             let mut s = s.borrow_mut();
-            let Some(page) = s.pages.get_mut(&view) else {
-                return;
-            };
+            let page = s.pages.get_mut(&view)?;
             if page.visible || page.sleeping {
-                return;
+                return None;
             }
-            if let Some(frame) = page.browser.as_ref().and_then(|b| b.main_frame()) {
+            let frame = page.browser.as_ref().and_then(|b| b.main_frame());
+            if let Some(frame) = &frame {
                 let url = CefString::from(&frame.url()).to_string();
                 if !url.is_empty() && url != "about:blank" {
                     page.saved_url = Some(url);
                 }
-                frame.load_url(Some(&CefString::from("about:blank")));
             }
             page.sleeping = true;
+            frame
         });
+        if let Some(frame) = frame {
+            frame.load_url(Some(&CefString::from("about:blank")));
+        }
     }
 
     fn wake(&mut self, view: ViewId) {
@@ -1703,9 +1707,21 @@ wrap_app! {
                 // AUDIT-01: page views are separate top-level windows that cover our UI window.
                 // Chromium's native occlusion tracking would treat the UI as hidden and stop
                 // painting it, leaving the Helm and notch blank. Keep it painting.
+                // Merge into an existing `disable-features` instead of adding a second one.
+                let name = CefString::from("disable-features");
+                let existing = if cmd.has_switch(Some(&name)) != 0 {
+                    CefString::from(&cmd.switch_value(Some(&name))).to_string()
+                } else {
+                    String::new()
+                };
+                let merged = if existing.is_empty() {
+                    "CalculateNativeWinOcclusion".to_string()
+                } else {
+                    format!("{existing},CalculateNativeWinOcclusion")
+                };
                 cmd.append_switch_with_value(
-                    Some(&CefString::from("disable-features")),
-                    Some(&CefString::from("CalculateNativeWinOcclusion")),
+                    Some(&name),
+                    Some(&CefString::from(merged.as_str())),
                 );
                 cmd.append_switch(Some(&CefString::from("disable-backgrounding-occluded-windows")));
                 cmd.append_switch(Some(&CefString::from("disable-renderer-backgrounding")));

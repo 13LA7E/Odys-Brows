@@ -75,6 +75,8 @@ pub struct Tab {
     pub has_audio: bool,
     pub has_form_input: bool,
     pub last_active: i64,
+    /// Restored from the last session but not loaded yet; loads when first shown (lazy restore).
+    pub restore_pending: bool,
 }
 
 impl Tab {
@@ -96,6 +98,7 @@ impl Tab {
             has_audio: false,
             has_form_input: false,
             last_active: now,
+            restore_pending: false,
         }
     }
 }
@@ -176,6 +179,8 @@ struct Shell {
     ai_cancel: Arc<AtomicBool>,
     zoom_index: HashMap<ViewId, usize>,
     download_paths: HashMap<u32, String>,
+    /// The URL last written to history per tab, so one navigation isn't recorded twice.
+    last_recorded: HashMap<ViewId, String>,
     last_persist: std::cell::Cell<Option<std::time::Instant>>,
     persist_dirty: std::cell::Cell<bool>,
 }
@@ -210,6 +215,7 @@ impl Default for Shell {
             ai_cancel: Arc::new(AtomicBool::new(false)),
             zoom_index: HashMap::new(),
             download_paths: HashMap::new(),
+            last_recorded: HashMap::new(),
             last_persist: std::cell::Cell::new(None),
             persist_dirty: std::cell::Cell::new(false),
         }
@@ -237,6 +243,12 @@ impl Shell {
             .collect()
     }
 
+    fn is_restore_pending(&self, view: ViewId) -> bool {
+        self.tabs
+            .iter()
+            .any(|t| t.view == view && t.restore_pending)
+    }
+
     fn is_sleeping(&self, view: ViewId) -> bool {
         self.tabs.iter().any(|t| t.view == view && t.sleeping)
     }
@@ -258,6 +270,7 @@ impl Shell {
             }
         }
         self.tab_visit_id.remove(&view);
+        self.last_recorded.remove(&view);
         if self.shown == Some(view) {
             self.shown = None;
         }
@@ -471,7 +484,7 @@ impl Shell {
     }
 
     fn on_url_changed(&mut self, view: ViewId, url: &str) {
-        if self.is_sleeping(view) {
+        if self.is_sleeping(view) || (self.is_restore_pending(view) && url.starts_with("about:")) {
             // The engine loads about:blank to free memory; the real URL stays ours.
             return;
         }
@@ -508,6 +521,10 @@ impl Shell {
         if self.is_private {
             return;
         }
+        if self.last_recorded.get(&view).map(String::as_str) == Some(url) {
+            return;
+        }
+        self.last_recorded.insert(view, url.to_string());
         let opener_visit_id = self
             .tabs
             .iter()
@@ -526,7 +543,7 @@ impl Shell {
     }
 
     fn on_title_changed(&mut self, view: ViewId, title: &str) {
-        if self.is_sleeping(view) {
+        if self.is_sleeping(view) || self.is_restore_pending(view) {
             return;
         }
         self.tab_titles.insert(view, title.to_string());
@@ -546,6 +563,21 @@ impl Shell {
     fn show(&mut self, engine: &mut CefEngine, view: ViewId) {
         if !self.contains(view) {
             return;
+        }
+        let pending_url = self
+            .tabs
+            .iter_mut()
+            .find(|t| t.view == view && t.restore_pending)
+            .map(|t| {
+                t.restore_pending = false;
+                t.view
+            })
+            .and_then(|v| self.tab_urls.get(&v).cloned())
+            .filter(|u| {
+                u.starts_with("http://") || u.starts_with("https://") || u.starts_with("file:")
+            });
+        if let Some(url) = pending_url {
+            engine.navigate(view, &url);
         }
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.view == view) {
             let now = std::time::SystemTime::now()
@@ -833,6 +865,10 @@ impl Shell {
                             title: title.clone(),
                         }));
                     }
+                }
+                // The UI treats the last replayed tab as active; tell it which one really is.
+                if let Some(v) = self.shown {
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: v }));
                 }
             }
             FromUi::DownloadControl { id, action } => {
@@ -1199,15 +1235,16 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     } else if !saved_session.tabs.is_empty() {
         let mut s = shell.borrow_mut();
         let mut created_views = Vec::new();
-        for tab in &saved_session.tabs {
-            let view = CefEngine.create_view(if tab.url.starts_with("odyssey://") {
-                ""
-            } else {
-                &tab.url
-            });
+        let active_idx = saved_session.active_tab_index.unwrap_or(0);
+        for (i, tab) in saved_session.tabs.iter().enumerate() {
+            // Only the active tab loads now; the others load when first shown (EDGE_CASES §6).
+            let web = tab.url.starts_with("http://") || tab.url.starts_with("https://");
+            let lazy = web && i != active_idx;
+            let view = CefEngine.create_view(if lazy || !web { "" } else { &tab.url });
             created_views.push(view);
-            s.tabs
-                .push(Tab::with_details(view, None, tab.space, tab.pinned));
+            let mut t = Tab::with_details(view, None, tab.space, tab.pinned);
+            t.restore_pending = lazy;
+            s.tabs.push(t);
             s.tab_urls.insert(view, tab.url.clone());
             s.tab_titles.insert(view, tab.title.clone());
         }

@@ -26,6 +26,8 @@ export async function startLive() {
   };
 
   initPageBasicsShortcuts(() => app, () => state.activeTab);
+  // Read-only handle for automated live checks (tools/live-check); the UI page is ours alone.
+  window.__uiState = state;
 
   // Pages that show Rust-side data ask for it when they open (AUDIT-09).
   let dataPage = '';
@@ -88,8 +90,13 @@ export async function startLive() {
       if (!tab) {
         tab = { id: msg.view, title: 'New tab', parent: msg.opener, url: msg.url || '' };
         state.tabs.push(tab);
-      } else if (msg.url) {
-        tab.url = msg.url;
+      } else {
+        if (msg.url) tab.url = msg.url;
+        // An early url/title event may have created this tab out of order; the replay from
+        // Rust defines the order, so move it to the end.
+        state.tabs = state.tabs.filter((t) => t !== tab);
+        state.tabs.push(tab);
+        if (msg.opener != null) tab.parent = msg.opener;
       }
       state.activeTab = msg.view;
       state.shields = 0;

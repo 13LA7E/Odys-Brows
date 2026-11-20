@@ -324,13 +324,16 @@ impl HistoryStore {
         let conn = self.conn.lock().unwrap();
 
         // Find parent of the visit to be removed
+        // A root visit has a NULL opener_id: read it as Option<i64> inside the row, or the
+        // whole forget fails on every top-level visit.
         let parent_opener: Option<i64> = conn
             .query_row(
                 "SELECT opener_id FROM visits WHERE id = ?1",
                 params![id],
-                |row| row.get(0),
+                |row| row.get::<_, Option<i64>>(0),
             )
-            .optional()?;
+            .optional()?
+            .flatten();
 
         // Re-attach children
         conn.execute(
@@ -454,6 +457,20 @@ mod tests {
             Some(id1),
             "Child should re-attach to grandparent"
         );
+    }
+
+    #[test]
+    fn forgetting_a_root_visit_works_and_reparents_children() {
+        let store = HistoryStore::open_in_memory().unwrap();
+        let root = store.record("https://root.example", "Root", None).unwrap();
+        let child = store
+            .record("https://child.example", "Child", Some(root))
+            .unwrap();
+        store.forget(root).unwrap();
+        let left = store.query_recent(10).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, child);
+        assert_eq!(left[0].opener_id, None);
     }
 
     #[test]

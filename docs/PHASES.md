@@ -230,37 +230,48 @@ Every UI task here must reach a `visual_check` score at or below the threshold i
 Status after the first repair session: code fixed and unit-tested, **not yet checked live** (needs a rebuild of `dist` and a run on the test page) unless noted.
 
 - [x] **AUDIT-00** STATUS and PHASES made honest (this section).
-- [~] **AUDIT-01** Helm and notch blank over pages. Occlusion flags added in `engine-cef` (`CalculateNativeWinOcclusion` off). **Unverified live.** If still blank, the layered overlay window (D-009) needs the owner's OK.
-- [~] **AUDIT-02** `NewWindowRequested` now opens tabs (children of the opener; background tabs not shown; popups without a gesture blocked). Not checked live; real OAuth popups (`window.opener`) not investigated.
-- [~] **AUDIT-03** Renders coalesced and skipped when state is unchanged; focus and text kept; rail width sent once per change; `session.json` written at most once a second. The DOM is still rebuilt on change (not an in-place rewrite).
-- [x] **AUDIT-04** One sky instance; `window.__skyLoopCount()` test hook. Idle CPU not measured.
-- [~] **AUDIT-05** Downloads: UI handler, ring, popover, cancel, path for Open, id mapping. Not checked live.
+- [ ] **AUDIT-01** Helm and notch blank over pages. **Not reproduced and not verifiable by automation.** With and without my flags, the UI window reports `visible` and paints ~145 frames/s and PrintWindow shows the full UI, so the occlusion hypothesis is not confirmed. What the owner sees on screen needs a human look. The flags are kept (documented Chromium flags); the first version crashed the debug build and was fixed by merging into any existing `disable-features`. If the owner still sees blank controls, the overlay window (D-009) needs their OK.
+- [x] **AUDIT-02** `target=_blank` and `window.open` with a gesture open tabs as children of the opener; a timer `window.open` without a gesture is blocked. **Verified live** (`tools/live_check/popups_history.py`). Real OAuth popups (`window.opener`) not investigated.
+- [~] **AUDIT-03** Verified live: text typed in the Helm survives page events; `session.json` is written at most ~3 times in 6 s during a 60-event title storm. The DOM is still rebuilt on every real state change (one render per title change), so this is not the in-place rewrite the audit asked for.
+- [x] **AUDIT-04** Verified live: after 200 resizes with Drifting on, exactly one sky loop (`window.__skyLoopCount()`). Idle CPU not measured.
+- [x] **AUDIT-05** Verified live with a local 120 MB file: UI entry with "N of 120 MB, ... 8 connections", Helm ring, popover; pause stops, resume continues, cancel marks it cancelled. Open and Show in folder not exercised.
 - [ ] **AUDIT-06** Overlays over pages. Depends on AUDIT-01.
 - [x] **AUDIT-07** Find: field names fixed; contract test (`ui_messages_match_the_bridge_contract`) checks every UI message against `bridge.rs`. Find bar visibility over a page depends on AUDIT-06.
-- [~] **AUDIT-08** `focus_ui()`, F6 without Ctrl, Ctrl+L now clicks the address box. Not checked live.
-- [~] **AUDIT-09** History: loads on open, rows and side panel from real data, search keeps focus. Not checked live.
+- [~] **AUDIT-08** `focus_ui()`, F6 without Ctrl, and Ctrl+L now clicks the address box. Not testable without real key input; needs a human check.
+- [x] **AUDIT-09** Verified live: History opens with real day groups, search filters, forget removes, clear day empties. Two more bugs found and fixed while checking: every visit was recorded twice, and `forget` silently failed on every top-level visit (NULL `opener_id`).
 - [x] **AUDIT-10** Linux vault uses the Secret Service via `keyring` (feature set unverified on Linux). The Passwords page still says "Windows DPAPI" on every OS (not changed).
 - [x] **AUDIT-11** Atomic vault save; a corrupt file is moved aside and saves are refused. Tests added. The notice is not yet shown in the UI.
 - [x] **AUDIT-12** Open uses `explorer.exe` or `xdg-open` with one argument; programs are refused. Tests added.
-- [x] **AUDIT-13** AI key kept in the OS secure store; a save without a key keeps it. Test added; restart survival not run live.
-- [~] **AUDIT-14** Sleeping tabs keep URL and title. Scroll position not restored.
+- [x] **AUDIT-13** Verified live: the key never appears in `ai.json` or in UI messages, and a save without a key keeps it (Credential Manager). Survival across a restart was not asserted.
+- [~] **AUDIT-14** Verified live: a sleeping tab keeps its URL in the UI and in `session.json` and reloads when shown. Also fixed a freeze: `sleep()` called `load_url` while the engine state was borrowed, which hung the whole app (pre-existing in the old build). Scroll position not restored.
 - [ ] **AUDIT-15** Audio, form input, downloads and a sleep setting. Not done.
 - [x] **AUDIT-16** Ctrl+Shift+T reopens the newest closed tab. Test added.
 - [x] **AUDIT-17** Event queue order fixed (`VecDeque`).
-- [~] **AUDIT-18** Restore maps `odyssey://` to internal pages; still not lazy.
-- [~] **AUDIT-19** Local AI works with or without `/v1`; model check and a clear missing-model message. Page text is not sent; Odysseus provider unverified.
+- [x] **AUDIT-18** Verified live: after a restart tabs, settings and the internal page are restored and only the active tab loads; the others load when first shown. Also fixed: the UI's active tab did not match the tab Rust showed, and tab order could change after restart.
+- [~] **AUDIT-19** Verified live against a fake Ollama server: works with and without `/v1`, a missing model gives the `ollama pull` message, answers stream. Not tested against a real Ollama; page text still not sent; Odysseus provider unverified.
 - [x] **AUDIT-20** Zoom steps through Chrome levels per tab. Test added. No on-screen level indicator.
 - [ ] **AUDIT-21** Permission and certificate prompts (need a designed UI and Owner OK).
 - [ ] **AUDIT-22** Real extension management.
 - [ ] **AUDIT-23** Auto-updater (after D-013).
 - [~] **AUDIT-24** `build_installer.ps1` copies runtime files only. Not run; new size not recorded.
-- [x] **AUDIT-25** Shields count starts at 0, resets on navigation, shows only on web pages in live mode.
-- [~] **AUDIT-26** Private window runs live (`?private=1`); Ctrl+Shift+N opens one. Leaves-nothing-on-disk is covered by an existing unit test only, not by a process-level test.
-- [x] **AUDIT-27** Internal pages reuse their tab and get titles.
+- [x] **AUDIT-25** Verified live: Shields shows 0 at start (the old build showed 12).
+- [x] **AUDIT-26** Verified live: `--private` runs the live UI with the private rail and copy, and a session of browsing plus a settings save leaves no `session.json`, history or settings files. Ctrl+Shift+N not tested (needs real key input).
+- [x] **AUDIT-27** Verified live: Settings reuses its tab; internal pages get titles. Also fixed: once history data existed, Settings and Extensions pages showed the History page.
 - [ ] **AUDIT-28** Visual differences (rounded left corner, scrollbar, stray trunk line).
 - [~] **AUDIT-29** Next and Prev tab respect spaces. The rest of the list is open.
 - [~] **AUDIT-30** Vault clippy error removed with the rewrite. Rule added to AGENTS.md. Linux CI not re-run.
 - [ ] **AUDIT-31** Linux page-window holes. Needs the AUDIT-01 decision and a Linux machine.
 - [ ] **AUDIT-32** Stars connect to the cursor. Needs the DECISIONS entry first.
 - [ ] **AUDIT-33** Motion tokens and transitions.
-- [~] **AUDIT-34** Sky pauses while a web page is shown (`setPaused`). Idle-pointer pause not done.
+- [~] **AUDIT-34** Verified live: sky loop count is 0 while a web page is shown and 1 on the new-tab page. Idle-pointer pause not done.
+
+### Found while checking every phase live (21 Nov 2026, not in the audit)
+
+All fixed and verified live unless noted.
+- A `disable-features` switch I added in the first repair pass crashed the **debug** build in `libcef.dll` at start (both self-tests). Fixed by merging into any existing value.
+- Putting any tab to sleep froze the whole app (pre-existing).
+- History recorded every visit twice (pre-existing).
+- `forget` in History did nothing for top-level visits (pre-existing).
+- After a history query, Settings and Extensions pages rendered the History page (pre-existing).
+- After a restart the UI's active tab differed from the tab Rust had shown, and tab order could change.
+- Still open: permission and certificate prompts are stubs; vault corruption notice is not shown in the UI; the extensions page does not control real extensions; `VaultReveal` sends the plain password to the UI.

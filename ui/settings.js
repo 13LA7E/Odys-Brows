@@ -518,7 +518,7 @@ export function renderSettings(container, state, onUpdate) {
     // P8-02 Passwords Vault
     const title = el('h1', null, 'Passwords');
     title.style.cssText = 'margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px;color:var(--text-strong);';
-    const sub = el('div', null, 'Saved logins encrypted with Windows DPAPI (tied to your Windows login).');
+    const sub = el('div', null, (/Windows/i.test(navigator.userAgent) ? 'Saved logins encrypted with Windows DPAPI (tied to your Windows login).' : 'Saved logins are kept in your system keyring (Secret Service).'));
     sub.style.cssText = 'margin-top:8px;font-size:15px;color:var(--text-muted);';
     content.append(title, sub);
 

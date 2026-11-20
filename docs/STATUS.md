@@ -8,7 +8,7 @@
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
 | Current task | Rebuild `dist`, then live-check the Phase R items marked `[~]` in PHASES on `tools/audit/test.html`, starting with AUDIT-01 (blank Helm and notch over web pages). |
-| State | First repair session done: code fixed and unit-tested for AUDIT-04, 07, 10 to 13, 16, 17, 20, 25, 27 and partly for 01, 02, 03, 05, 08, 09, 14, 18, 19, 24, 26, 29, 30, 34. **None of it has been run in the live app.** Open: 06, 15, 21, 22, 23, 28, 31, 32, 33. |
+| State | Phase R repairs are now **checked live** with `tools/live_check/` (6 scripts, about 60 assertions, all passing) except where PHASES says otherwise. Not verifiable by automation: AUDIT-01 (what is visible on screen) and real keyboard shortcuts (AUDIT-08, Ctrl+Shift+N). Open: 06, 15, 21, 22, 23, 28, 31, 32, 33. |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
 | Last pushed commit | f6d205e (before Phase R). |
@@ -110,6 +110,15 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 Copy this template for each session:
 
 ```
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Phase R, live verification of all phases
+
+- **Did:** built and ran the app (debug), drove it over the Chromium remote debugging port with an isolated profile, and fixed what broke. Scripts are in `tools/live_check/`.
+- **Bugs found and fixed:** the `disable-features` flag crashed the debug build (my regression from the first pass); sleeping a tab froze the app; history recorded each visit twice; forgetting a top-level visit did nothing; Settings and Extensions pages showed History once history data existed; UI active tab and order wrong after restart; restore was not lazy.
+- **Verified live:** both self-tests (debug and release); popups as child tabs and the no-gesture block; history, closed tabs, vault (no plaintext in `vault.json`), spaces, internal pages; downloads with pause, resume and cancel; sleeping, session and settings restore; private window leaves no files; local AI against a fake server; Helm text surviving events; one sky loop.
+- **Not verified:** what is shown on screen (AUDIT-01), real key presses (Ctrl+L, F6, Ctrl+Shift+N), Linux, a real Ollama, a real 100 MB internet download, Shields counts, Alt+F4 in a page window.
+- **Note:** `window.__uiState` is a read-only debug handle added to the UI for these checks.
+- **Questions for the owner:** please look at the running app once (Helm and notch over a web page) and say whether AUDIT-01 still happens.
 
 ### 2026-11-20: Claude Code / Sonnet 5.5: Phase R (audit repairs), first session
 
