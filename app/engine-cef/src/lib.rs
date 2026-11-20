@@ -1972,6 +1972,11 @@ wrap_app! {
                     Some(&name),
                     Some(&CefString::from(merged.as_str())),
                 );
+                // AUDIT-01 (found with a real screen capture, 21 Nov 2026): with DirectComposition
+                // on, Windows shows the UI window's content only where no page window sits on
+                // top, ignoring the holes cut into the page windows, so the Helm and notch were
+                // empty grey shapes. Without it the holes show the UI.
+                cmd.append_switch(Some(&CefString::from("disable-direct-composition")));
                 cmd.append_switch(Some(&CefString::from("disable-backgrounding-occluded-windows")));
                 cmd.append_switch(Some(&CefString::from("disable-renderer-backgrounding")));
                 cmd.append_switch_with_value(
