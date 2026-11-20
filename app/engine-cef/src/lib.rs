@@ -195,8 +195,18 @@ fn update_page_window_region(
         // Only the bottom-left corner is rounded (--r-notch: 0 0 0 14px): the round rectangle is
         // made taller and wider than the window so the other corners fall outside it.
         let r2 = (28.0 * dpi).round() as i32;
-        let notch_rgn =
-            win32::CreateRoundRectRgn((w - notch_w).max(0), -r2, w + r2, notch_h + 1, r2, r2);
+        // The UI notch sits NOTCH_SHIFT past the right edge (--notch-shift in tokens.css), so its
+        // hole starts that much further right.
+        const NOTCH_SHIFT: f32 = 6.0;
+        let shift = (NOTCH_SHIFT * dpi).round() as i32;
+        let notch_rgn = win32::CreateRoundRectRgn(
+            (w - notch_w + shift).max(0),
+            -r2,
+            w + r2,
+            notch_h + 1,
+            r2,
+            r2,
+        );
         win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
         win32::DeleteObject(notch_rgn);
 

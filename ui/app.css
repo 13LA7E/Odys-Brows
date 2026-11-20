@@ -41,7 +41,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 
 /* Notch (DESIGN.md §8) */
 .notch {
-  position: absolute; top: 0; right: 0; height: var(--notch-h); background: var(--bg);
+  position: absolute; top: 0; right: calc(var(--notch-shift) * -1); height: var(--notch-h); background: var(--bg);
   border-radius: var(--r-notch); padding-left: 6px; display: flex; align-items: center;
   -webkit-app-region: drag;
   z-index: 100;
