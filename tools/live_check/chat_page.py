@@ -159,11 +159,11 @@ try:
 
     # ---- pictures: file picker, vision model, description kept for later turns
     pic = os.path.join(prof, 'red.png'); open(pic, 'wb').write(png())
-    cdp_files('input[aria-label="Attach pictures"]', [pic]); time.sleep(1.2)
+    cdp_files('input[aria-label="Attach files"]', [pic]); time.sleep(1.2)
     check('a picked picture shows in the composer', count('.chat-attach .chat-thumb') == 1)
     ui("document.querySelector('.chat-attach .chat-thumb-x').click(); 1"); time.sleep(0.3)
     check('it can be removed again', count('.chat-attach .chat-thumb') == 0)
-    cdp_files('input[aria-label="Attach pictures"]', [pic]); time.sleep(1.2)
+    cdp_files('input[aria-label="Attach files"]', [pic]); time.sleep(1.2)
     type_send('what colour is this?'); wait_idle(40)
     check('your message shows the picture', count('.chat-msg.user .chat-thumb') >= 1)
     check('the vision model got a real JPEG with the right model name', bool(vision_seen) and vision_seen[-1]['jpeg'] and vision_seen[-1]['model'] == 'vision-mock', vision_seen[-1:])
@@ -176,7 +176,7 @@ try:
     v0 = len(vision_seen)
     type_send('and what shape?'); wait_idle()
     check('later turns reuse the note: the picture is not described again', len(vision_seen) == v0 and 'plain red rectangle' in str([m['content'] for m in requests_seen[-1]['messages']]))
-    cdp_files('input[aria-label="Attach pictures"]', []) if False else None
+    cdp_files('input[aria-label="Attach files"]', []) if False else None
 
     # ---- paste and drag and drop
     ui("""(()=>{const dt=new DataTransfer(); const bytes=Uint8Array.from(atob('%s'),c=>c.charCodeAt(0)); dt.items.add(new File([bytes],'p.png',{type:'image/png'})); const t=document.querySelector('.chat-input'); t.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})); return 1})()""" % base64.b64encode(png()).decode()); time.sleep(1.2)

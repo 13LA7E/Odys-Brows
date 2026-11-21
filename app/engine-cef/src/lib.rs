@@ -582,6 +582,9 @@ wrap_client! {
         fn life_span_handler(&self) -> Option<LifeSpanHandler> {
             Some(UiLife::new())
         }
+        fn permission_handler(&self) -> Option<PermissionHandler> {
+            Some(UiPermission::new())
+        }
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(UiLoad::new())
         }
@@ -1351,6 +1354,53 @@ fn certificate_error_text(code: i32) -> String {
         -208 => "The certificate has been revoked.".to_string(),
         -210 => "The certificate is weak.".to_string(),
         other => format!("The site's certificate can't be trusted (error {other})."),
+    }
+}
+
+// Our own window may use the microphone (voice input in the assistant chat) and nothing else: a
+// request for anything other than the microphone is refused, with no question asked.
+wrap_permission_handler! {
+    struct UiPermission {}
+
+    impl PermissionHandler {
+        fn on_show_permission_prompt(
+            &self,
+            _browser: Option<&mut Browser>,
+            _prompt_id: u64,
+            _requesting_origin: Option<&CefString>,
+            requested_permissions: u32,
+            callback: Option<&mut PermissionPromptCallback>,
+        ) -> ::std::os::raw::c_int {
+            let Some(cb) = callback else { return 0 };
+            use sys::cef_permission_request_types_t as T;
+            let mic = T::CEF_PERMISSION_TYPE_MIC_STREAM as u32;
+            let result = if requested_permissions == mic {
+                sys::cef_permission_request_result_t::CEF_PERMISSION_RESULT_ACCEPT
+            } else {
+                sys::cef_permission_request_result_t::CEF_PERMISSION_RESULT_DENY
+            };
+            cb.cont(result.into());
+            1
+        }
+
+        // getUserMedia: our window may record audio (and only audio), for voice input.
+        fn on_request_media_access_permission(
+            &self,
+            _browser: Option<&mut Browser>,
+            _frame: Option<&mut Frame>,
+            _requesting_origin: Option<&CefString>,
+            requested_permissions: u32,
+            callback: Option<&mut MediaAccessCallback>,
+        ) -> ::std::os::raw::c_int {
+            let Some(cb) = callback else { return 0 };
+            let audio = sys::cef_media_access_permission_types_t::CEF_MEDIA_PERMISSION_DEVICE_AUDIO_CAPTURE as u32;
+            if requested_permissions == audio {
+                cb.cont(audio);
+            } else {
+                cb.cancel();
+            }
+            1
+        }
     }
 }
 

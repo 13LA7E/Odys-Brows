@@ -1305,6 +1305,8 @@ mod tests {
             endpoint: endpoint.to_string(),
             model: "mock".into(),
             vision_model: String::new(),
+            speech_endpoint: String::new(),
+            speech_model: String::new(),
             api_key: None,
         }
     }

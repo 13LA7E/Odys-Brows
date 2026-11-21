@@ -23,6 +23,27 @@ pub struct Source {
     pub url: String,
 }
 
+/// Earlier versions of the conversation from one of your messages on (you edited it). The versions
+/// live on the first message of the active tail; `all[pos]` is empty because that version is the
+/// live conversation. Nesting works because a tail carries its own later versions with it.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Alts {
+    pub pos: usize,
+    pub all: Vec<Vec<Message>>,
+}
+
+/// Another answer to the same question ("Ask again").
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Variant {
+    pub text: String,
+    #[serde(default)]
+    pub steps: Vec<String>,
+    #[serde(default)]
+    pub sources: Vec<Source>,
+    #[serde(default)]
+    pub time: i64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Message {
     /// "user" or "assistant".
@@ -42,6 +63,25 @@ pub struct Message {
     /// Seconds since 1970 (0 = unknown, for chats saved before this existed).
     #[serde(default)]
     pub time: i64,
+    /// Text read from attached files (not pictures), kept so later turns still have it.
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+    /// Versions of the conversation from here on (set when you edited this message).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alts: Option<Alts>,
+    /// Every answer given to the same question (the active one is also in `text`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Variant>,
+    #[serde(default)]
+    pub variant: usize,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Attachment {
+    pub name: String,
+    pub text: String,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 impl Message {
@@ -54,6 +94,10 @@ impl Message {
             images: vec![],
             notes: vec![],
             time: 0,
+            attachments: vec![],
+            alts: None,
+            variants: vec![],
+            variant: 0,
         }
     }
 }
@@ -78,6 +122,14 @@ pub struct MessageView {
     pub sources: Vec<Source>,
     pub images: Vec<String>,
     pub time: i64,
+    /// Names of attached files (not pictures).
+    pub files: Vec<String>,
+    /// Which version of the conversation this message starts (position, how many); 0 = none.
+    pub alt_pos: usize,
+    pub alt_count: usize,
+    /// Which answer this is (position, how many); 0 = only one.
+    pub variant: usize,
+    pub variants: usize,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -251,6 +303,11 @@ pub fn get_view(dir: &Path, id: &str) -> Option<ChatView> {
                     .filter_map(|n| image_data_url(dir, n))
                     .collect(),
                 time: m.time,
+                files: m.attachments.iter().map(|a| a.name.clone()).collect(),
+                alt_pos: m.alts.as_ref().map_or(0, |a| a.pos),
+                alt_count: m.alts.as_ref().map_or(0, |a| a.all.len()),
+                variant: m.variant,
+                variants: m.variants.len(),
             })
             .collect(),
     })
@@ -292,6 +349,19 @@ fn clean_message(msg: Message) -> Message {
             .map(|n| clean_text(n).chars().take(2000).collect())
             .collect(),
         time: if msg.time > 0 { msg.time } else { now() },
+        attachments: msg
+            .attachments
+            .into_iter()
+            .take(3)
+            .map(|a| Attachment {
+                name: clean_text(&a.name).chars().take(80).collect(),
+                text: clean_text(&a.text).chars().take(60_000).collect(),
+                truncated: a.truncated,
+            })
+            .collect(),
+        alts: msg.alts,
+        variants: msg.variants,
+        variant: msg.variant,
     }
 }
 
@@ -360,22 +430,6 @@ pub fn set_pinned(dir: &Path, id: &str, pinned: bool) -> Result<(), String> {
     with_chat(dir, id, |c| c.pinned = pinned)
 }
 
-/// Keeps only the first `keep` messages (used to edit a question).
-pub fn truncate(dir: &Path, id: &str, keep: usize) -> Result<(), String> {
-    with_chat(dir, id, |c| c.messages.truncate(keep))?;
-    gc_images(dir);
-    Ok(())
-}
-
-/// Removes the answer(s) after the last question, so it can be asked again.
-pub fn drop_trailing_assistant(dir: &Path, id: &str) -> Result<(), String> {
-    with_chat(dir, id, |c| {
-        while c.messages.last().is_some_and(|m| m.role == "assistant") {
-            c.messages.pop();
-        }
-    })
-}
-
 pub fn set_notes(dir: &Path, id: &str, index: usize, notes: Vec<String>) -> Result<(), String> {
     with_chat(dir, id, |c| {
         if let Some(m) = c.messages.get_mut(index) {
@@ -386,6 +440,118 @@ pub fn set_notes(dir: &Path, id: &str, index: usize, notes: Vec<String>) -> Resu
                 .collect();
         }
     })
+}
+
+/// You edited the message at `at`: the conversation from there on is kept as an earlier version and
+/// the edited message starts a new one. Returns the chat id and the index of the new message.
+pub fn edit_user(dir: &Path, id: &str, at: usize, msg: Message) -> Result<(String, usize), String> {
+    let result = {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut f = load(dir);
+        let chat = f
+            .chats
+            .iter_mut()
+            .find(|c| c.id == id)
+            .ok_or("No such chat.")?;
+        if at >= chat.messages.len() || chat.messages[at].role != "user" {
+            return Err("There is no such message.".into());
+        }
+        let mut tail = chat.messages.split_off(at);
+        let mut alts = tail
+            .first_mut()
+            .and_then(|m| m.alts.take())
+            .unwrap_or(Alts {
+                pos: 0,
+                all: vec![Vec::new()],
+            });
+        let pos = alts.pos.min(alts.all.len() - 1);
+        alts.all[pos] = tail;
+        alts.all.insert(pos + 1, Vec::new());
+        alts.pos = pos + 1;
+        let mut m = clean_message(msg);
+        m.alts = Some(alts);
+        chat.messages.push(m);
+        chat.updated = now();
+        let at_new = chat.messages.len() - 1;
+        let cid = chat.id.clone();
+        save(dir, &f)?;
+        (cid, at_new)
+    };
+    gc_images(dir);
+    Ok(result)
+}
+
+/// Shows another version of the conversation from the message at `at` on.
+pub fn switch_alt(dir: &Path, id: &str, at: usize, to: usize) -> Result<(), String> {
+    with_chat(dir, id, |c| {
+        let Some(mut alts) = c.messages.get_mut(at).and_then(|m| m.alts.take()) else {
+            return Err("There are no other versions here.".to_string());
+        };
+        if to >= alts.all.len() || to == alts.pos {
+            c.messages[at].alts = Some(alts);
+            return Ok(());
+        }
+        let current = c.messages.split_off(at);
+        alts.all[alts.pos] = current;
+        let mut tail = std::mem::take(&mut alts.all[to]);
+        alts.pos = to;
+        if let Some(first) = tail.first_mut() {
+            first.alts = Some(alts);
+        }
+        c.messages.extend(tail);
+        Ok(())
+    })?
+}
+
+/// "Ask again" finished: the new answer becomes another version of the last answer.
+pub fn add_variant(dir: &Path, id: &str, msg: Message) -> Result<String, String> {
+    let m = clean_message(msg);
+    with_chat(dir, id, |c| {
+        let last = c
+            .messages
+            .last_mut()
+            .filter(|l| l.role == "assistant")
+            .ok_or_else(|| "There is no answer to replace.".to_string())?;
+        if last.variants.is_empty() {
+            last.variants.push(Variant {
+                text: last.text.clone(),
+                steps: last.steps.clone(),
+                sources: last.sources.clone(),
+                time: last.time,
+            });
+        }
+        last.variants.push(Variant {
+            text: m.text.clone(),
+            steps: m.steps.clone(),
+            sources: m.sources.clone(),
+            time: m.time,
+        });
+        last.variant = last.variants.len() - 1;
+        last.text = m.text;
+        last.steps = m.steps;
+        last.sources = m.sources;
+        last.time = m.time;
+        c.updated = now();
+        Ok(c.id.clone())
+    })?
+}
+
+/// Shows another answer to the same question.
+pub fn switch_variant(dir: &Path, id: &str, index: usize, to: usize) -> Result<(), String> {
+    with_chat(dir, id, |c| {
+        let Some(m) = c.messages.get_mut(index) else {
+            return Err("There is no such message.".to_string());
+        };
+        let Some(v) = m.variants.get(to).cloned() else {
+            return Err("There is no such answer.".to_string());
+        };
+        m.variant = to;
+        m.text = v.text;
+        m.steps = v.steps;
+        m.sources = v.sources;
+        m.time = v.time;
+        Ok(())
+    })?
 }
 
 pub fn delete(dir: &Path, id: &str) -> Result<(), String> {
@@ -592,7 +758,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_pin_truncate_and_search() {
+    fn rename_pin_and_search() {
         let d = tmp("ops");
         let (a, _) = append(&d, None, m("user", "how do rockets work")).unwrap();
         append(
@@ -620,14 +786,101 @@ mod tests {
         // a non-English letter before the match cannot break the snippet
         append(&d, Some(&b), m("user", "Käse Käse Käse Käse käse und Brot")).unwrap();
         assert_eq!(search(&d, "brot").len(), 1);
-        truncate(&d, &a, 1).unwrap();
-        assert_eq!(get(&d, &a).unwrap().messages.len(), 1);
-        append(&d, Some(&a), m("assistant", "x")).unwrap();
-        drop_trailing_assistant(&d, &a).unwrap();
-        assert_eq!(get(&d, &a).unwrap().messages.len(), 1);
         assert!(rename(&d, "nope", "x").is_err());
         let md = export_markdown(&get(&d, &a).unwrap());
         assert!(md.starts_with("# how do rockets work") && md.contains("**You**"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn editing_keeps_the_old_version_and_you_can_switch_back() {
+        let d = tmp("alts");
+        let (id, _) = append(&d, None, m("user", "first")).unwrap();
+        append(&d, Some(&id), m("assistant", "answer one")).unwrap();
+        append(&d, Some(&id), m("user", "second")).unwrap();
+        append(&d, Some(&id), m("assistant", "answer two")).unwrap();
+        let texts = |d: &Path, id: &str| -> Vec<String> {
+            get(d, id)
+                .unwrap()
+                .messages
+                .iter()
+                .map(|x| x.text.clone())
+                .collect()
+        };
+        // edit the second question
+        let (_, at) = edit_user(&d, &id, 2, m("user", "second, reworded")).unwrap();
+        assert_eq!(at, 2);
+        append(&d, Some(&id), m("assistant", "answer to reworded")).unwrap();
+        assert_eq!(
+            texts(&d, &id),
+            [
+                "first",
+                "answer one",
+                "second, reworded",
+                "answer to reworded"
+            ]
+        );
+        let v = get_view(&d, &id).unwrap();
+        assert_eq!((v.messages[2].alt_pos, v.messages[2].alt_count), (1, 2));
+        // back to the first version
+        switch_alt(&d, &id, 2, 0).unwrap();
+        assert_eq!(
+            texts(&d, &id),
+            ["first", "answer one", "second", "answer two"]
+        );
+        assert_eq!(get_view(&d, &id).unwrap().messages[2].alt_pos, 0);
+        // and forward again
+        switch_alt(&d, &id, 2, 1).unwrap();
+        assert_eq!(get(&d, &id).unwrap().messages[3].text, "answer to reworded");
+        // a third version, then all three can be reached
+        edit_user(&d, &id, 2, m("user", "second, again")).unwrap();
+        let v = get_view(&d, &id).unwrap();
+        assert_eq!((v.messages[2].alt_pos, v.messages[2].alt_count), (2, 3));
+        for to in [0usize, 2, 1, 0] {
+            switch_alt(&d, &id, 2, to).unwrap();
+            assert_eq!(get_view(&d, &id).unwrap().messages[2].alt_pos, to);
+        }
+        // nothing is lost: version 1's own answer is still there
+        switch_alt(&d, &id, 2, 1).unwrap();
+        assert_eq!(
+            get(&d, &id).unwrap().messages.last().unwrap().text,
+            "answer to reworded"
+        );
+        assert!(
+            switch_alt(&d, &id, 1, 0).is_err(),
+            "no versions on an answer"
+        );
+        assert!(
+            edit_user(&d, &id, 1, m("user", "x")).is_err(),
+            "only your own messages can be edited"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn asking_again_adds_an_answer_you_can_flip_through() {
+        let d = tmp("variants");
+        let (id, _) = append(&d, None, m("user", "q")).unwrap();
+        append(&d, Some(&id), m("assistant", "A1")).unwrap();
+        add_variant(&d, &id, m("assistant", "A2")).unwrap();
+        add_variant(&d, &id, m("assistant", "A3")).unwrap();
+        let v = get_view(&d, &id).unwrap();
+        assert_eq!(
+            (
+                v.messages[1].variant,
+                v.messages[1].variants,
+                v.messages[1].text.as_str()
+            ),
+            (2, 3, "A3")
+        );
+        switch_variant(&d, &id, 1, 0).unwrap();
+        assert_eq!(get(&d, &id).unwrap().messages[1].text, "A1");
+        switch_variant(&d, &id, 1, 1).unwrap();
+        assert_eq!(get(&d, &id).unwrap().messages[1].text, "A2");
+        assert!(switch_variant(&d, &id, 1, 9).is_err());
+        assert!(add_variant(&d, "nope", m("assistant", "x")).is_err());
+        let (id2, _) = append(&d, None, m("user", "only a question")).unwrap();
+        assert!(add_variant(&d, &id2, m("assistant", "x")).is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 

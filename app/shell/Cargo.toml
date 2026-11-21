@@ -22,6 +22,10 @@ serde.workspace = true
 serde_json.workspace = true
 # Reason: decode and check the new-tab wallpaper image the user picks (wallpaper.rs).
 base64.workspace = true
+# Reason: read the text of PDF files the user attaches to a chat message (attachments.rs).
+pdf-extract = "0.12"
+# Reason: a Word (.docx) file is a zip of XML; read its text for attachments (attachments.rs).
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

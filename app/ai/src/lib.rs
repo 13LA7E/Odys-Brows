@@ -31,6 +31,12 @@ pub struct AiConfig {
     /// A model that can look at pictures (for screenshots). Empty = use `model`.
     #[serde(default)]
     pub vision_model: String,
+    /// A speech-to-text server (OpenAI-style `/audio/transcriptions`, such as a Whisper server).
+    /// Empty = the cloud provider's own address when that is OpenAI, otherwise none.
+    #[serde(default)]
+    pub speech_endpoint: String,
+    #[serde(default)]
+    pub speech_model: String,
     #[serde(default, skip_serializing)]
     pub api_key: Option<String>,
 }
@@ -42,6 +48,8 @@ impl Default for AiConfig {
             endpoint: String::new(),
             model: String::new(),
             vision_model: String::new(),
+            speech_endpoint: String::new(),
+            speech_model: String::new(),
             api_key: None,
         }
     }
@@ -54,6 +62,8 @@ pub struct AiSettingsUi {
     pub endpoint: String,
     pub model: String,
     pub vision_model: String,
+    pub speech_endpoint: String,
+    pub speech_model: String,
     pub has_key: bool,
 }
 
@@ -64,6 +74,8 @@ impl From<&AiConfig> for AiSettingsUi {
             endpoint: c.endpoint.clone(),
             model: c.model.clone(),
             vision_model: c.vision_model.clone(),
+            speech_endpoint: c.speech_endpoint.clone(),
+            speech_model: c.speech_model.clone(),
             has_key: c.api_key.as_ref().map(|k| !k.is_empty()).unwrap_or(false),
         }
     }
@@ -230,6 +242,85 @@ impl AiClient {
                     Err(format!("Odysseus returned status {status}"))
                 }
             }
+        }
+    }
+
+    /// Turns a recording into text with a speech-to-text server (`POST {base}/audio/transcriptions`).
+    pub async fn transcribe(
+        &self,
+        config: &AiConfig,
+        audio: Vec<u8>,
+        mime: &str,
+    ) -> Result<String, String> {
+        let custom = config.speech_endpoint.trim().trim_end_matches('/');
+        let (base, key) = if !custom.is_empty() {
+            (
+                custom.to_string(),
+                config
+                    .api_key
+                    .clone()
+                    .filter(|_| config.provider == ProviderKind::Cloud),
+            )
+        } else if config.provider == ProviderKind::Cloud && !config.endpoint.contains("anthropic") {
+            let b = if config.endpoint.trim().is_empty() {
+                "https://api.openai.com/v1".to_string()
+            } else {
+                config.endpoint.trim().trim_end_matches('/').to_string()
+            };
+            (b, config.api_key.clone())
+        } else {
+            return Err("Voice input needs a speech-to-text server. Add one under Settings > AI (for example a local Whisper server), or use an OpenAI key.".into());
+        };
+        if audio.is_empty() || audio.len() > 25 * 1024 * 1024 {
+            return Err("The recording is empty or too long.".into());
+        }
+        let ext = if mime.contains("ogg") {
+            "ogg"
+        } else if mime.contains("mp4") || mime.contains("aac") {
+            "m4a"
+        } else if mime.contains("wav") {
+            "wav"
+        } else {
+            "webm"
+        };
+        let part = reqwest::multipart::Part::bytes(audio)
+            .file_name(format!("voice.{ext}"))
+            .mime_str(if mime.is_empty() { "audio/webm" } else { mime })
+            .map_err(|e| e.to_string())?;
+        let model = if config.speech_model.trim().is_empty() {
+            "whisper-1".to_string()
+        } else {
+            config.speech_model.trim().to_string()
+        };
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("model", model)
+            .text("response_format", "json");
+        let mut req = self
+            .http
+            .post(format!("{base}/audio/transcriptions"))
+            .multipart(form)
+            .timeout(Duration::from_secs(90));
+        if let Some(k) = key.filter(|k| !k.is_empty()) {
+            req = req.bearer_auth(k);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("Cannot reach the speech server at {base}: {e}"))?;
+        let status = resp.status();
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        if !status.is_success() {
+            let msg = body["error"]["message"].as_str().unwrap_or("");
+            return Err(format!("The speech server answered {status}. {msg}")
+                .trim()
+                .to_string());
+        }
+        let text = body["text"].as_str().unwrap_or("").trim().to_string();
+        if text.is_empty() {
+            Err("I could not hear any words in that recording.".into())
+        } else {
+            Ok(text)
         }
     }
 
@@ -694,6 +785,8 @@ mod tests {
     fn settings_serialization_never_includes_keys() {
         let config = AiConfig {
             vision_model: String::new(),
+            speech_endpoint: String::new(),
+            speech_model: String::new(),
             provider: ProviderKind::Cloud,
             endpoint: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
@@ -730,6 +823,8 @@ mod tests {
         let client = AiClient::new();
         let config = AiConfig {
             vision_model: String::new(),
+            speech_endpoint: String::new(),
+            speech_model: String::new(),
             provider: ProviderKind::Local,
             endpoint: format!("http://127.0.0.1:{port}"),
             model: "test-model".into(),

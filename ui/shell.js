@@ -289,13 +289,16 @@ function chatActions(root, state) {
       let msgs = state.chat.messages;
       if (o.editFrom != null) msgs = msgs.slice(0, o.editFrom);
       if (o.regenerate) { while (msgs.length && msgs[msgs.length - 1].role === 'assistant') msgs = msgs.slice(0, -1); }
-      if (!o.regenerate) msgs = [...msgs, { role: 'user', text, images: o.images || [], time: Math.floor(Date.now() / 1000) }];
+      if (!o.regenerate) msgs = [...msgs, { role: 'user', text, images: o.images || [], files: (o.files || []).map((f) => f.name), time: Math.floor(Date.now() / 1000) }];
       state.chat.messages = msgs;
       state.chatStream = { text: '', steps: [], sources: [], done: false };
       state.aiOrigin = 'chat';
+      // a new version or answer changes what the saved conversation looks like: reload it afterwards
+      state.chatRefresh = !!(o.regenerate || o.editFrom != null);
       send({
         type: 'ai-ask', prompt: text, chat: state.chat.id,
         images: o.images || [], use_page: !!o.usePage,
+        files: (o.files || []).map((f) => ({ name: f.name, data: f.data })),
         edit_from: o.editFrom ?? null,
         regenerate: !!o.regenerate,
       });
@@ -319,6 +322,9 @@ function chatActions(root, state) {
     pin: (id, pinned) => { if (state.chat?.id === id) state.chat.pinned = pinned; send({ type: 'chat-pin', id, pinned }); chatUpdate(state); },
     search: (query) => { state.chatQuery = query; if (query) send({ type: 'chat-search', query }); else { state.chatFound = null; chatUpdate(state); } },
     exportChat: (id) => send({ type: 'chat-export', id }),
+    switchAlt: (at, to) => { if (state.chat?.id) send({ type: 'chat-switch-alt', id: state.chat.id, at, to }); },
+    switchVariant: (index, to) => { if (state.chat?.id) send({ type: 'chat-switch-variant', id: state.chat.id, index, to }); },
+    transcribe: (audio, mime) => { captureId += 1; send({ type: 'transcribe', audio, mime, request: captureId }); },
     listModels: () => send({ type: 'ai-list-models' }),
     setModel: (model) => send({ type: 'ai-set-model', model }),
     setSetting: (key, value) => {

@@ -9,6 +9,7 @@
 )]
 
 mod agent_js;
+mod attachments;
 mod auth;
 mod brand;
 mod bridge;
@@ -2004,6 +2005,7 @@ impl Shell {
                 use_page,
                 edit_from,
                 regenerate,
+                files,
             } => {
                 self.ai_cancel.store(true, Ordering::Relaxed);
                 self.agent_confirms.clear();
@@ -2035,30 +2037,72 @@ impl Shell {
                     None
                 };
 
-                // Editing or asking again first removes what comes after.
-                let mut chat_id = chat.clone();
-                if save && let Some(id) = chat_id.as_deref() {
-                    if let Some(i) = edit_from {
-                        let _ = chats::truncate(&dir, id, i);
-                    }
-                    if regenerate {
-                        let _ = chats::drop_trailing_assistant(&dir, id);
+                // Files you attached: their text is read here (and kept with the message).
+                let mut attached: Vec<chats::Attachment> = Vec::new();
+                let mut file_problems: Vec<String> = Vec::new();
+                for r in attachments::extract_all(&files) {
+                    match r {
+                        Ok(e) => attached.push(chats::Attachment {
+                            name: e.name,
+                            text: e.text,
+                            truncated: e.truncated,
+                        }),
+                        Err(msg) => file_problems.push(msg),
                     }
                 }
-                // What was said before, as the model sees it (a picture is its description).
+                let mut chat_id = chat.clone();
+                // Editing a message that had files keeps them (the bytes are not sent again).
+                if attached.is_empty()
+                    && files.is_empty()
+                    && save
+                    && let (Some(id), Some(i)) = (chat_id.as_deref(), edit_from)
+                    && let Some(c) = chats::get(&dir, id)
+                    && let Some(old) = c.messages.get(i)
+                {
+                    attached = old.attachments.clone();
+                }
+                // What was said before, as the model sees it (a picture is its description, a file is
+                // its text). Asking again leaves out the answer being replaced.
                 let mut history: Vec<ai::ChatMessage> = Vec::new();
+                let history_of = |c: &chats::Chat, upto: usize| -> Vec<ai::ChatMessage> {
+                    c.messages
+                        .iter()
+                        .take(upto)
+                        .map(|m| {
+                            let mut text = m.text.clone();
+                            for a in &m.attachments {
+                                text.push_str(&attachments::prompt_block(&[
+                                    attachments::Extracted {
+                                        name: a.name.clone(),
+                                        text: a.text.clone(),
+                                        truncated: a.truncated,
+                                    },
+                                ]));
+                            }
+                            for (i, n) in m.notes.iter().enumerate() {
+                                text.push_str(&format!("\n[Attached picture {}: {n}]", i + 1));
+                            }
+                            ai::ChatMessage {
+                                role: m.role.clone(),
+                                content: text,
+                                images: Vec::new(),
+                            }
+                        })
+                        .collect()
+                };
                 if save && let Some(c) = chat_id.as_deref().and_then(|id| chats::get(&dir, id)) {
-                    history.extend(c.messages.iter().map(|m| {
-                        let mut text = m.text.clone();
-                        for (i, n) in m.notes.iter().enumerate() {
-                            text.push_str(&format!("\n[Attached picture {}: {n}]", i + 1));
+                    let upto = if let Some(i) = edit_from {
+                        i.min(c.messages.len())
+                    } else if regenerate {
+                        let mut n = c.messages.len();
+                        while n > 0 && c.messages[n - 1].role == "assistant" {
+                            n -= 1;
                         }
-                        ai::ChatMessage {
-                            role: m.role.clone(),
-                            content: text,
-                            images: Vec::new(),
-                        }
-                    }));
+                        n
+                    } else {
+                        c.messages.len()
+                    };
+                    history.extend(history_of(&c, upto));
                 }
                 let mut user_index: Option<usize> = None;
                 let mut image_b64: Vec<String> = Vec::new();
@@ -2076,12 +2120,29 @@ impl Shell {
                     if save {
                         let mut m = chats::Message::new("user", &prompt);
                         m.images = names;
-                        if let Ok((id, at)) = chats::append(&dir, chat_id.as_deref(), m) {
+                        m.attachments = attached.clone();
+                        let stored = match (chat_id.as_deref(), edit_from) {
+                            // an edit keeps the old version to switch back to
+                            (Some(id), Some(i)) => chats::edit_user(&dir, id, i, m),
+                            (id, _) => chats::append(&dir, id, m),
+                        };
+                        if let Ok((id, at)) = stored {
                             chat_id = Some(id);
                             user_index = Some(at);
                         }
                     }
-                    history.push(ai::ChatMessage::user(prompt.clone()));
+                    let mut text = prompt.clone();
+                    text.push_str(&attachments::prompt_block(
+                        &attached
+                            .iter()
+                            .map(|a| attachments::Extracted {
+                                name: a.name.clone(),
+                                text: a.text.clone(),
+                                truncated: a.truncated,
+                            })
+                            .collect::<Vec<_>>(),
+                    ));
+                    history.push(ai::ChatMessage::user(text));
                 }
                 if save && let Some(id) = &chat_id {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ChatStarted { id: id.clone() }));
@@ -2117,9 +2178,13 @@ impl Shell {
                             let mut m = chats::Message::new("assistant", &text);
                             m.steps = steps;
                             m.sources = sources;
-                            chats::append(&profile_dir(), chat_for_save.as_deref(), m)
-                                .ok()
-                                .map(|(id, _)| id)
+                            if regenerate && let Some(id) = chat_for_save.as_deref() {
+                                chats::add_variant(&profile_dir(), id, m).ok()
+                            } else {
+                                chats::append(&profile_dir(), chat_for_save.as_deref(), m)
+                                    .ok()
+                                    .map(|(id, _)| id)
+                            }
                         }
                     } else {
                         None
@@ -2140,6 +2205,9 @@ impl Shell {
                         .unwrap();
                     rt.block_on(async {
                         let mut history = history;
+                        for p in &file_problems {
+                            sink(ai::AiEvent::Step(p.clone()));
+                        }
                         // Pictures you attached: a vision model describes them (and the description
                         // is kept for later turns), or the main model gets them directly.
                         if !image_b64.is_empty() {
@@ -2202,6 +2270,64 @@ impl Shell {
                                 move |ev| sink2(ev),
                             )
                             .await;
+                    });
+                });
+            }
+            FromUi::ChatSwitchAlt { id, at, to } => {
+                if !self.is_private {
+                    let _ = chats::switch_alt(&profile_dir(), &id, at, to);
+                }
+                let chat = if self.is_private {
+                    None
+                } else {
+                    chats::get_view(&profile_dir(), &id)
+                };
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatData { chat }));
+            }
+            FromUi::ChatSwitchVariant { id, index, to } => {
+                if !self.is_private {
+                    let _ = chats::switch_variant(&profile_dir(), &id, index, to);
+                }
+                let chat = if self.is_private {
+                    None
+                } else {
+                    chats::get_view(&profile_dir(), &id)
+                };
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatData { chat }));
+            }
+            FromUi::Transcribe {
+                audio,
+                mime,
+                request,
+            } => {
+                use base64::Engine as _;
+                let client = self.ai_client.clone();
+                let config = self.ai_config.clone();
+                std::thread::spawn(move || {
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(audio.trim())
+                        .unwrap_or_default();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let res = rt.block_on(async { client.transcribe(&config, bytes, &mime).await });
+                    CefEngine.post_ui(move || {
+                        let msg = match res {
+                            Ok(text) => ToUi::Transcribed {
+                                request,
+                                ok: true,
+                                text,
+                                message: String::new(),
+                            },
+                            Err(message) => ToUi::Transcribed {
+                                request,
+                                ok: false,
+                                text: String::new(),
+                                message,
+                            },
+                        };
+                        CefEngine.send_to_ui(&bridge::to_json(&msg));
                     });
                 });
             }

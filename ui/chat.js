@@ -35,6 +35,11 @@ const ICON = {
   stop: 'M7 7h10v10H7z',
   tools: 'M14 6l4 4-8 8H6v-4zM13 7l4 4',
   steps: 'M5 6h14M5 12h14M5 18h9',
+  mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v4',
+  speaker: 'M4 10v4h4l5 4V6l-5 4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11',
+  left: 'M15 6l-6 6 6 6',
+  right: 'M9 6l6 6-6 6',
+  file: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h6',
 };
 
 function el(tag, cls, text) {
@@ -117,9 +122,70 @@ export async function toJpegDataUrl(src, max = 1600) {
   return c.toDataURL('image/jpeg', 0.85);
 }
 
+function bytesLabel(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** A file's bytes as base64 (what the Rust side expects). */
+export async function fileToBase64(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function fileChips(files, onRemove) {
+  const row = el('div', 'chat-files');
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+  files.forEach((f, i) => {
+    const chip = el('div', 'chat-file');
+    chip.style.cssText = 'display:flex;align-items:center;gap:8px;max-width:260px;padding:6px 10px;border-radius:var(--r-chip);background:var(--w-field);font-size:12.5px;color:var(--text-soft);';
+    const name = typeof f === 'string' ? f : f.name;
+    chip.append(icon('file', 14));
+    const t = el('span', null, name);
+    t.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    chip.append(t);
+    if (f.size != null) { const sz = el('span', null, bytesLabel(f.size)); sz.style.cssText = 'color:var(--text-muted);flex:none;'; chip.append(sz); }
+    if (onRemove) {
+      const x = el('button', 'chat-file-x');
+      x.type = 'button';
+      x.setAttribute('aria-label', `Remove ${name}`);
+      x.style.cssText = 'border:0;background:none;color:var(--text-muted);cursor:pointer;padding:0;display:flex;';
+      x.append(icon('x', 12));
+      x.addEventListener('click', () => onRemove(i));
+      chip.append(x);
+    }
+    row.append(chip);
+  });
+  return row;
+}
+
+/** "< 2/3 >" for another version of a message (or answer). */
+function switcher(pos, count, onChange, label) {
+  const box = el('div', 'chat-versions');
+  box.setAttribute('aria-label', label);
+  box.style.cssText = 'display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--text-muted);';
+  const prev = iconButton('left', `Previous ${label}`, () => onChange(pos - 1), 'chat-prev');
+  const next = iconButton('right', `Next ${label}`, () => onChange(pos + 1), 'chat-next');
+  prev.style.width = next.style.width = '22px';
+  prev.style.height = next.style.height = '22px';
+  prev.disabled = pos <= 0;
+  next.disabled = pos >= count - 1;
+  prev.style.opacity = prev.disabled ? '.3' : '1';
+  next.style.opacity = next.disabled ? '.3' : '1';
+  const t = el('span', 'chat-version-label', `${pos + 1}/${count}`);
+  box.append(prev, t, next);
+  return box;
+}
+
 let mounted = null;
-const draft = { images: [], usePage: false };
+const draft = { images: [], files: [], usePage: false };
 const MAX_PICTURES = 4;
+const MAX_FILES = 3;
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+let mountedMic = null;
 
 function greeting(name) {
   const h = new Date().getHours();
@@ -284,6 +350,11 @@ function messageNode(msg, index, ctx, animate) {
       t.style.justifyContent = 'flex-end';
       row.append(t);
     }
+    if ((msg.files || []).length) {
+      const fc = fileChips(msg.files);
+      fc.style.justifyContent = 'flex-end';
+      row.append(fc);
+    }
     if (msg.text) {
       const bubble = el('div', 'chat-bubble', msg.text);
       bubble.style.cssText = 'max-width:80%;padding:10px 14px;border-radius:var(--r-answer);background:var(--w-field);font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word;';
@@ -291,13 +362,19 @@ function messageNode(msg, index, ctx, animate) {
     }
     const acts = el('div', 'chat-actions');
     acts.style.cssText = 'display:flex;gap:2px;opacity:0;transition:opacity var(--dur-fast) var(--ease-out);';
+    if (msg.alt_count > 1) {
+      const sw = switcher(msg.alt_pos, msg.alt_count, (to) => ctx.actions.switchAlt(index, to), 'version of this conversation');
+      acts.append(sw);
+      acts.dataset.pinned = '1';
+      acts.style.opacity = '1';
+    }
     acts.append(
       iconButton('copy', 'Copy', async (e) => { const ok = await copyText(msg.text); ctx.toast(ok ? 'Copied' : 'Could not copy'); e.currentTarget.blur(); }),
       iconButton('pencil', 'Edit and send again', () => userEdit(row, index, msg, ctx), 'chat-edit-btn'),
     );
     row.append(acts);
     row.addEventListener('mouseenter', () => { acts.style.opacity = '1'; });
-    row.addEventListener('mouseleave', () => { acts.style.opacity = '0'; });
+    row.addEventListener('mouseleave', () => { if (!acts.dataset.pinned) acts.style.opacity = '0'; });
     return row;
   }
   row.style.cssText = 'display:flex;gap:12px;align-items:flex-start;';
@@ -311,14 +388,20 @@ function messageNode(msg, index, ctx, animate) {
   col.append(content);
   const acts = el('div', 'chat-actions');
   acts.style.cssText = 'display:flex;gap:2px;align-items:center;margin-top:6px;opacity:0;transition:opacity var(--dur-fast) var(--ease-out);';
+  if (msg.variants > 1) {
+    acts.append(switcher(msg.variant, msg.variants, (to) => ctx.actions.switchVariant(index, to), 'answer'));
+    acts.dataset.pinned = '1';
+    acts.style.opacity = '1';
+  }
   acts.append(
     iconButton('copy', 'Copy answer', async () => { const ok = await copyText(msg.text); ctx.toast(ok ? 'Copied' : 'Could not copy'); }),
+    iconButton('speaker', 'Read aloud', () => ctx.speak(content.querySelector('.chat-answer')?.textContent || msg.text), 'chat-speak'),
     iconButton('refresh', 'Ask again', () => ctx.actions.send({ regenerate: true, text: ctx.lastUserText(index) }), 'chat-regen'),
   );
   if (msg.time) { const t = el('span', null, clock(msg.time)); t.style.cssText = 'font-size:11.5px;color:var(--text-muted);margin-left:6px;'; acts.append(t); }
   col.append(acts);
   row.addEventListener('mouseenter', () => { acts.style.opacity = '1'; });
-  row.addEventListener('mouseleave', () => { acts.style.opacity = '0'; });
+  row.addEventListener('mouseleave', () => { if (!acts.dataset.pinned) acts.style.opacity = '0'; });
   row.append(av, col);
   return row;
 }
@@ -501,10 +584,11 @@ export function renderChatPage(container, state, actions) {
   const tools = el('div');
   tools.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const file = el('input');
-  file.type = 'file'; file.accept = 'image/*'; file.multiple = true;
+  file.type = 'file'; file.multiple = true;
   file.style.display = 'none';
-  file.setAttribute('aria-label', 'Attach pictures');
-  const clipBtn = iconButton('clip', 'Attach pictures', () => file.click(), 'chat-attach-btn');
+  file.setAttribute('aria-label', 'Attach files');
+  const clipBtn = iconButton('clip', 'Attach pictures or files', () => file.click(), 'chat-attach-btn');
+  const micBtn = iconButton('mic', 'Speak your message', () => toggleMic(), 'chat-mic-btn');
   const capBtn = iconButton('camera', 'Screenshot of the page you were on', () => toggleCapMenu(), 'chat-capture-btn');
   const pageChip = el('button', 'chat-page-chip');
   pageChip.type = 'button';
@@ -517,7 +601,7 @@ export function renderChatPage(container, state, actions) {
   sendBtn.type = 'button';
   sendBtn.setAttribute('aria-label', 'Send');
   sendBtn.style.cssText = 'width:36px;height:36px;border-radius:18px;border:0;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;';
-  tools.append(clipBtn, capBtn, pageChip, spacer, sendBtn);
+  tools.append(clipBtn, capBtn, pageChip, spacer, micBtn, sendBtn);
   form.append(attach, ta, tools, file);
   bar.append(form);
   main.append(bar);
@@ -568,14 +652,61 @@ export function renderChatPage(container, state, actions) {
   });
 
   async function addFiles(files) {
-    const imgs = files.filter((f) => f.type.startsWith('image/'));
-    if (!imgs.length) { toast('Only pictures can be attached.'); return; }
-    for (const f of imgs) {
-      if (draft.images.length >= MAX_PICTURES) { toast(`At most ${MAX_PICTURES} pictures.`); break; }
-      try { draft.images.push(await toJpegDataUrl(f)); } catch (_) { toast('That picture could not be read.'); }
+    for (const f of files) {
+      if (f.type.startsWith('image/')) {
+        if (draft.images.length >= MAX_PICTURES) { toast(`At most ${MAX_PICTURES} pictures.`); continue; }
+        try { draft.images.push(await toJpegDataUrl(f)); } catch (_) { toast('That picture could not be read.'); }
+      } else {
+        if (draft.files.length >= MAX_FILES) { toast(`At most ${MAX_FILES} files.`); continue; }
+        if (f.size > MAX_FILE_BYTES) { toast(`${f.name} is too big (8 MB at most).`); continue; }
+        try { draft.files.push({ name: f.name, size: f.size, data: await fileToBase64(f) }); } catch (_) { toast(`${f.name} could not be read.`); }
+      }
     }
     refreshComposer();
   }
+
+  // ---- voice input: record, then a speech-to-text server turns it into words
+  let recorder = null;
+  let recTimer = 0;
+  async function toggleMic() {
+    if (recorder) { recorder.stop(); return; }
+    if (state.transcribing) return;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (_) { toast('The microphone is not available.'); return; }
+    const chunks = [];
+    const mr = new MediaRecorder(stream);
+    recorder = mr;
+    const started = Date.now();
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      clearInterval(recTimer);
+      stream.getTracks().forEach((t) => t.stop());
+      recorder = null;
+      micState();
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+      if (blob.size < 400 || Date.now() - started < 400) { toast('Nothing was recorded.'); return; }
+      if (blob.size > 24 * 1024 * 1024) { toast('That recording is too long.'); return; }
+      state.transcribing = true;
+      micState();
+      actions.transcribe(await fileToBase64(blob), blob.type || 'audio/webm');
+    };
+    mr.start();
+    recTimer = setInterval(micState, 500);
+    micState();
+    // a long recording stops itself after three minutes
+    setTimeout(() => { if (recorder === mr) mr.stop(); }, 180000);
+  }
+  function micState() {
+    const rec = !!recorder;
+    micBtn.replaceChildren(icon(rec ? 'stop' : 'mic', rec ? 13 : 15, rec));
+    micBtn.setAttribute('aria-label', rec ? 'Stop recording' : state.transcribing ? 'Turning your voice into text' : 'Speak your message');
+    micBtn.title = micBtn.getAttribute('aria-label');
+    micBtn.style.color = rec ? 'var(--accent)' : '';
+    micBtn.classList.toggle('recording', rec);
+    micBtn.classList.toggle('working', !!state.transcribing);
+    ta.placeholder = rec ? 'Listening… press the square to finish' : state.transcribing ? 'Turning your voice into text…' : 'Message your assistant';
+  }
+  mountedMic = micState;
   file.addEventListener('change', () => { addFiles([...file.files]); file.value = ''; });
   ta.addEventListener('paste', (e) => {
     const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -586,10 +717,11 @@ export function renderChatPage(container, state, actions) {
   const busyNow = () => !!(state.chatStream && !state.chatStream.done);
   const submit = () => {
     const text = ta.value.trim();
-    if ((!text && !draft.images.length) || busyNow()) return;
-    const payload = { text: text || 'What is in this picture?', images: draft.images.slice(), usePage: draft.usePage };
+    if ((!text && !draft.images.length && !draft.files.length) || busyNow()) return;
+    const fallback = draft.files.length ? 'Please read the attached file.' : 'What is in this picture?';
+    const payload = { text: text || fallback, images: draft.images.slice(), files: draft.files.slice(), usePage: draft.usePage };
     ta.value = ''; grow();
-    draft.images = []; draft.usePage = false;
+    draft.images = []; draft.files = []; draft.usePage = false;
     refreshComposer();
     actions.send(payload);
   };
@@ -606,8 +738,11 @@ export function renderChatPage(container, state, actions) {
 
   function refreshComposer() {
     attach.replaceChildren();
-    attach.style.display = draft.images.length ? 'block' : 'none';
+    attach.style.display = draft.images.length || draft.files.length ? 'flex' : 'none';
+    attach.style.flexDirection = 'column';
+    attach.style.gap = '8px';
     if (draft.images.length) attach.append(thumbs(draft.images, (i) => { draft.images.splice(i, 1); refreshComposer(); }));
+    if (draft.files.length) attach.append(fileChips(draft.files, (i) => { draft.files.splice(i, 1); refreshComposer(); }));
     pageChip.style.background = draft.usePage ? 'var(--w-field)' : 'none';
     pageChip.style.color = draft.usePage ? 'var(--accent)' : 'var(--text-muted)';
     pageChip.setAttribute('aria-pressed', draft.usePage ? 'true' : 'false');
@@ -619,10 +754,18 @@ export function renderChatPage(container, state, actions) {
 
   root.append(side, main);
   container.append(root);
+  micState();
   mounted = { root, list, column, scroll, ta, search, title, modelBtn, pinBtn, moreBtn, sideList: list, actions, rendered: 0, lastChat: null, streamNode: null, refreshComposer, toast, addFiles, closePop, head };
   mounted.ctx = {
     actions,
     toast,
+    speak: (text) => {
+      const synth = window.speechSynthesis;
+      if (!synth) { toast('Reading aloud is not available here.'); return; }
+      if (synth.speaking) { synth.cancel(); return; }
+      const u = new SpeechSynthesisUtterance(String(text || '').slice(0, 8000));
+      synth.speak(u);
+    },
     lastUserText: (i) => { const msgs = mountedState.chat?.messages || []; for (let k = Math.min(i, msgs.length) - 1; k >= 0; k--) if (msgs[k].role === 'user') return msgs[k].text; return ''; },
   };
   mountedState = state;
@@ -810,6 +953,19 @@ export async function chatCaptured(msg) {
 }
 
 export function chatToast(text) { mounted?.toast(text); }
+/** Draw the conversation again from the top (its versions or answers changed). */
+export function chatRedraw() { if (mounted) { mounted.column.replaceChildren(); mounted.rendered = 0; mounted.streamNode = null; } }
+/** Words from a recording arrive. */
+export function chatTranscribed(msg, state) {
+  const m = mounted;
+  state.transcribing = false;
+  if (!m) return;
+  mountedMic?.();
+  if (!msg.ok) { m.toast(msg.message || 'Could not turn that into text.'); return; }
+  m.ta.value = (m.ta.value ? `${m.ta.value} ` : '') + msg.text;
+  m.ta.dispatchEvent(new Event('input'));
+  m.ta.focus();
+}
 /** Called when a different page replaces the chat page. */
 export function chatUnmount() { mounted = null; }
 export function chatFocusInput() { mounted?.ta.focus(); }

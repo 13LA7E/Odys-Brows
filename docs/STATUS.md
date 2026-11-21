@@ -128,6 +128,10 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: files, versions, voice, whole-page for background pages
+
+- Built everything left over from the chat page (details in PHASES). Verified live: `chat_more.py` 26/26, `chat_page` 45/45, `ai_chat` 31/31, `ai_control` 22/22, `private_ai` 9/9, `privacy_clear` 17/17; unit tests and clippy clean. Not verified: a real microphone, Linux. New dependencies: `pdf-extract`, `zip`.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: chat page rebuilt, pictures, whole-page screenshots
 
 - A proper chat page plus attachments and whole-page screenshots (details in PHASES). Verified live: `chat_page.py` 44/44, `ai_chat` 31/31, `ai_control` 22/22, `private_ai` 9/9, `privacy_clear` 17/17; unit tests and clippy clean. Limit: hidden pages can only give the visible part. Not verified: Linux, cloud and Odysseus on the chat page.

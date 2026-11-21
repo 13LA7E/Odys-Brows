@@ -645,6 +645,8 @@ export function renderSettings(container, state, onUpdate) {
         endpoint: state.aiConfig?.endpoint || '',
         model: state.aiConfig?.model || '',
         vision_model: state.aiConfig?.vision_model || '',
+        speech_endpoint: state.aiConfig?.speech_endpoint || '',
+        speech_model: state.aiConfig?.speech_model || '',
         api_key: '',
       };
     }
@@ -679,6 +681,18 @@ export function renderSettings(container, state, onUpdate) {
         'Model name',
         'Model to query (e.g. llama3, mistral, gpt-4o-mini, claude-3-5-sonnet)',
         makeTextInput(edit.model, 'Model name', false, (v) => { edit.model = v; })
+      ));
+
+      // Voice input: a speech-to-text server (OpenAI-style) for the microphone button in the chat.
+      rows.append(makeRow(
+        'Speech-to-text server (optional)',
+        'For the microphone in the chat. The address of a server with an OpenAI-style /audio/transcriptions endpoint, for example a local Whisper server (http://127.0.0.1:8000/v1). Leave empty to use your OpenAI key.',
+        makeTextInput(edit.speech_endpoint || '', 'http://127.0.0.1:8000/v1', false, (v) => { edit.speech_endpoint = v; })
+      ));
+      rows.append(makeRow(
+        'Speech model',
+        'The model name the speech server uses (default whisper-1).',
+        makeTextInput(edit.speech_model || '', 'whisper-1', false, (v) => { edit.speech_model = v; })
       ));
 
       // Vision model: looks at screenshots of the page (the assistant's "screenshot" tool).
@@ -723,6 +737,8 @@ export function renderSettings(container, state, onUpdate) {
               endpoint: edit.endpoint,
               model: edit.model,
               vision_model: edit.vision_model || '',
+              speech_endpoint: edit.speech_endpoint || '',
+              speech_model: edit.speech_model || '',
               api_key: edit.api_key || undefined,
             },
           }));
@@ -739,6 +755,8 @@ export function renderSettings(container, state, onUpdate) {
               endpoint: edit.endpoint,
               model: edit.model,
               vision_model: edit.vision_model || '',
+              speech_endpoint: edit.speech_endpoint || '',
+              speech_model: edit.speech_model || '',
               api_key: edit.api_key || undefined,
             },
           }));

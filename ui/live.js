@@ -5,7 +5,7 @@ import { focusHelm } from './pagebasics.js';
 import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
 import { setWallpaper, wallpaperVersion } from './newtab.js';
-import { chatUpdate, chatFocusInput, chatAdopt, chatCaptured, chatToast } from './chat.js';
+import { chatUpdate, chatFocusInput, chatAdopt, chatCaptured, chatToast, chatRedraw, chatTranscribed } from './chat.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
@@ -395,7 +395,10 @@ export async function startLive() {
       chatUpdate(state);
     } else if (msg.type === 'page-captured') {
       chatCaptured(msg);
+    } else if (msg.type === 'transcribed') {
+      chatTranscribed(msg, state);
     } else if (msg.type === 'chat-data') {
+      chatRedraw();
       state.chat = msg.chat ? { id: msg.chat.id, title: msg.chat.title, pinned: !!msg.chat.pinned, messages: msg.chat.messages || [] } : null;
       chatUpdate(state);
       chatFocusInput();
@@ -408,6 +411,10 @@ export async function startLive() {
       }
     } else if (msg.type === 'chat-saved') {
       window.odysseyBridge?.(JSON.stringify({ type: 'chat-list' }));
+      if (state.chatRefresh && state.chat?.id) {
+        state.chatRefresh = false;
+        window.odysseyBridge?.(JSON.stringify({ type: 'chat-open', id: state.chat.id }));
+      }
     } else if (msg.type === 'vault-loaded') {
       state.vaultEntries = msg.entries;
       state.vaultNever = msg.never || [];

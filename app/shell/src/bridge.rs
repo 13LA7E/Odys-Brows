@@ -293,6 +293,28 @@ pub enum FromUi {
         /// Ask the last question again (no new message is added).
         #[serde(default)]
         regenerate: bool,
+        /// Files attached to the question (text, PDF, Word; read in Rust).
+        #[serde(default)]
+        files: Vec<crate::attachments::Upload>,
+    },
+    /// Show another version of the conversation from your message number `at` on.
+    ChatSwitchAlt {
+        id: String,
+        at: usize,
+        to: usize,
+    },
+    /// Show another answer to the question before message number `index`.
+    ChatSwitchVariant {
+        id: String,
+        index: usize,
+        to: usize,
+    },
+    /// Turn a voice recording into text (needs a speech-to-text server, see Settings > AI).
+    Transcribe {
+        /// The recording, base64.
+        audio: String,
+        mime: String,
+        request: u64,
     },
     /// Rename a saved conversation.
     ChatRename {
@@ -528,6 +550,13 @@ pub enum ToUi {
     /// One saved conversation (none when it does not exist).
     ChatData {
         chat: Option<crate::chats::ChatView>,
+    },
+    /// The words found in a recording.
+    Transcribed {
+        request: u64,
+        ok: bool,
+        text: String,
+        message: String,
     },
     /// Search results (same shape as the list).
     ChatFound {
