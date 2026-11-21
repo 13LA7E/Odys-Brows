@@ -4,18 +4,22 @@
 const SVG = 'http://www.w3.org/2000/svg';
 
 export const DEFAULT_SETTINGS = {
-  stars: 'Still',       // 'Off' | 'Still' | 'Drifting'
-  shootingStars: false, // boolean
-  accent: 'Sea',        // 'Sea' | 'Mint' | 'Lilac' | 'Amber' | 'Rose'
-  trail: 'Narrow',      // 'Narrow' | 'Wide'
-  connections: 8,       // 1 | 4 | 8 | 16
-  searchEngine: 'DuckDuckGo', // 'DuckDuckGo' | 'Google' | 'Bing' | 'Ecosia'
-  startup: 'NewTab',    // 'NewTab' | 'Restore'
-  showClock: true,      // boolean
-  showTrailHint: true,  // boolean
-  shieldsEnabled: true, // boolean
-  doNotTrack: true,     // boolean
+  stars: 'Still',
+  shootingStars: false,
+  starsFollowCursor: true,
+  accent: 'Sea',
+  trail: 'Narrow',
+  searchEngine: 'DuckDuckGo',
+  customEngine: { name: '', url: '' },
+  startup: 'Restore tabs',
+  linkTarget: 'New tab',
+  connections: 8,
+  sleepMinutes: 10,
+  offerSavePasswords: true,
+  autofillPasswords: true,
 };
+// The schema (allowed values and defaults) lives in app/shell/src/settings.rs; a test checks that
+// this list matches it. Values here are only used before the shell has sent the real settings.
 
 export const ACCENTS = {
   Sea: { varName: '--accent-sea' },
@@ -119,6 +123,47 @@ function makeSwitch(checked, onChange) {
   return switchBtn;
 }
 
+export const SEARCH_ENGINES = ['DuckDuckGo', 'Google', 'Brave', 'Bing', 'Startpage', 'Ecosia', 'Custom'];
+
+/** A custom search URL: http(s) with %s or {query} where the search words go. */
+export function validCustomEngineUrl(url) {
+  return /^https?:\/\//i.test(url) && (url.includes('%s') || url.includes('{query}')) && url.length <= 400 && !/[\u0000-\u001f]/.test(url);
+}
+
+/** A drop-down in the Settings row style. options: [[value, label], ...]. */
+function makeSelect(options, selected, ariaLabel, onPick) {
+  const wrap = el('div');
+  wrap.style.cssText = 'position:relative;display:inline-block;';
+  const btn = el('button');
+  btn.setAttribute('aria-label', ariaLabel);
+  btn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;margin:0;cursor:pointer;height:34px;min-width:160px;padding:0 12px;border-radius:10px;background:var(--w-field);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13.5px;color:var(--text);';
+  const current = options.find(([v]) => v === selected) || options[0];
+  const valSpan = el('span', null, current[1]);
+  const chev = el('span');
+  chev.style.cssText = 'color:var(--text-muted);display:flex;';
+  const ico = svg('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
+  ico.append(svg('path', { d: 'M7 10l5 5 5-5' }));
+  chev.append(ico);
+  btn.append(valSpan, chev);
+  const dropdown = el('div');
+  dropdown.style.cssText = 'display:none;position:absolute;right:0;top:38px;min-width:160px;border-radius:10px;background:var(--surface);box-shadow:var(--shadow-popover);padding:4px 0;z-index:20;';
+  options.forEach(([value, label]) => {
+    const o = el('button', null, label);
+    o.style.cssText = 'border:0;background:none;color:inherit;font:inherit;margin:0;cursor:pointer;width:100%;height:32px;padding:0 12px;display:flex;align-items:center;font-size:13px;color:var(--text);';
+    o.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.style.display = 'none';
+      onPick(value);
+    });
+    dropdown.append(o);
+  });
+  btn.addEventListener('click', () => {
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+  });
+  wrap.append(btn, dropdown);
+  return wrap;
+}
+
 function makeSegmented(options, selected, onChange) {
   const box = el('div');
   box.style.cssText = 'display:flex;padding:3px;border-radius:10px;background:var(--w-field);';
@@ -200,12 +245,46 @@ export function renderSettings(container, state, onUpdate) {
     const rows = el('div');
     rows.style.cssText = 'margin-top:28px;';
 
-    // Search Engine
+    // Search engine (AUDIT-38): the six Odyssey engines plus a custom one.
     rows.append(makeRow(
       'Default search engine',
       'Used when entering a search query in the Helm command bar.',
-      makeSegmented(['DuckDuckGo', 'Google', 'Bing'], settings.searchEngine || 'DuckDuckGo', (val) => {
+      makeSelect(SEARCH_ENGINES.map((n) => [n, n === 'Custom' ? 'Custom…' : n]), settings.searchEngine || 'DuckDuckGo', 'Default search engine', (val) => {
         settings.searchEngine = val;
+        saveSettings(settings);
+        renderSettings(container, state, onUpdate);
+      })
+    ));
+    if (settings.searchEngine === 'Custom') {
+      const box = el('div');
+      box.style.cssText = 'display:flex;flex-direction:column;gap:8px;align-items:flex-end;';
+      const ce = settings.customEngine || { name: '', url: '' };
+      const nameInp = makeTextInput(ce.name || '', 'Name', false, () => {});
+      const urlInp = makeTextInput(ce.url || '', 'https://example.com/search?q=%s', false, () => {});
+      const note = el('div', null, '');
+      note.style.cssText = 'font-size:12.5px;color:var(--text-muted);min-height:16px;';
+      const commit = () => {
+        const url = urlInp.value.trim();
+        if (url && !validCustomEngineUrl(url)) {
+          note.textContent = 'Use http or https, and put %s where the search words go.';
+          return;
+        }
+        note.textContent = '';
+        settings.customEngine = { name: nameInp.value.trim().slice(0, 40), url };
+        saveSettings(settings);
+      };
+      nameInp.addEventListener('input', commit);
+      urlInp.addEventListener('input', commit);
+      box.append(nameInp, urlInp, note);
+      rows.append(makeRow('Custom search', 'Put %s where the search words go.', box));
+    }
+
+    // Where links open (AUDIT-38)
+    rows.append(makeRow(
+      'Open links from History and answers',
+      'Where a page or source opens when you click it.',
+      makeSegmented(['New tab', 'Same tab'], settings.linkTarget || 'New tab', (val) => {
+        settings.linkTarget = val;
         saveSettings(settings);
         renderSettings(container, state, onUpdate);
       })
@@ -224,11 +303,11 @@ export function renderSettings(container, state, onUpdate) {
       })
     ));
 
-    // On startup
+    // On startup (now really used by the shell)
     rows.append(makeRow(
       'On startup',
-      'What to open when starting Constellations.',
-      makeSegmented(['NewTab', 'Restore'], settings.startup || 'NewTab', (val) => {
+      'Pick up where you left off, or start fresh.',
+      makeSegmented(['Restore tabs', 'New tab'], settings.startup || 'Restore tabs', (val) => {
         settings.startup = val;
         saveSettings(settings);
         renderSettings(container, state, onUpdate);

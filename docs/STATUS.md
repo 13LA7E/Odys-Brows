@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
-| Current task | **Stage F, step 1: the shared settings storage (STORE)**, after the owner answers the four open questions in the audit doc (light themes, rail on the right, which Odyssey new-tab options are used, window blur and opacity left out). Then AUDIT-38, 40, 41, 35, 36, 37, 39, 42. |
+| Current task | **Stage F, AUDIT-40 (privacy options)**, then 41, 35, 36, 37, 39, 42. STORE and AUDIT-38 are done; the owner should look at the General section screenshot (`out/live/settings-general-00.png`) before more Settings sections are built on that style. |
 | State | Phase R is done except AUDIT-23 (blocked on D-013), AUDIT-31 (Linux) and the items listed as not done in PHASES. AUDIT-01, 03, 32, 33 and 34 are done and verified live (this session). Everything is verified on Windows only. **Uncommitted on purpose:** the D-024 rule edits (see below). |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
@@ -110,6 +110,13 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 Copy this template for each session:
 
 ```
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: STORE and AUDIT-38
+
+- Owner answers recorded as D-025. Built the shared settings schema (`settings.rs`) and the General options. Details and checks in PHASES ("Stage F progress").
+- **Verified live:** `tools/live_check/general_settings.py` (16 checks). `cargo test`: 34 shell tests including 6 for the schema. `python tools/visual_check.py`: Main 0.0, Private 0.0, History 0.6, Settings 3.1 (unchanged); the design's Settings board is the Appearance section, which I did not change (the new controls are in General, and "Stars follow the cursor" stays hidden in fixture mode).
+- **Could not verify:** nothing new blocked; Linux untested as before.
+- **For the owner:** please look at `out/live/settings-general-00.png`. The engine picker is a drop-down (seven options do not fit the segmented track); the custom engine shows two fields under it only when Custom is chosen.
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F housekeeping
 

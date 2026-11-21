@@ -297,8 +297,8 @@ All fixed and verified live unless noted.
 
 Order: settings storage first, then 38, 40, 41, 35, 36, 37, 39, 42. Each option is checked against Odyssey's code (`C:\Projects\Odyssey\ui\app.js`, `ui\fx.js`) before it is ported, with a screenshot of each new Settings section to the owner first.
 
-- [ ] **STORE Shared settings storage.** One schema with defaults and validation, saved in the shell's `settings.json` with atomic writes, every option applying live and updating in place; unit tests for default, save, reload and invalid value. Reuses what exists (search engine, motion, cursor stars, sleep time, password switches).
-- [ ] **AUDIT-38** General options (search engines + custom engine, restore tabs, link target, download connections).
+- [x] **STORE Shared settings storage.** One schema with defaults and validation, saved in the shell's `settings.json` with atomic writes, every option applying live and updating in place; unit tests for default, save, reload and invalid value. Reuses what exists (search engine, motion, cursor stars, sleep time, password switches).
+- [x] **AUDIT-38** General options (search engines + custom engine, restore tabs, link target, download connections).
 - [ ] **AUDIT-40** Privacy options (clear history, questions, downloads, site data on exit; site icons).
 - [ ] **AUDIT-41** Changeable keyboard shortcuts.
 - [ ] **AUDIT-35** Themes and a theme editor (dark presets first; light themes only with owner approval).
@@ -306,4 +306,10 @@ Order: settings storage first, then 38, 40, 41, 35, 36, 37, 39, 42. Each option 
 - [ ] **AUDIT-37** New-tab page options.
 - [ ] **AUDIT-39** Interface options (density, radius, scale, rail side, Helm buttons, answer card).
 - [ ] **AUDIT-42** Motion options (Reduce motion control; speed multiplier only if wanted).
+
+**Stage F progress (21 Nov): owner answers are in D-025 (dark only; rail left; new tab = clock options and wallpapers only; no window blur/opacity).**
+
+- **STORE done:** `app/shell/src/settings.rs` is the one schema (key, allowed values, default). Load and save both go through `normalize`: invalid or missing values fall back to their default, unknown keys are dropped, oversized or non-object files become defaults; it never fails. Kinds ready for later options: choice, bool, integer choice and range, float range, text, custom sanitiser. A test checks that `DEFAULT_SETTINGS` in `ui/settings.js` matches the schema. 6 unit tests (defaults, junk, round trip, invalid one by one, custom engine, UI defaults). Existing settings reused (not duplicated): stars, shootingStars, starsFollowCursor, accent, trail, searchEngine, connections, sleepMinutes, offerSavePasswords, autofillPasswords.
+- **AUDIT-38 done** (checked against Odyssey `app.js` `SEARCH_ENGINES`, `customEngine`, `restoreTabs`, `linkTarget`, `dlConns`): engines DuckDuckGo, Google, Brave, Bing, Startpage, Ecosia and Custom (http or https and `%s` or `{query}`; anything else is rejected in the UI and again in Rust); On startup is now real ("Restore tabs" or "New tab"; before it was saved but ignored); "Open links from History and answers" (New tab or Same tab; answer sources are clickable); Faster downloads (1, 4, 8, 16) stays where the design has it (Appearance) and is applied to `segdl` on load and save. Odyssey's "answers on web results" and "assistant page" belong to the AI section and are not part of this. **Verified live** (`general_settings.py`, 16 checks): junk settings cleaned, every engine through the real control, custom engine and its refusal message, restore vs new tab across restarts, link target from History. Screenshot: `out/live/settings-general-00.png`.
+- Found and fixed on the way: History rows never showed Open or Forget in the live UI (only the design's pre-hovered row did); they appear on hover now.
 

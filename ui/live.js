@@ -327,8 +327,8 @@ export async function startLive() {
           renderShellLive();
         } else if (msg.event.type === 'source') {
           const s = msg.event.data?.title || msg.event.data?.url;
-          if (s && !state.answer.sources.includes(s)) {
-            state.answer.sources.push(s);
+          if (s && !state.answer.sources.some((x) => (x.title || x) === s)) {
+            state.answer.sources.push({ title: s, url: msg.event.data?.url || '' });
             renderShellLive();
           }
         } else if (msg.event.type === 'error') {

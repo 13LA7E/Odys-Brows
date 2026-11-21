@@ -212,6 +212,15 @@ Amends the no-extra-animation rule in AGENTS.md and the Motion bullet in DESIGN.
 - Motion is noticeable but tasteful. Every timing and amount lives in one place (the motion tokens in `ui/tokens.css`) so the owner can tune them.
 - Cursor-linked stars follow Odyssey's `ui/fx.js` (AUDIT-32), with a Settings > Appearance toggle and `prefers-reduced-motion` respected. The sky stops drawing when it isn't visible (AUDIT-34).
 
+## D-025 Stage F answers: customisation scope. Accepted (owner, 21 Nov 2026)
+
+Answers to the four open questions in docs/AUDIT-2026-11-20.md, Stage F.
+
+- **Themes are dark only.** No light themes (the approved design is dark). AUDIT-35 ports Odyssey's dark presets and the editor only.
+- **The rail stays on the left.** No right-side option, so no mirrored layout.
+- **New-tab options: clock options and wallpapers only.** Show clock, 12 h / 24 h, greeting with a name; built-in wallpapers and a custom image with dim and blur sliders. Pinned sites, search box styles, suggestions and recent questions are **not** ported.
+- **Window blur and window opacity are left out** (resource goal D-012: they cost GPU and memory, and don't work well with page windows being separate windows). "Tab style" and "tab bar position" don't map to the trail and are skipped.
+
 ## Open questions for the owner
 
 | ID | Question | Needed by |

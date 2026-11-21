@@ -315,6 +315,15 @@ export function requestRender(root, state) {
 }
 
 /** Render the whole window for one state (a fixture now, live state later). */
+/** Opens a link from our own pages (History, answer sources): a new tab, or this tab, per Settings. */
+export function openLink(state, url) {
+  if (typeof window.odysseyBridge !== 'function' || !url) return;
+  const same = state.settings?.linkTarget === 'Same tab' && state.activeTab;
+  window.odysseyBridge(JSON.stringify(same
+    ? { type: 'navigate', view: state.activeTab, url }
+    : { type: 'open', url }));
+}
+
 export function renderShell(root, state) {
   if (!window.__pageBasicsInit) {
     window.__pageBasicsInit = true;
@@ -329,7 +338,7 @@ export function renderShell(root, state) {
   root.classList.toggle('private', !!state.private);
   root.dataset.overPage = state.page === 'web' ? '1' : '0';
   syncNotch(root, state);
-  setSearchEngine(state.settings?.searchEngine);
+  setSearchEngine(state.settings);
   if (state.settings?.accent) {
     applyAccent(state.settings.accent);
   }
@@ -568,11 +577,7 @@ export function renderShell(root, state) {
                 : { type: 'query-history' }));
             }
           },
-          onOpen: (url) => {
-            if (typeof window.odysseyBridge === 'function') {
-              window.odysseyBridge(JSON.stringify({ type: 'open', url }));
-            }
-          },
+          onOpen: (url) => openLink(state, url),
           onForget: (id) => {
             if (typeof window.odysseyBridge === 'function') {
               window.odysseyBridge(JSON.stringify({ type: 'forget-visit', id }));
@@ -653,7 +658,7 @@ export function renderShell(root, state) {
 
   // Answer card (HelmAnswer board, DESIGN.md §7)
   if (state.answer) {
-    add(region('answer', state.answer, () => renderAnswerCard(state.answer), { enter: true, exit: true }));
+    add(region('answer', state.answer, () => renderAnswerCard(state.answer, (url) => openLink(state, url)), { enter: true, exit: true }));
   }
 
   // Permission and certificate questions for the tab being shown (AUDIT-21).

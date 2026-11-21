@@ -36,12 +36,30 @@ function ico(d, size = 18, extra = null) {
 const SEARCH_URLS = {
   DuckDuckGo: 'https://duckduckgo.com/?q=',
   Google: 'https://www.google.com/search?q=',
+  Brave: 'https://search.brave.com/search?q=',
   Bing: 'https://www.bing.com/search?q=',
+  Startpage: 'https://www.startpage.com/do/search?q=',
   Ecosia: 'https://www.ecosia.org/search?q=',
 };
 let searchEngine = 'DuckDuckGo';
-export function setSearchEngine(name) {
+let customSearch = null; // URL template with %s or {query}, only when Custom is chosen and valid
+/** Takes the whole settings object (engine name and custom engine). */
+export function setSearchEngine(settings) {
+  const name = settings && settings.searchEngine;
+  customSearch = null;
+  if (name === 'Custom') {
+    const u = settings.customEngine && settings.customEngine.url;
+    if (typeof u === 'string' && /^https?:\/\//i.test(u) && (u.includes('%s') || u.includes('{query}'))) {
+      customSearch = u;
+      return;
+    }
+  }
   searchEngine = SEARCH_URLS[name] ? name : 'DuckDuckGo';
+}
+function searchUrlFor(q) {
+  const enc = encodeURIComponent(q);
+  if (customSearch) return customSearch.split('%s').join(enc).split('{query}').join(enc);
+  return `${SEARCH_URLS[searchEngine]}${enc}`;
 }
 
 export function classifyInput(raw) {
@@ -101,7 +119,7 @@ export function classifyInput(raw) {
   }
 
   // Search query fallback
-  return { kind: 'search', query: trimmed, url: `${SEARCH_URLS[searchEngine]}${encodeURIComponent(trimmed)}` };
+  return { kind: 'search', query: trimmed, url: searchUrlFor(trimmed) };
 }
 
 /** Render the Helm toolbar. */
@@ -408,7 +426,7 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
 }
 
 /** Render asking answer card (HelmAnswer board, DESIGN.md §7). */
-export function renderAnswerCard(answer) {
+export function renderAnswerCard(answer, onOpenSource) {
   const card = el('div', 'answer-card');
   card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2);bottom:90px;width:560px;box-sizing:border-box;border-radius:20px;background:var(--surface);box-shadow:var(--shadow-popover);padding:22px 24px 16px;';
 
@@ -434,8 +452,12 @@ export function renderAnswerCard(answer) {
 
   if (answer.sources) {
     answer.sources.forEach((src) => {
-      const chip = el('span', null, src);
-      chip.style.cssText = 'height:26px;padding:0 10px;border-radius:8px;background:var(--w-field);display:inline-flex;align-items:center;font-size:12.5px;color:var(--text-soft);';
+      // A source is a name (fixtures) or { title, url } (live): with a URL it opens per Settings.
+      const title = typeof src === 'string' ? src : src.title;
+      const url = typeof src === 'string' ? '' : src.url;
+      const chip = el(url ? 'button' : 'span', null, title);
+      chip.style.cssText = 'height:26px;padding:0 10px;border-radius:8px;background:var(--w-field);display:inline-flex;align-items:center;font-size:12.5px;color:var(--text-soft);' + (url ? 'border:0;font:inherit;font-size:12.5px;cursor:pointer;' : '');
+      if (url && onOpenSource) chip.addEventListener('click', () => onOpenSource(url));
       sourcesRow.append(chip);
     });
   }

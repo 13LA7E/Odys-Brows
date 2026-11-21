@@ -273,31 +273,27 @@ export function renderHistory(container, historyState = {}, callbacks = {}) {
 
       rowDiv.append(timeSpan, titleSpan, hostSpan);
 
-      if (isHovered) {
-        const actions = el('span');
-        actions.style.cssText = 'margin-left:auto;display:flex;gap:16px;font-size:13px;';
+      // Open / Forget: shown for the design's pre-hovered row, and on real hover (CSS) in the live UI.
+      const actions = el('span', 'history-actions');
+      actions.style.cssText = 'margin-left:auto;gap:16px;font-size:13px;';
+      if (isHovered) rowDiv.classList.add('is-hovered');
 
-        const openBtn = el('span', null, 'Open');
-        openBtn.style.cssText = 'color:var(--accent);cursor:pointer;';
-        openBtn.addEventListener('click', () => {
-          callbacks.onOpen?.(row.url || `https://${row.host}`);
-        });
+      const openBtn = el('span', null, 'Open');
+      openBtn.style.cssText = 'color:var(--accent);cursor:pointer;';
+      openBtn.addEventListener('click', () => {
+        callbacks.onOpen?.(row.url || `https://${row.host}`);
+      });
 
-        const forgetBtn = el('span', null, 'Forget');
-        forgetBtn.style.cssText = 'color:var(--text-soft);cursor:pointer;';
-        forgetBtn.addEventListener('click', () => {
-          callbacks.onForget?.(row.id);
-        });
+      const forgetBtn = el('span', null, 'Forget');
+      forgetBtn.style.cssText = 'color:var(--text-soft);cursor:pointer;';
+      forgetBtn.addEventListener('click', () => {
+        callbacks.onForget?.(row.id);
+      });
 
-        actions.append(openBtn, forgetBtn);
-        const spacer = el('span');
-        spacer.style.cssText = 'width:12px;';
-        rowDiv.append(actions, spacer);
-      } else {
-        const spacer = el('span');
-        spacer.style.cssText = 'width:12px;';
-        rowDiv.append(spacer);
-      }
+      actions.append(openBtn, forgetBtn);
+      const spacer = el('span');
+      spacer.style.cssText = 'width:12px;';
+      rowDiv.append(actions, spacer);
 
       container.append(rowDiv);
     });

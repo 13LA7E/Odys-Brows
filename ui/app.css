@@ -75,3 +75,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   width: 42px; height: var(--notch-h); display: flex; align-items: center;
   justify-content: center; color: var(--text-soft);
 }
+
+/* History rows: Open / Forget appear on hover (and on the design's pre-hovered row). */
+.history-actions { display: none; }
+.history-row:hover .history-actions, .history-row.is-hovered .history-actions { display: flex; }
+.history-row:hover { background: var(--w-hover-row); }
