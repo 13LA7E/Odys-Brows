@@ -406,6 +406,12 @@ function restoreFocus(root, f) {
   const target = [...root.querySelectorAll(f.tag.toLowerCase())]
     .find((e) => e.className === f.cls && e.placeholder === f.ph);
   if (!target) return;
+  if (target.classList.contains('helm-input') && target.style.display === 'none') {
+    // The address field was being used: show it again, as it was
+    target.style.display = 'block';
+    const shown = target.parentNode && target.parentNode.querySelector('.helm-display');
+    if (shown) shown.style.display = 'none';
+  }
   if (target.value !== f.value) target.value = f.value;
   target.focus({ preventScroll: true });
   try { target.setSelectionRange(f.start, f.end); } catch (_) { /* not a text field */ }
@@ -421,10 +427,7 @@ export function requestRender(root, state) {
   Promise.resolve().then(() => {
     renderQueued = false;
     const a = document.activeElement;
-    if (a && a.classList && a.classList.contains('helm-input') && a.style.display !== 'none') {
-      a.addEventListener('blur', () => requestRender(root, state), { once: true });
-      return;
-    }
+    // A redraw while you type is fine: renderShell puts the address field back as it was (text, caret).
     if (signature(state) === lastSignature) return;
     renderShell(root, state);
   });
@@ -858,6 +861,9 @@ export function renderShell(root, state) {
         window.odysseyBridge(JSON.stringify({ type: 'reload', view: state.activeTab }));
       }
     },
+    onSuggest: (query) => {
+      if (typeof window.odysseyBridge === 'function') window.odysseyBridge(JSON.stringify({ type: 'suggest', query }));
+    },
     onNavigate: (target) => {
       const url = typeof target === 'string' ? target : (target?.url || '');
       if (!url) return;
@@ -1000,7 +1006,7 @@ function scheduleHide(name, ms) {
   const h = HIDERS[name];
   clearTimeout(h.timer);
   h.timer = setTimeout(() => {
-    if (autoHideOn && !h.hover && !(name === 'helm' && helmBusy)) setHidden(name, true);
+    if (autoHideOn && !h.hover && !h.typing && !(name === 'helm' && helmBusy)) setHidden(name, true);
   }, ms);
 }
 
@@ -1036,17 +1042,23 @@ function syncNotch(root, state) {
     // Typing in the address bar keeps the Helm up.
     root.addEventListener('focusin', (e) => {
       if (e.target.closest && e.target.closest('.helm')) {
-        HIDERS.helm.hover = true;
+        HIDERS.helm.typing = true;
         clearTimeout(HIDERS.helm.timer);
         if (autoHideOn) setHidden('helm', false);
       }
     });
     root.addEventListener('focusout', (e) => {
       if (e.target.closest && e.target.closest('.helm')) {
-        HIDERS.helm.hover = false;
+        HIDERS.helm.typing = false;
         if (autoHideOn) scheduleHide('helm', HIDERS.helm.hideAfterMs);
       }
     });
+  }
+  // A redraw can replace the address field while it has focus (no focusout then): don't stay "typing".
+  const fa = document.activeElement;
+  if (HIDERS.helm.typing && !(fa && fa.closest && fa.closest('.helm'))) {
+    HIDERS.helm.typing = false;
+    if (autoHideOn) scheduleHide('helm', HIDERS.helm.hideAfterMs);
   }
   if (want && !autoHideOn) {
     autoHideOn = true;
@@ -1079,7 +1091,7 @@ function syncNotch(root, state) {
 // Page windows cover our UI, so each open popover or card tells Rust where it is and a hole is
 // cut there. A DOM observer keeps it current for things drawn outside renderShell (find bar,
 // hover previews).
-const OVERLAY_SELECTOR = '.downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card, .helm, .helm-grip';
+const OVERLAY_SELECTOR = '.helm-suggest, .downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card, .helm, .helm-grip';
 let overlayObserver = null;
 let lastOverlayJson = '[]';
 let lastNotchHeight = 34;
@@ -1096,7 +1108,7 @@ function reportOverlays() {
   // How much of the notch is showing (it slides away): the page window's notch hole follows.
   const notch = document.querySelector('.notch');
   if (notch) {
-    const h = Math.max(4, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
+    const h = Math.max(14, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
     const w = Math.round(notch.getBoundingClientRect().width);
     document.documentElement.style.setProperty('--notch-w', `${w}px`);
     if (h !== lastNotchHeight || w !== lastNotchWidth) {

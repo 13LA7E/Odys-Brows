@@ -125,6 +125,12 @@ export function classifyInput(raw) {
   return { kind: 'search', query: trimmed, url: searchUrlFor(trimmed) };
 }
 
+let onSuggestions = null;
+/** History matches for what is typed in the address bar (sent by the shell). */
+export function helmSuggestions(query, items) {
+  if (onSuggestions) onSuggestions(query, items);
+}
+
 /** Render the Helm toolbar. */
 export function renderHelm(state, handlers = {}) {
   const {
@@ -133,6 +139,7 @@ export function renderHelm(state, handlers = {}) {
     onReload,
     onNavigate,
     onOpenDownloads,
+    onSuggest,
   } = handlers;
 
   const h = el('div', 'helm');
@@ -285,7 +292,76 @@ export function renderHelm(state, handlers = {}) {
   function deactivateInput() {
     inputEl.style.display = 'none';
     displayBox.style.display = 'contents';
+    closeSuggest();
   }
+
+  // Suggestions from history: finish what you type in place (selected, so typing on replaces it),
+  // and a short list above the bar. Up/Down pick, Tab or Right accept the finished text.
+  const plainUrl = (u) => String(u).replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+  const sugBox = el('div', 'helm-suggest');
+  sugBox.setAttribute('role', 'listbox');
+  sugBox.style.cssText = 'position:absolute;left:0;right:0;bottom:calc(100% + 8px);background:var(--surface);border-radius:var(--r-popover);box-shadow:var(--shadow-popover);padding:6px;z-index:101;display:flex;flex-direction:column;gap:1px;';
+  let sugItems = [];
+  let sugSel = -1;
+  let typed = '';
+  let noInline = false; // after Backspace the finished text must not come back
+  function closeSuggest() {
+    sugItems = [];
+    sugSel = -1;
+    if (sugBox.parentNode) sugBox.remove();
+  }
+  function paintSuggest() {
+    sugBox.replaceChildren();
+    if (!sugItems.length) { closeSuggest(); return; }
+    sugItems.forEach((it, i) => {
+      const row = el('div', 'helm-suggest-row');
+      row.setAttribute('role', 'option');
+      row.style.cssText = `display:flex;gap:10px;align-items:baseline;padding:7px 12px;border-radius:var(--r-row);cursor:pointer;font-size:14px;white-space:nowrap;overflow:hidden;${i === sugSel ? 'background:var(--w-field);' : ''}`;
+      const t = el('span', null, it.title || plainUrl(it.url));
+      t.style.cssText = 'color:var(--text);overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;';
+      const u = el('span', null, plainUrl(it.url));
+      u.style.cssText = 'color:var(--text-muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0;';
+      row.append(t, u);
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const c = classifyInput(it.url);
+        if (c && onNavigate) onNavigate(c);
+        deactivateInput();
+      });
+      sugBox.append(row);
+    });
+    if (!sugBox.parentNode) h.append(sugBox);
+  }
+  function inlineComplete() {
+    const v = inputEl.value;
+    if (!v.trim() || /\s/.test(v)) return;
+    const lower = v.toLowerCase();
+    for (const it of sugItems) {
+      const d = plainUrl(it.url);
+      if (d.toLowerCase().startsWith(lower) && d.length > v.length) {
+        inputEl.value = v + d.slice(v.length);
+        inputEl.setSelectionRange(v.length, inputEl.value.length);
+        return;
+      }
+    }
+  }
+  onSuggestions = (query, items) => {
+    if (inputEl.style.display === 'none') return;
+    if (query.trim().toLowerCase() !== typed.trim().toLowerCase()) return; // an older answer
+    sugItems = (items || []).slice(0, 6);
+    sugSel = -1;
+    paintSuggest();
+    if (sugItems.length && inputEl.selectionStart === inputEl.selectionEnd && inputEl.value === typed && !noInline) inlineComplete();
+  };
+  inputEl.addEventListener('input', (e) => {
+    if (e.isComposing) return;
+    typed = inputEl.value;
+    if (!typed.trim()) { closeSuggest(); return; }
+    const deleting = typeof e.inputType === 'string' && e.inputType.startsWith('delete');
+    noInline = deleting;
+    if (!deleting) inlineComplete();
+    onSuggest?.(typed);
+  });
 
   addressBox.addEventListener('click', () => {
     if (inputEl.style.display === 'none') activateInput();
@@ -293,7 +369,19 @@ export function renderHelm(state, handlers = {}) {
 
   inputEl.addEventListener('keydown', (e) => {
     if (e.isComposing) return; // IME active
-    if (e.key === 'Enter') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (sugItems.length) {
+        e.preventDefault();
+        const n = sugItems.length;
+        sugSel = e.key === 'ArrowDown' ? (sugSel + 1 >= n ? -1 : sugSel + 1) : (sugSel <= -1 ? n - 1 : sugSel - 1);
+        inputEl.value = sugSel === -1 ? typed : plainUrl(sugItems[sugSel].url);
+        paintSuggest();
+      }
+    } else if (e.key === 'Tab' && inputEl.selectionStart !== inputEl.selectionEnd) {
+      e.preventDefault();
+      inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+      typed = inputEl.value;
+    } else if (e.key === 'Enter') {
       const classified = classifyInput(inputEl.value);
       if (classified && onNavigate) onNavigate(classified);
       deactivateInput();

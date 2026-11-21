@@ -111,6 +111,10 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: address bar: edge hover, new-tab focus, autocomplete
+
+- Details in PHASES ("Address bar polish"). Verified live: `helm_typing.py` 12/12 and the earlier autohide, spaces, shortcuts, chat scripts; visual check passes. Windows only; Linux untested (hole strips are Windows code).
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-35 themes
 
 - Dark themes and an editor (details in PHASES). New `ui/themes.js`; schema fields `theme` and `customThemes`. Verified live: `themes.py` 21/21; visual check unchanged (Settings 3.1; `Browsing` and `ClosedTabs` fail at the parent commit too, font of the fake web page). Not verified: Linux.

@@ -183,6 +183,10 @@ pub enum FromUi {
     },
     /// Query history day groups (P4-02).
     QueryHistory,
+    /// Address bar suggestions from history for what is being typed.
+    Suggest {
+        query: String,
+    },
     /// Search history (P4-02).
     SearchHistory {
         query: String,
@@ -424,6 +428,13 @@ pub enum FromUi {
     },
 }
 
+/// One address bar suggestion (a page you visited).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Suggestion {
+    pub url: String,
+    pub title: String,
+}
+
 /// Messages Rust sends to our UI.
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -441,6 +452,11 @@ pub enum ToUi {
         view: ViewId,
     },
     HelmFocus,
+    /// History matches for what is typed in the address bar.
+    Suggestions {
+        query: String,
+        items: Vec<Suggestion>,
+    },
     /// Switch the Helm between the address bar and asking the assistant (Ctrl+J).
     ToggleAsk,
     FindInPagePrompt {

@@ -300,4 +300,6 @@ export function renderErrorPage(container, info = {}, onReload = null) {
 export function focusHelm() {
   const box = document.querySelector('.helm-address');
   if (box) box.click();
+  const input = document.querySelector('.helm-input');
+  if (input && input.style.display !== 'none') { input.focus(); input.select(); }
 }

@@ -2,6 +2,7 @@
 import { renderShell, requestRender, revealHelm, toggleAsk } from './shell.js';
 import { onMessage } from './bridge.js';
 import { focusHelm } from './pagebasics.js';
+import { helmSuggestions } from './helm.js';
 import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
 import { setWallpaper, wallpaperVersion } from './newtab.js';
@@ -207,9 +208,12 @@ export async function startLive() {
     } else if (msg.type === 'toggle-ask') {
       revealHelm();
       toggleAsk(app, state);
+    } else if (msg.type === 'suggestions') {
+      helmSuggestions(msg.query, msg.items);
     } else if (msg.type === 'helm-focus') {
       revealHelm();
       focusHelm();
+      setTimeout(focusHelm, 150);
     } else if (msg.type === 'find-in-page-prompt') {
       import('./pagebasics.js').then(({ toggleFindBar }) => {
         toggleFindBar(app, msg.view || state.activeTab);

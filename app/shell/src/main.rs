@@ -1566,6 +1566,10 @@ impl Shell {
                 }));
                 if !url.is_empty() {
                     self.on_url_changed(view, &url);
+                } else {
+                    // A new empty tab: the address bar is ready to type in.
+                    engine.focus_ui();
+                    engine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
                 }
             }
             FromUi::Navigate { view, url } => {
@@ -1897,6 +1901,40 @@ impl Shell {
                     .and_then(|h| h.query_day_groups().ok())
                     .unwrap_or_default();
                 engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::Suggest { query } => {
+                // Pages you visited that match, best first: address starts with it, then the rest;
+                // one row per page. Private windows have no history, so no suggestions.
+                let q = query.trim().to_lowercase();
+                let mut items: Vec<bridge::Suggestion> = Vec::new();
+                if !q.is_empty()
+                    && q.len() <= 200
+                    && let Some(h) = &self.history
+                {
+                    let mut seen = std::collections::HashSet::new();
+                    let mut visits = h.search(&q).unwrap_or_default();
+                    let plain = |u: &str| {
+                        u.trim_start_matches("https://")
+                            .trim_start_matches("http://")
+                            .trim_start_matches("www.")
+                            .trim_end_matches('/')
+                            .to_lowercase()
+                    };
+                    visits.sort_by_key(|v| !plain(&v.url).starts_with(&q));
+                    for v in visits {
+                        if !v.url.starts_with("http") || !seen.insert(plain(&v.url)) {
+                            continue;
+                        }
+                        items.push(bridge::Suggestion {
+                            url: v.url,
+                            title: v.title,
+                        });
+                        if items.len() >= 6 {
+                            break;
+                        }
+                    }
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::Suggestions { query, items }));
             }
             FromUi::SearchHistory { query } => {
                 let groups = self
