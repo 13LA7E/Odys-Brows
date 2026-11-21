@@ -840,11 +840,14 @@ export function renderShell(root, state) {
   // Helm toolbar. The download ring follows the active download (AUDIT-05).
   const activeDl = (state.downloads || []).find((d) => d.active);
   const recentlyDone = !activeDl && state.dlDoneAt && Date.now() - state.dlDoneAt < 1200;
-  const helmState = (activeDl || recentlyDone) && state.helm?.kind === 'address'
-    ? { ...state.helm, download: activeDl ? (activeDl.progress ?? 0) : 1, downloadDone: !activeDl }
+  // Live: the download button stays while there is something to see (running, or finished and not cleared yet).
+  const shownDls = state.live ? (state.downloads || []).filter((d) => !d.dismissed) : (state.downloads || []);
+  const keepBtn = state.live && shownDls.length > 0;
+  const helmState = (activeDl || recentlyDone || keepBtn) && state.helm?.kind === 'address'
+    ? { ...state.helm, download: activeDl ? (activeDl.progress ?? 0) : 1, downloadDone: !activeDl && !!recentlyDone, downloadCount: shownDls.length }
     : (state.helm || { kind: 'empty' });
   // The ring's progress is updated in place below (so it can animate), not by rebuilding the Helm.
-  const helmSig = { ...helmState, download: helmState.download != null ? 'ring' : null };
+  const helmSig = { ...helmState, download: helmState.download != null ? 'ring' : null, downloadDone: !!helmState.downloadDone };
   add(region('helm', helmSig, () => renderHelm(helmState, {
     onBack: () => {
       if (typeof window.odysseyBridge === 'function') {
@@ -907,8 +910,12 @@ export function renderShell(root, state) {
   })));
 
   // Downloads popover (Browsing board)
-  if (state.downloadsOpen && state.downloads && state.downloads.length) {
-    add(region('downloads', state.downloads, () => renderDownloadsPopover(state.downloads, {
+  if (state.downloadsOpen && shownDls.length) {
+    add(region('downloads', shownDls.map((d) => ({ ...d })), () => renderDownloadsPopover(shownDls, {
+      live: state.live === true,
+      onClose: () => { state.downloadsOpen = false; renderShell(root, state); },
+      onDismiss: (id) => { const d = state.downloads.find((x) => x.id === String(id)); if (d) d.dismissed = true; renderShell(root, state); },
+      onClear: () => { for (const d of state.downloads) if (!d.active) d.dismissed = true; renderShell(root, state); },
       onControl: (id, action) => {
         if (typeof window.odysseyBridge === 'function') {
           window.odysseyBridge(JSON.stringify({ type: 'download-control', id, action }));

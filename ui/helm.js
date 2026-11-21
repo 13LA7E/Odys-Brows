@@ -441,6 +441,12 @@ export function renderHelm(state, handlers = {}) {
     dlIco.append(svg('path', { d: 'M12 7v8m0 0l-3-3m3 3l3-3' }));
     ringBtn.append(dlIco);
 
+    if (state.downloadCount > 1) {
+      // More than one download: a small count on the button
+      const badge = el('span', 'helm-dl-count', String(state.downloadCount));
+      badge.style.cssText = 'position:absolute;right:-2px;top:-2px;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;border-radius:7px;background:var(--accent);color:var(--bg);font-size:10px;line-height:14px;text-align:center;font-weight:600;';
+      ringBtn.append(badge);
+    }
     ringBtn.addEventListener('click', () => onOpenDownloads?.());
     h.append(ringBtn);
   }
@@ -467,9 +473,34 @@ export function renderHelm(state, handlers = {}) {
 
 /** Render downloads popover aligned with Helm right edge (DESIGN.md §7). */
 export function renderDownloadsPopover(downloads = [], handlers = {}) {
-  const { onControl, onOpen } = handlers;
+  const { onControl, onOpen, onClose, onDismiss, onClear, live } = handlers;
   const pop = el('div', 'downloads-popover');
   pop.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2 + var(--helm-w) - 300px);bottom:92px;width:300px;border-radius:var(--r-popover);background:var(--surface);box-shadow:var(--shadow-popover);padding:6px 0;';
+
+  const xBtn = (label, fn) => {
+    const b = el('button', 'dl-x');
+    b.setAttribute('aria-label', label);
+    b.style.cssText = 'border:0;background:none;font:inherit;padding:0;margin:0;cursor:pointer;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);flex:none;';
+    b.append(ico('M6 6l12 12M18 6L6 18', 14));
+    b.addEventListener('click', fn);
+    return b;
+  };
+  if (live) {
+    // A header you can close, and (when nothing is running) clear
+    const head = el('div', 'dl-head');
+    head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px 2px 14px;';
+    const t = el('div', null, 'Downloads');
+    t.style.cssText = 'flex:1;font-size:12.5px;color:var(--text-muted);';
+    head.append(t);
+    if (downloads.some((d) => !d.active)) {
+      const clear = el('button', 'dl-clear', 'Clear');
+      clear.style.cssText = 'border:0;background:none;color:var(--accent);font:inherit;font-size:12.5px;cursor:pointer;padding:4px 6px;';
+      clear.addEventListener('click', () => onClear?.());
+      head.append(clear);
+    }
+    head.append(xBtn('Close', () => onClose?.()));
+    pop.append(head);
+  }
 
   downloads.forEach((item) => {
     const row = el('div');
@@ -514,14 +545,17 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
         row.append(info, pauseBtn);
       }
     } else if (item.failed) {
-      row.append(info);
+      if (live) row.append(info, xBtn('Remove from the list', () => onDismiss?.(item.id)));
+      else row.append(info);
     } else {
       const openBtn = el('button', null, 'Open');
       openBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;font-size:13px;color:var(--accent);padding:6px 2px;';
       openBtn.addEventListener('click', () => {
         onOpen?.(item.path || item.id);
       });
-      row.append(info, openBtn);
+      if (live && item.installed) row.append(info, xBtn('Remove from the list', () => onDismiss?.(item.id)));
+      else if (live) row.append(info, openBtn, xBtn('Remove from the list', () => onDismiss?.(item.id)));
+      else row.append(info, openBtn);
     }
     pop.append(row);
   });

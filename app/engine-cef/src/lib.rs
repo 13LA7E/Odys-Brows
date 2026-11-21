@@ -1200,6 +1200,13 @@ wrap_download_handler! {
                 .map(CefString::to_string)
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| CefString::from(&item.suggested_file_name()).to_string());
+            // Chromium throws a downloaded .crx away after trying its own (unsupported) install.
+            // Keep it: the shell unpacks "<name>.crx.zip" into Extensions.
+            let name = if name.to_lowercase().ends_with(".crx") {
+                format!("{name}.zip")
+            } else {
+                name
+            };
             let dir = segdl::default_download_dir();
             let target = segdl::unique_path(&dir, &name);
             let target_str = target.to_string_lossy().to_string();

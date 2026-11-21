@@ -546,6 +546,11 @@ pub enum ToUi {
         view: ViewId,
         sleeping: bool,
     },
+    /// A line to show under a download in the list (for example that it was installed).
+    DownloadNote {
+        id: String,
+        text: String,
+    },
     /// Extensions list update (P6-01, P6-03).
     ExtensionsLoaded {
         extensions: Vec<crate::extensions::ExtensionInfo>,

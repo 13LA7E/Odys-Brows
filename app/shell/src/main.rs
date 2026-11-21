@@ -762,6 +762,55 @@ impl Shell {
     /// If a picture does not arrive: a whole-page capture is retried as the visible part (some pages
     /// do not answer a second whole-page request), and after that it is reported as failed. Either
     /// way a page brought up for the picture goes back into hiding.
+    /// A downloaded Chrome extension (.crx) is unpacked into the profile and added to Extensions,
+    /// instead of being handed to some other browser.
+    fn install_downloaded_extension(&mut self, id: impl std::fmt::Display, path: &str) {
+        self.install_downloaded_extension_try(id.to_string(), path.to_string(), 0);
+    }
+
+    /// The file is renamed into place just after the "complete" event, so look again a few times.
+    fn install_downloaded_extension_try(&mut self, id: String, path: String, attempt: u32) {
+        if !std::path::Path::new(&path).exists() && attempt < 8 {
+            CefEngine.after(500, move || {
+                SHELL_REF.with(|r| {
+                    if let Some(sh) = r.borrow().as_ref()
+                        && let Ok(mut s) = sh.try_borrow_mut()
+                    {
+                        s.install_downloaded_extension_try(id, path, attempt + 1);
+                    }
+                });
+            });
+            return;
+        }
+        let path = path.as_str();
+        let note = |text: String| {
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::DownloadNote {
+                id: id.to_string(),
+                text,
+            }));
+        };
+        if self.is_private {
+            note("Not installed: extensions are not added from a private window.".into());
+            return;
+        }
+        let dest = profile_dir().join("extensions");
+        match extensions::unpack_crx(std::path::Path::new(path), &dest)
+            .and_then(|dir| self.extensions.load_unpacked(&dir))
+        {
+            Ok(info) => {
+                let _ = self.extensions.save(&profile_dir());
+                CefEngine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+                    extensions: self.extensions.list(),
+                }));
+                note(format!(
+                    "Installed {}. Restart Constellations to use it.",
+                    info.name
+                ));
+            }
+            Err(e) => note(format!("Not installed: {e}")),
+        }
+    }
+
     fn watch_capture(&mut self, engine: &mut CefEngine, view: ViewId, id: u64, full: bool) {
         engine.after(7_000, move || {
             SHELL_REF.with(|r| {
@@ -2946,6 +2995,9 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::Download(info) => {
                 if !info.path.is_empty() {
                     s.download_paths.insert(info.id, info.path.clone());
+                }
+                if info.complete && info.path.to_lowercase().ends_with(".crx.zip") {
+                    s.install_downloaded_extension(info.id, &info.path);
                 }
                 if info.complete || info.cancelled || info.interrupted {
                     s.active_downloads.remove(&info.id);

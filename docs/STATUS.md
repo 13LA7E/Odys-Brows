@@ -111,6 +111,10 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: downloads card and button, extension files
+
+- See PHASES "Downloads card, address-bar button, extension files". Windows tested only.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: guide line, settings scroll
 
 - See PHASES "Guide line instead of black tabs". Needs testing on: Linux (edge watching is Windows-only for now).

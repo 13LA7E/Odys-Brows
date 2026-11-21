@@ -68,6 +68,7 @@ export async function startLive() {
     if (!d) {
       d = { id: String(msg.id), name: msg.file_name || 'Download', path: msg.path, received: 0, total: null };
       state.downloads.unshift(d);
+      state.downloadsOpen = true; // a new download shows its card
     }
     d.name = msg.file_name || d.name;
     if (msg.path) d.path = msg.path;
@@ -76,11 +77,16 @@ export async function startLive() {
     d.speed = msg.speed || 0;
     d.cancellable = true;
     if (msg.complete) {
-      d.active = false; d.done = true; d.failed = false; d.detail = 'Done';
+      d.active = false; d.done = true; d.failed = false; if (!d.installed) d.detail = 'Done';
       if (wasActive) {
         // The ring stays for a moment at 100% and pulses once.
         state.dlDoneAt = Date.now();
         setTimeout(() => { state.dlTick = Date.now(); renderShellLive(); }, 1300);
+        // The card goes away by itself a few seconds after the last download finishes (the button stays).
+        clearTimeout(state.dlCloseTimer);
+        state.dlCloseTimer = setTimeout(() => {
+          if (!state.downloads.some((x) => x.active) && state.downloadsOpen) { state.downloadsOpen = false; renderShellLive(); }
+        }, 6000);
       }
     } else if (msg.cancelled) {
       d.active = false; d.done = false; d.failed = true; d.detail = 'Cancelled';
@@ -208,6 +214,9 @@ export async function startLive() {
     } else if (msg.type === 'toggle-ask') {
       revealHelm();
       toggleAsk(app, state);
+    } else if (msg.type === 'download-note') {
+      const d = state.downloads.find((x) => x.id === String(msg.id));
+      if (d) { d.detail = msg.text; d.installed = true; state.downloadsOpen = true; renderShellLive(); }
     } else if (msg.type === 'edge-hover') {
       edgeHover(msg.zone);
     } else if (msg.type === 'suggestions') {

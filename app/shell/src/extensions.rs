@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -170,6 +171,82 @@ impl ExtensionsStore {
     }
 }
 
+/// Unpack a downloaded Chrome extension (`.crx`, format 2 or 3) into `dest_root/<file name>` and
+/// return that folder. The files are only written there: a name that would leave the folder, too
+/// many files or too much data is refused, and nothing is run.
+pub fn unpack_crx(crx: &Path, dest_root: &Path) -> Result<std::path::PathBuf, String> {
+    const MAX_FILES: usize = 5000;
+    const MAX_BYTES: u64 = 200 * 1024 * 1024;
+    let bytes = std::fs::read(crx).map_err(|e| format!("Could not read the file: {e}"))?;
+    if bytes.len() > 100 * 1024 * 1024 {
+        return Err("That extension file is too big.".into());
+    }
+    let u32_at = |i: usize| -> Option<usize> {
+        bytes
+            .get(i..i + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    if bytes.get(0..4) != Some(b"Cr24") {
+        return Err("That is not an extension file (.crx).".into());
+    }
+    let start = match u32_at(4) {
+        Some(3) => 12usize.checked_add(u32_at(8).ok_or("Damaged extension file.")?),
+        Some(2) => 16usize
+            .checked_add(u32_at(8).ok_or("Damaged extension file.")?)
+            .and_then(|v| v.checked_add(u32_at(12)?)),
+        _ => return Err("That extension file format is not supported.".into()),
+    }
+    .filter(|s| *s < bytes.len())
+    .ok_or("Damaged extension file.")?;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes[start..]))
+        .map_err(|_| "Damaged extension file.".to_string())?;
+    if zip.len() > MAX_FILES {
+        return Err("That extension has too many files.".into());
+    }
+    let stem: String = crx
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(60)
+        .collect();
+    let dir = dest_root.join(if stem.is_empty() { "extension" } else { &stem });
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not make the folder: {e}"))?;
+    let mut total = 0u64;
+    for i in 0..zip.len() {
+        let mut f = zip
+            .by_index(i)
+            .map_err(|_| "Damaged extension file.".to_string())?;
+        let Some(rel) = f.enclosed_name() else {
+            continue; // a name that points outside the folder is skipped
+        };
+        let out = dir.join(rel);
+        if f.is_dir() {
+            let _ = std::fs::create_dir_all(&out);
+            continue;
+        }
+        total += f.size();
+        if total > MAX_BYTES {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err("That extension is too big once unpacked.".into());
+        }
+        if let Some(parent) = out.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut w =
+            std::fs::File::create(&out).map_err(|e| format!("Could not write a file: {e}"))?;
+        std::io::copy(&mut f.by_ref().take(MAX_BYTES), &mut w)
+            .map_err(|e| format!("Could not write a file: {e}"))?;
+    }
+    if !dir.join("manifest.json").exists() {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err("That file has no manifest.json.".into());
+    }
+    Ok(dir)
+}
+
 /// A relative path inside the extension: no scheme, no `..`, no leading slash.
 fn valid_popup_path(p: &str) -> bool {
     !p.is_empty()
@@ -193,6 +270,63 @@ fn md5_hash(data: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_crx(files: &[(&str, &str)], version: u32) -> Vec<u8> {
+        use std::io::Write;
+        let mut zbytes = Vec::new();
+        {
+            let mut w = zip::ZipWriter::new(std::io::Cursor::new(&mut zbytes));
+            let o = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for (n, c) in files {
+                w.start_file(*n, o).unwrap();
+                w.write_all(c.as_bytes()).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        let mut out = b"Cr24".to_vec();
+        out.extend_from_slice(&version.to_le_bytes());
+        if version == 3 {
+            out.extend_from_slice(&5u32.to_le_bytes());
+            out.extend_from_slice(&[0; 5]);
+        } else {
+            out.extend_from_slice(&2u32.to_le_bytes());
+            out.extend_from_slice(&3u32.to_le_bytes());
+            out.extend_from_slice(&[0; 5]);
+        }
+        out.extend_from_slice(&zbytes);
+        out
+    }
+
+    #[test]
+    fn unpacks_crx_files_and_refuses_bad_ones() {
+        let tmp = std::env::temp_dir().join(format!("crx-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let manifest = r#"{"manifest_version":3,"name":"Demo","version":"1.0"}"#;
+        for v in [3u32, 2] {
+            let f = tmp.join(format!("abcdef{v}.CRX"));
+            std::fs::write(&f, make_crx(&[("manifest.json", manifest), ("a/b.js", "x")], v)).unwrap();
+            let dir = unpack_crx(&f, &tmp.join("out")).unwrap();
+            assert!(dir.join("manifest.json").exists() && dir.join("a").join("b.js").exists());
+            let mut reg = ExtensionsStore::default();
+            assert_eq!(reg.load_unpacked(&dir).unwrap().name, "Demo");
+        }
+        // a name that climbs out of the folder is skipped, not written
+        let f = tmp.join("evil.crx");
+        std::fs::write(&f, make_crx(&[("manifest.json", manifest), ("../escape.txt", "x")], 3)).unwrap();
+        unpack_crx(&f, &tmp.join("out")).unwrap();
+        assert!(!tmp.join("escape.txt").exists() && !tmp.join("out").join("escape.txt").exists());
+        // no manifest, not a crx, truncated
+        let f = tmp.join("nomanifest.crx");
+        std::fs::write(&f, make_crx(&[("a.js", "x")], 3)).unwrap();
+        assert!(unpack_crx(&f, &tmp.join("out")).is_err());
+        std::fs::write(tmp.join("x.crx"), b"hello").unwrap();
+        assert!(unpack_crx(&tmp.join("x.crx"), &tmp.join("out")).is_err());
+        std::fs::write(tmp.join("y.crx"), b"Cr24\x03\0\0\0\xff\xff\xff\x7f").unwrap();
+        assert!(unpack_crx(&tmp.join("y.crx"), &tmp.join("out")).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn loads_unpacked_v3_manifest() {
