@@ -1,5 +1,8 @@
 //! The browser executable: starts the engine, hosts our UI and connects the two.
 
+// The settings round-trip test builds one big json! value.
+#![recursion_limit = "512"]
+
 // No console window in release builds on Windows.
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
