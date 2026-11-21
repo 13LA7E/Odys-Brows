@@ -11,6 +11,7 @@ mod brand;
 mod bridge;
 mod extensions;
 mod selftest;
+mod settings;
 
 use bridge::{FromUi, ToUi};
 use engine_api::{Engine, Rect, ViewId};
@@ -1170,6 +1171,7 @@ impl Shell {
                 self.persist_session();
             }
             FromUi::SaveSettings { settings } => {
+                let settings = settings::normalize(&settings);
                 if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
                     segdl::set_connections(c as usize);
                 }
@@ -1593,11 +1595,17 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     } else {
         HistoryStore::open(&profile_dir().join("history.db")).ok()
     };
-    let saved_session = if is_private || any_selftest || urls_file.is_some() {
+    let mut saved_session = if is_private || any_selftest || urls_file.is_some() {
         SessionData::default()
     } else {
         load_session_or_default(&profile_dir())
     };
+    // Settings > General > On startup: "New tab" opens without the last session's tabs (the
+    // recently closed list is kept).
+    if !is_private && load_settings_or_default(&profile_dir())["startup"] == "New tab" {
+        saved_session.tabs.clear();
+        saved_session.active_tab_index = None;
+    }
     let shell = Rc::new(RefCell::new(Shell {
         is_private,
         history: history_store,
@@ -1980,15 +1988,7 @@ fn main() {
 
 /// Default user settings (DESIGN.md §9).
 pub fn default_settings() -> serde_json::Value {
-    serde_json::json!({
-        "stars": "Still",
-        "shootingStars": false,
-        "accent": "Sea",
-        "trail": "Narrow",
-        "connections": 8,
-        "offerSavePasswords": true,
-        "autofillPasswords": true
-    })
+    settings::defaults()
 }
 
 /// Atomically save settings to disk (EDGE_CASES §1: atomic writes via tmp + rename).
@@ -1996,7 +1996,8 @@ pub fn save_settings_atomic(dir: &Path, settings: &serde_json::Value) -> std::io
     std::fs::create_dir_all(dir)?;
     let target = dir.join("settings.json");
     let tmp = dir.join("settings.json.tmp");
-    let content = serde_json::to_string_pretty(settings)
+    // Always write a complete, valid object (settings.rs): nothing odd reaches the disk.
+    let content = serde_json::to_string_pretty(&settings::normalize(settings))
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(&tmp, content)?;
     std::fs::rename(&tmp, &target)?;
@@ -2010,8 +2011,12 @@ pub fn load_settings_or_default(dir: &Path) -> serde_json::Value {
         return default_settings();
     }
     match std::fs::read_to_string(&target) {
+        Ok(text) if text.len() > 256 * 1024 => {
+            eprintln!("Warning: settings.json is far too large, using defaults");
+            default_settings()
+        }
         Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(val) => val,
+            Ok(val) => settings::normalize(&val),
             Err(e) => {
                 eprintln!(
                     "Warning: settings.json corrupted ({e}), creating backup and restoring defaults"
