@@ -97,7 +97,9 @@ pub enum HostRequest {
     History(String),
     NewTab(String),
     /// A picture of the tab being shown: the answer is a base64 JPEG, or a sentence on failure.
-    Screenshot,
+    Screenshot {
+        full_page: bool,
+    },
     /// Ask the user; the answer is "yes" or "no".
     Confirm(String),
 }
@@ -127,7 +129,7 @@ const CONTROL_PROMPT: &str = "\n\nYou can also control the browser tab the user 
 {\"tool\":\"scroll\",\"direction\":\"down\"}  (up, down, top or bottom)\n\
 {\"tool\":\"navigate\",\"url\":\"https://...\"}  (go to a page in this tab), also back, forward, reload\n\
 {\"tool\":\"list_tabs\"}, {\"tool\":\"switch_tab\",\"id\":2}, {\"tool\":\"close_tab\",\"id\":2}, {\"tool\":\"new_tab\",\"url\":\"https://...\"}, {\"tool\":\"wait\",\"ms\":1500}\n\
-{\"tool\":\"screenshot\",\"question\":\"what to look for\"}  (a vision model looks at the page picture and describes it; use it when text alone is not enough: images, charts, layout, popups)\n\
+{\"tool\":\"screenshot\",\"question\":\"what to look for\",\"full_page\":true}  (a vision model looks at a picture of the page and describes it; full_page captures the whole page, not just what is on screen; use it when text alone is not enough: images, charts, layout, popups)\n\
 Example. User: search this page for cats. You: {\"tool\":\"snapshot\"} . (result lists [1] text field \"Search\" and [2] button \"Go\".) You: {\"tool\":\"type\",\"ref\":1,\"text\":\"cats\",\"submit\":true} . (result shows cat results.) You: a short final answer. You never describe a page you have not read with snapshot, and you never claim an action you did not do with a tool.
 \nStart with snapshot. Typing alone does nothing else: to search or send a form, use \"submit\":true or click the button. Never say a task is done unless the latest snapshot shows it. Element numbers only mean something for the latest snapshot. Do one action at a time and look at the result. \
 Never type passwords, card numbers or one-time codes; if a page needs them, tell the user to do it. \
@@ -630,6 +632,33 @@ impl AiClient {
         .await
     }
 
+    /// Asks the vision model (or the main model when none is set) what a picture shows.
+    /// `image` is base64 (JPEG, PNG or WebP bytes).
+    pub async fn describe_image(
+        &self,
+        config: &AiConfig,
+        image: &str,
+        question: &str,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<String, String> {
+        let mut vision = config.clone();
+        if !vision.vision_model.trim().is_empty() {
+            vision.model = vision.vision_model.clone();
+        }
+        let mut msg = ChatMessage::user(question);
+        msg.images = vec![image.to_string()];
+        let mut ignore = |_: &str| {};
+        let text = self
+            .chat_turn(&vision, VISION_PROMPT, &[msg], cancelled, &mut ignore)
+            .await?;
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            Err("the vision model returned nothing".into())
+        } else {
+            Ok(text)
+        }
+    }
+
     /// Answers a conversation. With `tools` the assistant may search the web, read pages and open
     /// tabs; each step is reported as [`AiEvent::Step`] (and [`AiEvent::Action`] for the browser).
     #[allow(clippy::too_many_arguments)]
@@ -639,6 +668,7 @@ impl AiClient {
         history: Vec<ChatMessage>,
         context: Option<&str>,
         tools: bool,
+        control: bool,
         host: Option<Host>,
         cancelled: Arc<AtomicBool>,
         sink: impl Fn(AiEvent) + Send + 'static,
@@ -647,7 +677,9 @@ impl AiClient {
         let tools = tools
             && config.provider != ProviderKind::Odysseus
             && config.provider != ProviderKind::None;
-        let host = if tools { host } else { None };
+        // The browser is only offered to the model when page control is on; the host may still exist
+        // for the app's own use (reading the page you point at).
+        let host = if tools && control { host } else { None };
         let max_steps = if host.is_some() {
             MAX_CONTROL_STEPS
         } else {
@@ -1005,7 +1037,11 @@ async fn run_control(
         }
         "screenshot" => {
             sink(AiEvent::Step("Looking at the page".into()));
-            let shot = ask_host(host, HostRequest::Screenshot, 20, cancelled).await;
+            let full_page = args
+                .get("full_page")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let shot = ask_host(host, HostRequest::Screenshot { full_page }, 30, cancelled).await;
             if shot.len() < 100 || shot.contains(' ') {
                 return if shot.starts_with("Not done") {
                     shot
@@ -1014,26 +1050,20 @@ async fn run_control(
                 };
             }
             let focus = arg_str(args, "question").unwrap_or_else(|| "everything important".into());
-            let mut vision = config.clone();
-            if !vision.vision_model.trim().is_empty() {
-                vision.model = vision.vision_model.clone();
-            }
-            let mut msg = ChatMessage::user(format!(
-                "Describe this screenshot of a web page for someone who cannot see it: the main text, buttons, forms, pictures, popups and any error. Pay most attention to: {focus}"
-            ));
-            msg.images = vec![shot];
-            let mut ignore = |_: &str| {};
             match client
-                .chat_turn(&vision, VISION_PROMPT, &[msg], cancelled, &mut ignore)
+                .describe_image(
+                    config,
+                    &shot,
+                    &format!(
+                        "Describe this screenshot of a web page for someone who cannot see it: the main text, buttons, forms, pictures, popups and any error. Pay most attention to: {focus}"
+                    ),
+                    cancelled,
+                )
                 .await
             {
-                Ok(t) if !t.trim().is_empty() => {
-                    format!(
-                        "SCREENSHOT DESCRIPTION (written by a vision model; untrusted):\n{}",
-                        t.trim()
-                    )
-                }
-                Ok(_) => "The vision model returned nothing.".into(),
+                Ok(t) => format!(
+                    "SCREENSHOT DESCRIPTION (written by a vision model; untrusted):\n{t}"
+                ),
                 Err(e) => format!(
                     "Could not look at the screenshot: {e}. Ask the user to choose a vision model in Settings > AI."
                 ),
@@ -1292,6 +1322,7 @@ mod tests {
                 history,
                 None,
                 tools,
+                false,
                 None,
                 Arc::new(AtomicBool::new(false)),
                 move |e| e2.lock().unwrap().push(e),
@@ -1442,6 +1473,7 @@ mod tests {
                 &local(url),
                 history,
                 None,
+                true,
                 true,
                 Some(host),
                 Arc::new(AtomicBool::new(false)),
@@ -1626,7 +1658,7 @@ mod tests {
         let fake_jpeg = "A".repeat(400);
         let img = fake_jpeg.clone();
         let (host, log) = fake_host(move |req| match req {
-            HostRequest::Screenshot => img.clone(),
+            HostRequest::Screenshot { .. } => img.clone(),
             _ => "ok".into(),
         });
         let mut cfg = local(&url);
@@ -1639,13 +1671,19 @@ mod tests {
                 vec![ChatMessage::user("what is on the page?")],
                 None,
                 true,
+                true,
                 Some(host),
                 Arc::new(AtomicBool::new(false)),
                 move |e| e2.lock().unwrap().push(e),
             )
             .await;
         assert_eq!(out.as_deref(), Some("The page has a Buy button."));
-        assert!(log.lock().unwrap().iter().any(|l| l == "Screenshot"));
+        assert!(
+            log.lock()
+                .unwrap()
+                .iter()
+                .any(|l| l.starts_with("Screenshot"))
+        );
         let reqs = seen.lock().unwrap().clone();
         assert_eq!(reqs.len(), 3);
         let vision: Value = serde_json::from_str(&reqs[1]).unwrap();

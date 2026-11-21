@@ -281,6 +281,48 @@ pub enum FromUi {
         /// The conversation this belongs to (none = start a new one).
         #[serde(default)]
         chat: Option<String>,
+        /// Pictures attached to the question (`data:` URLs, checked in Rust).
+        #[serde(default)]
+        images: Vec<String>,
+        /// Let the assistant read the page you are on first.
+        #[serde(default)]
+        use_page: bool,
+        /// Edit: drop the messages from this index on before asking.
+        #[serde(default)]
+        edit_from: Option<usize>,
+        /// Ask the last question again (no new message is added).
+        #[serde(default)]
+        regenerate: bool,
+    },
+    /// Rename a saved conversation.
+    ChatRename {
+        id: String,
+        title: String,
+    },
+    /// Pin or unpin a saved conversation.
+    ChatPin {
+        id: String,
+        pinned: bool,
+    },
+    /// Search the saved conversations.
+    ChatSearch {
+        query: String,
+    },
+    /// Save a conversation as a Markdown file in Downloads.
+    ChatExport {
+        id: String,
+    },
+    /// Which models the local AI server has.
+    AiListModels,
+    /// Switch the model the assistant uses.
+    AiSetModel {
+        model: String,
+    },
+    /// Take a picture of the page being shown, to attach to a message.
+    CapturePage {
+        #[serde(default)]
+        full: bool,
+        request: u64,
     },
     /// The list of saved assistant conversations.
     ChatList,
@@ -485,7 +527,33 @@ pub enum ToUi {
     },
     /// One saved conversation (none when it does not exist).
     ChatData {
-        chat: Option<crate::chats::Chat>,
+        chat: Option<crate::chats::ChatView>,
+    },
+    /// Search results (same shape as the list).
+    ChatFound {
+        query: String,
+        chats: Vec<crate::chats::Summary>,
+    },
+    /// A conversation was saved as a file.
+    ChatExported {
+        ok: bool,
+        path: String,
+        message: String,
+    },
+    /// The local models and the one in use.
+    AiModels {
+        models: Vec<String>,
+        current: String,
+        error: String,
+    },
+    /// The picture asked for with `capture-page`.
+    PageCaptured {
+        request: u64,
+        ok: bool,
+        data: String,
+        title: String,
+        url: String,
+        message: String,
     },
     /// A question started (or continued) this conversation.
     ChatStarted {

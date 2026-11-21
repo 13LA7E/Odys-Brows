@@ -279,19 +279,32 @@ function isChatPage(state) {
 /** What the assistant page can do (it talks to Rust through the bridge). */
 function chatActions(root, state) {
   const send = (m) => window.odysseyBridge?.(JSON.stringify(m));
+  let captureId = 0;
   return {
-    send: (text) => {
-      state.chat = state.chat || { id: null, messages: [] };
-      state.chat.messages = [...state.chat.messages, { role: 'user', text }];
+    /** opts: { text, images, usePage, editFrom, regenerate } */
+    send: (opts) => {
+      const o = typeof opts === 'string' ? { text: opts } : opts;
+      const text = o.text || '';
+      state.chat = state.chat || { id: null, title: 'New chat', messages: [] };
+      let msgs = state.chat.messages;
+      if (o.editFrom != null) msgs = msgs.slice(0, o.editFrom);
+      if (o.regenerate) { while (msgs.length && msgs[msgs.length - 1].role === 'assistant') msgs = msgs.slice(0, -1); }
+      if (!o.regenerate) msgs = [...msgs, { role: 'user', text, images: o.images || [], time: Math.floor(Date.now() / 1000) }];
+      state.chat.messages = msgs;
       state.chatStream = { text: '', steps: [], sources: [], done: false };
       state.aiOrigin = 'chat';
-      send({ type: 'ai-ask', prompt: text, chat: state.chat.id });
+      send({
+        type: 'ai-ask', prompt: text, chat: state.chat.id,
+        images: o.images || [], use_page: !!o.usePage,
+        edit_from: o.editFrom ?? null,
+        regenerate: !!o.regenerate,
+      });
       chatUpdate(state);
     },
     stop: () => {
       send({ type: 'ai-cancel' });
       const s = state.chatStream;
-      if (s && s.text) state.chat.messages = [...state.chat.messages, { role: 'assistant', text: s.text, steps: s.steps, sources: s.sources }];
+      if (s && s.text) state.chat.messages = [...state.chat.messages, { role: 'assistant', text: s.text, steps: s.steps, sources: s.sources, time: Math.floor(Date.now() / 1000) }];
       state.chatStream = null;
       chatUpdate(state);
     },
@@ -302,6 +315,18 @@ function chatActions(root, state) {
       send({ type: 'chat-delete', id });
     },
     clearAll: () => { state.chat = null; state.chatStream = null; send({ type: 'chat-clear-all' }); },
+    rename: (id, title) => { if (state.chat?.id === id) state.chat.title = title; send({ type: 'chat-rename', id, title }); chatUpdate(state); },
+    pin: (id, pinned) => { if (state.chat?.id === id) state.chat.pinned = pinned; send({ type: 'chat-pin', id, pinned }); chatUpdate(state); },
+    search: (query) => { state.chatQuery = query; if (query) send({ type: 'chat-search', query }); else { state.chatFound = null; chatUpdate(state); } },
+    exportChat: (id) => send({ type: 'chat-export', id }),
+    listModels: () => send({ type: 'ai-list-models' }),
+    setModel: (model) => send({ type: 'ai-set-model', model }),
+    setSetting: (key, value) => {
+      state.settings = { ...(state.settings || {}), [key]: value };
+      saveSettings(state.settings);
+      chatUpdate(state);
+    },
+    capture: (full) => { captureId += 1; send({ type: 'capture-page', full: !!full, request: captureId }); },
     openLink: (url) => openLink(state, url),
   };
 }

@@ -196,6 +196,16 @@ struct Shell {
     /// Questions to the user ("allow this click?") waiting for the answer.
     agent_confirms: HashMap<u64, tokio::sync::oneshot::Sender<String>>,
     agent_next: u64,
+    /// The web tab you were on last. The assistant works there when you are on a page of ours (the
+    /// chat page is a tab too).
+    last_web: Option<ViewId>,
+    /// Screenshots the UI asked for (to attach to a message): DevTools id -> (tab, UI request id).
+    ui_captures: HashMap<u64, (ViewId, u64)>,
+    /// Pages brought up off to the side for a screenshot: DevTools id -> tab (a page that is not
+    /// shown draws no frames, so it cannot be captured until it is shown).
+    shot_hidden: HashMap<u64, ViewId>,
+    /// Whole-page captures that could only give the visible part.
+    shot_partial: std::collections::HashSet<u64>,
     tab_titles: HashMap<ViewId, String>,
     closed_tabs: VecDeque<ClosedTabRecord>,
     next_closed_id: u64,
@@ -276,6 +286,10 @@ impl Default for Shell {
             agent_pending: HashMap::new(),
             agent_confirms: HashMap::new(),
             agent_next: 0,
+            last_web: None,
+            ui_captures: HashMap::new(),
+            shot_hidden: HashMap::new(),
+            shot_partial: std::collections::HashSet::new(),
             tab_titles: HashMap::new(),
             closed_tabs: VecDeque::new(),
             next_closed_id: 1,
@@ -555,6 +569,84 @@ impl Shell {
         (nanos << 20) | (self.agent_next & 0xFFFFF)
     }
 
+    /// The tab the assistant reads and acts on: the one being shown if it is a web page, otherwise
+    /// the last web page you had open.
+    fn agent_target(&self) -> Option<ViewId> {
+        self.shown.filter(|v| self.is_web_tab(*v)).or_else(|| {
+            self.last_web
+                .filter(|v| self.contains(*v) && self.is_web_tab(*v))
+        })
+    }
+
+    /// Takes a screenshot of `view`. A page that is not being shown is brought up far off to the
+    /// side for a moment (it is never visible on screen), because hidden pages draw nothing.
+    fn start_capture(&mut self, engine: &mut CefEngine, view: ViewId, id: u64, full: bool) {
+        if self.shown == Some(view) {
+            engine.capture_screenshot(view, id as i32, full);
+            return;
+        }
+        let (w, h) = engine.client_size();
+        engine.set_bounds(
+            view,
+            Rect {
+                x: -30000,
+                y: 0,
+                width: (w - self.rail_width).max(1),
+                height: h.max(1),
+            },
+        );
+        engine.set_visible(view, true);
+        self.shot_hidden.insert(id, view);
+        if full {
+            self.shot_partial.insert(id);
+        }
+        engine.after(400, move || {
+            SHELL_REF.with(|r| {
+                if let Some(sh) = r.borrow().as_ref()
+                    && let Ok(s) = sh.try_borrow()
+                    && s.shot_hidden.contains_key(&id)
+                {
+                    // A page that is off screen draws no new frames: it can give the part it last
+                    // showed, not the whole page.
+                    CefEngine.capture_screenshot(view, id as i32, false);
+                }
+            });
+        });
+        // Whatever happens, the page goes back into hiding.
+        engine.after(10_000, move || {
+            SHELL_REF.with(|r| {
+                if let Some(sh) = r.borrow().as_ref()
+                    && let Ok(mut s) = sh.try_borrow_mut()
+                {
+                    s.end_capture(id);
+                    if let Some((_, tx)) = s.agent_pending.remove(&id) {
+                        let _ = tx.send("Not done: the page could not be captured.".into());
+                    }
+                    if let Some((v, request)) = s.ui_captures.remove(&id) {
+                        let _ = v;
+                        CefEngine.send_to_ui(&bridge::to_json(&ToUi::PageCaptured {
+                            request,
+                            ok: false,
+                            data: String::new(),
+                            title: String::new(),
+                            url: String::new(),
+                            message: "The page could not be captured.".into(),
+                        }));
+                    }
+                }
+            });
+        });
+    }
+
+    /// Puts a page that was brought up for a screenshot back into hiding.
+    fn end_capture(&mut self, id: u64) {
+        if let Some(view) = self.shot_hidden.remove(&id)
+            && self.shown != Some(view)
+        {
+            CefEngine.set_visible(view, false);
+        }
+    }
+
     fn is_web_tab(&self, view: ViewId) -> bool {
         self.tab_urls
             .get(&view)
@@ -572,7 +664,7 @@ impl Shell {
         use ai::HostRequest as R;
         match req {
             R::Script { name, args } => {
-                let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) else {
+                let Some(view) = self.agent_target() else {
                     let _ = tx.send(
                         "No web page is open in this tab. Use new_tab or navigate first.".into(),
                     );
@@ -632,7 +724,7 @@ impl Shell {
                     let _ = tx.send(format!("There is no tab {id}."));
                 }
             }
-            R::Navigate(url) => match self.shown.filter(|v| self.is_web_tab(*v)) {
+            R::Navigate(url) => match self.agent_target() {
                 Some(view) => {
                     engine.navigate(view, &url);
                     let _ = tx.send(format!("Going to {url}."));
@@ -649,7 +741,7 @@ impl Shell {
                 }
             },
             R::History(kind) => {
-                if let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) {
+                if let Some(view) = self.agent_target() {
                     match kind.as_str() {
                         "back" => engine.go_back(view),
                         "forward" => engine.go_forward(view),
@@ -667,8 +759,8 @@ impl Shell {
                     self.shown.unwrap_or(0)
                 ));
             }
-            R::Screenshot => {
-                let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) else {
+            R::Screenshot { full_page } => {
+                let Some(view) = self.agent_target() else {
                     let _ = tx.send("Not done: no web page is open in this tab.".into());
                     return;
                 };
@@ -676,7 +768,7 @@ impl Shell {
                 self.agent_next += 1;
                 let id = self.agent_next & 0x7FFF_FFFF;
                 self.agent_pending.insert(id, (view, tx));
-                engine.capture_screenshot(view, id as i32);
+                self.start_capture(engine, view, id, full_page);
             }
             R::Confirm(text) => {
                 let id = self.next_agent_id();
@@ -1218,6 +1310,9 @@ impl Shell {
             engine.set_visible(view, true);
         }
         self.shown = Some(view);
+        if self.is_web_tab(view) {
+            self.last_web = Some(view);
+        }
         if let Some(sp) = self.tabs.iter().find(|t| t.view == view).map(|t| t.space) {
             self.space_last[sp.min(2)] = Some(view);
         }
@@ -1894,8 +1989,13 @@ impl Shell {
                 prompt,
                 context,
                 chat,
+                images,
+                use_page,
+                edit_from,
+                regenerate,
             } => {
                 self.ai_cancel.store(true, Ordering::Relaxed);
+                self.agent_confirms.clear();
                 let cancel = Arc::new(AtomicBool::new(false));
                 self.ai_cancel = cancel.clone();
                 let client = self.ai_client.clone();
@@ -1904,8 +2004,9 @@ impl Shell {
                 let save = !self.is_private;
                 let settings_now = load_settings_or_default(&dir);
                 let tools = save && settings_now["aiTools"] != false;
-                // Page control (click, type, scroll, tabs): needs the tools, and is off in private windows.
-                let host: Option<ai::Host> = if tools && settings_now["aiControl"] != false {
+                let control = tools && settings_now["aiControl"] != false;
+                // The browser handle: page control, and reading the page you pointed at.
+                let host: Option<ai::Host> = if control || (save && use_page) {
                     Some(Arc::new(|req: ai::HostRequest| {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         CefEngine.post_ui(move || {
@@ -1923,35 +2024,57 @@ impl Shell {
                     None
                 };
 
-                // History: what was said before in this conversation, then the new question.
-                let mut history: Vec<ai::ChatMessage> = Vec::new();
+                // Editing or asking again first removes what comes after.
                 let mut chat_id = chat.clone();
-                if save {
-                    if let Some(c) = chat.as_deref().and_then(|id| chats::get(&dir, id)) {
-                        history.extend(c.messages.iter().map(|m| ai::ChatMessage {
-                            role: m.role.clone(),
-                            content: m.text.clone(),
-                            images: Vec::new(),
-                        }));
+                if save && let Some(id) = chat_id.as_deref() {
+                    if let Some(i) = edit_from {
+                        let _ = chats::truncate(&dir, id, i);
                     }
-                    let saved = chats::append(
-                        &dir,
-                        chat_id.as_deref(),
-                        chats::Message {
-                            role: "user".into(),
-                            text: prompt.clone(),
-                            steps: vec![],
-                            sources: vec![],
-                        },
-                    );
-                    if let Ok(id) = saved {
-                        chat_id = Some(id);
-                    }
-                    if let Some(id) = &chat_id {
-                        engine.send_to_ui(&bridge::to_json(&ToUi::ChatStarted { id: id.clone() }));
+                    if regenerate {
+                        let _ = chats::drop_trailing_assistant(&dir, id);
                     }
                 }
-                history.push(ai::ChatMessage::user(prompt.clone()));
+                // What was said before, as the model sees it (a picture is its description).
+                let mut history: Vec<ai::ChatMessage> = Vec::new();
+                if save && let Some(c) = chat_id.as_deref().and_then(|id| chats::get(&dir, id)) {
+                    history.extend(c.messages.iter().map(|m| {
+                        let mut text = m.text.clone();
+                        for (i, n) in m.notes.iter().enumerate() {
+                            text.push_str(&format!("\n[Attached picture {}: {n}]", i + 1));
+                        }
+                        ai::ChatMessage {
+                            role: m.role.clone(),
+                            content: text,
+                            images: Vec::new(),
+                        }
+                    }));
+                }
+                let mut user_index: Option<usize> = None;
+                let mut image_b64: Vec<String> = Vec::new();
+                if !regenerate {
+                    use base64::Engine as _;
+                    let mut names = Vec::new();
+                    for url in images.iter().take(chats::MAX_IMAGES) {
+                        if let Ok((_, bytes)) = wallpaper::decode(url) {
+                            image_b64.push(base64::engine::general_purpose::STANDARD.encode(bytes));
+                            if save && let Ok(n) = chats::save_image(&dir, url) {
+                                names.push(n);
+                            }
+                        }
+                    }
+                    if save {
+                        let mut m = chats::Message::new("user", &prompt);
+                        m.images = names;
+                        if let Ok((id, at)) = chats::append(&dir, chat_id.as_deref(), m) {
+                            chat_id = Some(id);
+                            user_index = Some(at);
+                        }
+                    }
+                    history.push(ai::ChatMessage::user(prompt.clone()));
+                }
+                if save && let Some(id) = &chat_id {
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ChatStarted { id: id.clone() }));
+                }
 
                 // The reply is collected as it streams so it can be saved when it is done.
                 let reply = Arc::new(std::sync::Mutex::new((
@@ -1962,6 +2085,42 @@ impl Shell {
                 let reply_sink = reply.clone();
                 let cancel_sink = cancel.clone();
                 let chat_for_save = chat_id.clone();
+                let sink: Arc<dyn Fn(ai::AiEvent) + Send + Sync> = Arc::new(move |ev| {
+                    match &ev {
+                        ai::AiEvent::Delta(t) => reply_sink.lock().unwrap().0.push_str(t),
+                        ai::AiEvent::Step(s) => reply_sink.lock().unwrap().1.push(s.clone()),
+                        ai::AiEvent::Source { title, url } => {
+                            reply_sink.lock().unwrap().2.push(chats::Source {
+                                title: title.clone(),
+                                url: url.clone(),
+                            })
+                        }
+                        _ => {}
+                    }
+                    let done = matches!(ev, ai::AiEvent::Done);
+                    let saved = if done && save && !cancel_sink.load(Ordering::Relaxed) {
+                        let (text, steps, sources) = reply_sink.lock().unwrap().clone();
+                        if text.trim().is_empty() {
+                            None
+                        } else {
+                            let mut m = chats::Message::new("assistant", &text);
+                            m.steps = steps;
+                            m.sources = sources;
+                            chats::append(&profile_dir(), chat_for_save.as_deref(), m)
+                                .ok()
+                                .map(|(id, _)| id)
+                        }
+                    } else {
+                        None
+                    };
+                    CefEngine.post_ui(move || {
+                        CefEngine.send_to_ui(&bridge::to_json(&ToUi::AiEvent { event: ev }));
+                        if let Some(id) = saved {
+                            CefEngine.send_to_ui(&bridge::to_json(&ToUi::ChatSaved { id }));
+                        }
+                    });
+                });
+                let chat_for_notes = chat_id.clone();
 
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
@@ -1969,64 +2128,67 @@ impl Shell {
                         .build()
                         .unwrap();
                     rt.block_on(async {
+                        let mut history = history;
+                        // Pictures you attached: a vision model describes them (and the description
+                        // is kept for later turns), or the main model gets them directly.
+                        if !image_b64.is_empty() {
+                            if !config.vision_model.trim().is_empty() {
+                                let mut notes = Vec::new();
+                                for (i, img) in image_b64.iter().enumerate() {
+                                    sink(ai::AiEvent::Step(format!(
+                                        "Looking at picture {}",
+                                        i + 1
+                                    )));
+                                    let q = format!(
+                                        "Describe this picture in detail for someone who cannot see it: what it shows, any text in it (quote it exactly) and anything notable. The user's question about it: {prompt}"
+                                    );
+                                    let note = match client.describe_image(&config, img, &q, &cancel).await {
+                                        Ok(t) => t,
+                                        Err(e) => format!("(the picture could not be described: {e})"),
+                                    };
+                                    notes.push(note);
+                                }
+                                if let Some(last) = history.last_mut() {
+                                    for (i, n) in notes.iter().enumerate() {
+                                        last.content
+                                            .push_str(&format!("\n[Attached picture {}: {n}]", i + 1));
+                                    }
+                                }
+                                if save
+                                    && let (Some(id), Some(at)) =
+                                        (chat_for_notes.as_deref(), user_index)
+                                {
+                                    let _ = chats::set_notes(&profile_dir(), id, at, notes);
+                                }
+                            } else if let Some(last) = history.last_mut() {
+                                last.images = image_b64.clone();
+                            }
+                        }
+                        // "This page": read it first and hand it over as reference text.
+                        let mut context = context;
+                        if use_page && let Some(h) = &host {
+                            sink(ai::AiEvent::Step("Reading this page".into()));
+                            let rx = h(ai::HostRequest::Script {
+                                name: "snapshot".into(),
+                                args: serde_json::json!({}),
+                            });
+                            if let Ok(Ok(text)) =
+                                tokio::time::timeout(std::time::Duration::from_secs(10), rx).await
+                            {
+                                context = Some(text);
+                            }
+                        }
+                        let sink2 = sink.clone();
                         client
                             .run_chat(
                                 &config,
                                 history,
                                 context.as_deref(),
                                 tools,
+                                control,
                                 host,
                                 cancel,
-                                move |ev| {
-                                    match &ev {
-                                        ai::AiEvent::Delta(t) => {
-                                            reply_sink.lock().unwrap().0.push_str(t)
-                                        }
-                                        ai::AiEvent::Step(s) => {
-                                            reply_sink.lock().unwrap().1.push(s.clone())
-                                        }
-                                        ai::AiEvent::Source { title, url } => {
-                                            reply_sink.lock().unwrap().2.push(chats::Source {
-                                                title: title.clone(),
-                                                url: url.clone(),
-                                            })
-                                        }
-                                        _ => {}
-                                    }
-                                    let done = matches!(ev, ai::AiEvent::Done);
-                                    let saved =
-                                        if done && save && !cancel_sink.load(Ordering::Relaxed) {
-                                            let (text, steps, sources) =
-                                                reply_sink.lock().unwrap().clone();
-                                            if text.trim().is_empty() {
-                                                None
-                                            } else {
-                                                chats::append(
-                                                    &profile_dir(),
-                                                    chat_for_save.as_deref(),
-                                                    chats::Message {
-                                                        role: "assistant".into(),
-                                                        text,
-                                                        steps,
-                                                        sources,
-                                                    },
-                                                )
-                                                .ok()
-                                            }
-                                        } else {
-                                            None
-                                        };
-                                    CefEngine.post_ui(move || {
-                                        CefEngine.send_to_ui(&bridge::to_json(&ToUi::AiEvent {
-                                            event: ev,
-                                        }));
-                                        if let Some(id) = saved {
-                                            CefEngine.send_to_ui(&bridge::to_json(
-                                                &ToUi::ChatSaved { id },
-                                            ));
-                                        }
-                                    });
-                                },
+                                move |ev| sink2(ev),
                             )
                             .await;
                     });
@@ -2040,13 +2202,84 @@ impl Shell {
                 };
                 engine.send_to_ui(&bridge::to_json(&ToUi::ChatList { chats }));
             }
+            FromUi::ChatSearch { query } => {
+                let chats = if self.is_private {
+                    Vec::new()
+                } else {
+                    chats::search(&profile_dir(), &query)
+                };
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatFound { query, chats }));
+            }
             FromUi::ChatOpen { id } => {
                 let chat = if self.is_private {
                     None
                 } else {
-                    chats::get(&profile_dir(), &id)
+                    chats::get_view(&profile_dir(), &id)
                 };
                 engine.send_to_ui(&bridge::to_json(&ToUi::ChatData { chat }));
+            }
+            FromUi::ChatRename { id, title } => {
+                if !self.is_private {
+                    let _ = chats::rename(&profile_dir(), &id, &title);
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatList {
+                    chats: if self.is_private {
+                        Vec::new()
+                    } else {
+                        chats::list(&profile_dir())
+                    },
+                }));
+            }
+            FromUi::ChatPin { id, pinned } => {
+                if !self.is_private {
+                    let _ = chats::set_pinned(&profile_dir(), &id, pinned);
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatList {
+                    chats: if self.is_private {
+                        Vec::new()
+                    } else {
+                        chats::list(&profile_dir())
+                    },
+                }));
+            }
+            FromUi::ChatExport { id } => {
+                let msg = match chats::get(&profile_dir(), &id) {
+                    Some(c) if !self.is_private => {
+                        let dir = segdl::default_download_dir();
+                        let safe: String = c
+                            .title
+                            .chars()
+                            .map(|ch| {
+                                if ch.is_alphanumeric() || ch == ' ' {
+                                    ch
+                                } else {
+                                    '-'
+                                }
+                            })
+                            .collect();
+                        let name =
+                            format!("{}.md", safe.trim().chars().take(40).collect::<String>());
+                        let path = segdl::unique_path(&dir, &name);
+                        match std::fs::write(&path, chats::export_markdown(&c)) {
+                            Ok(()) => ToUi::ChatExported {
+                                ok: true,
+                                path: path.to_string_lossy().to_string(),
+                                message: String::new(),
+                            },
+                            Err(e) => ToUi::ChatExported {
+                                ok: false,
+                                path: String::new(),
+                                message: e.to_string(),
+                            },
+                        }
+                    }
+                    _ => ToUi::ChatExported {
+                        ok: false,
+                        path: String::new(),
+                        message: "There is nothing to save.".into(),
+                    },
+                };
+                engine.send_to_ui(&bridge::to_json(&msg));
             }
             FromUi::ChatDelete { id } => {
                 if !self.is_private {
@@ -2066,6 +2299,64 @@ impl Shell {
                 }
                 engine.send_to_ui(&bridge::to_json(&ToUi::ChatList { chats: Vec::new() }));
             }
+            FromUi::AiListModels => {
+                let client = self.ai_client.clone();
+                let config = self.ai_config.clone();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let res = rt.block_on(async { client.list_local_models(&config).await });
+                    let current = config.model.clone();
+                    CefEngine.post_ui(move || {
+                        let msg = match res {
+                            Ok(models) => ToUi::AiModels {
+                                models,
+                                current,
+                                error: String::new(),
+                            },
+                            Err(error) => ToUi::AiModels {
+                                models: Vec::new(),
+                                current,
+                                error,
+                            },
+                        };
+                        CefEngine.send_to_ui(&bridge::to_json(&msg));
+                    });
+                });
+            }
+            FromUi::AiSetModel { model } => {
+                let model: String = model
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(120)
+                    .collect();
+                if !model.trim().is_empty() {
+                    self.ai_config.model = model.trim().to_string();
+                    if !self.is_private {
+                        save_ai_config(&profile_dir(), &self.ai_config);
+                    }
+                }
+                let ui_cfg = ai::AiSettingsUi::from(&self.ai_config);
+                engine.send_to_ui(&bridge::to_json(&ToUi::AiConfigLoaded { config: ui_cfg }));
+            }
+            FromUi::CapturePage { full, request } => match self.agent_target() {
+                Some(view) => {
+                    self.agent_next += 1;
+                    let id = self.agent_next & 0x7FFF_FFFF;
+                    self.ui_captures.insert(id, (view, request));
+                    self.start_capture(engine, view, id, full);
+                }
+                None => engine.send_to_ui(&bridge::to_json(&ToUi::PageCaptured {
+                    request,
+                    ok: false,
+                    data: String::new(),
+                    title: String::new(),
+                    url: String::new(),
+                    message: "There is no web page open in this tab.".into(),
+                })),
+            },
             FromUi::VaultList => {
                 let entries = self.vault.list();
                 engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
@@ -2281,6 +2572,39 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 }
             }
             engine_api::Event::AgentResult { view, id, json } => {
+                s.end_capture(*id);
+                if let Some((v, request)) = s.ui_captures.remove(id) {
+                    let data = serde_json::from_str::<serde_json::Value>(json)
+                        .ok()
+                        .and_then(|j| j.get("data").and_then(|d| d.as_str()).map(str::to_string));
+                    let title = s.tab_titles.get(&v).cloned().unwrap_or_default();
+                    let url = s.tab_urls.get(&v).cloned().unwrap_or_default();
+                    let partial = s.shot_partial.remove(id);
+                    let msg = match data {
+                        Some(d) => ToUi::PageCaptured {
+                            request,
+                            ok: true,
+                            data: format!("data:image/jpeg;base64,{d}"),
+                            title,
+                            url,
+                            message: if partial {
+                                "Only the visible part could be captured (the page is not on screen).".into()
+                            } else {
+                                String::new()
+                            },
+                        },
+                        None => ToUi::PageCaptured {
+                            request,
+                            ok: false,
+                            data: String::new(),
+                            title,
+                            url,
+                            message: "The page could not be captured.".into(),
+                        },
+                    };
+                    CefEngine.send_to_ui(&bridge::to_json(&msg));
+                    return;
+                }
                 if let Some((v, tx)) = s.agent_pending.remove(id) {
                     if v == *view {
                         // A screenshot answers {"data": base64} (or {"error": ..}); a script answers a string.

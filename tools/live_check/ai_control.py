@@ -30,6 +30,19 @@ def refs(text):
     return out
 
 
+def jpeg_size(b):
+    import struct
+    i = 2
+    while i < len(b):
+        if b[i] != 0xFF:
+            i += 1; continue
+        m = b[i + 1]
+        if m in (0xC0, 0xC1, 0xC2):
+            h, w = struct.unpack('>HH', b[i + 5:i + 9]); return w, h
+        i += 2 + struct.unpack('>H', b[i + 2:i + 4])[0]
+    return None
+
+
 class M(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -43,7 +56,7 @@ class M(http.server.BaseHTTPRequestHandler):
             import base64
             url = next(p['image_url']['url'] for p in lastc if p.get('type') == 'image_url')
             raw = base64.b64decode(url.split(',', 1)[1])
-            vision_seen.append({'model': body.get('model'), 'bytes': len(raw), 'jpeg': raw[:2] == bytes([0xff, 0xd8]), 'question': lastc[0]['text']})
+            vision_seen.append({'model': body.get('model'), 'bytes': len(raw), 'jpeg': raw[:2] == bytes([0xff, 0xd8]), 'size': jpeg_size(raw), 'question': lastc[0]['text']})
             self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()
             chunk = json.dumps({'choices': [{'delta': {'content': 'I see a Star Shop page with a Place order button.'}}]})
             self.wfile.write(('data: ' + chunk + chr(10) + chr(10)).encode()); self.wfile.write(('data: [DONE]' + chr(10) + chr(10)).encode())
@@ -69,7 +82,7 @@ class M(http.server.BaseHTTPRequestHandler):
                 lambda: 'All done.',
             ]
         elif 'look run' in first_user:
-            plan = [lambda: j(tool='screenshot', question='the buttons'), lambda: 'It shows an order button.']
+            plan = [lambda: j(tool='screenshot', question='the buttons', full_page=True), lambda: 'It shows an order button.']
         elif 'tab run' in first_user:
             plan = [lambda: j(tool='list_tabs'), lambda: j(tool='new_tab', url='https://example.com/x'), lambda: 'Tabs handled.']
         else:
@@ -165,6 +178,8 @@ try:
     wait(lambda: V("!!document.querySelector('.ans-footer')"), 40)
     print('DBG', S('[window.__uiState.helm.kind, window.__uiState.answer, window.__uiState.page]'), [m['content'] for m in requests_seen[-1]['messages'] if m['role']=='user' and isinstance(m['content'], str)][-1][:200])
     check('the screenshot reached the vision model as a real JPEG of the page', bool(vision_seen) and vision_seen[-1]['jpeg'] and vision_seen[-1]['bytes'] > 3000 and vision_seen[-1]['model'] == 'mock-vision', vision_seen[-1:] )
+    sz = vision_seen[-1]['size'] if vision_seen else None
+    check('full_page: the picture is the whole page, much taller than the window', bool(sz) and sz[1] > sz[0] * 1.5, sz)
     check('the vision model was asked about what the assistant wanted to see', bool(vision_seen) and 'the buttons' in vision_seen[-1]['question'])
     check('the assistant answered from the description', 'order button' in V("document.querySelector('.answer-card .md').textContent"))
     check('the step says it looked at the page', any('Looking at the page' in x for x in V('window.__uiState.answer.steps')))

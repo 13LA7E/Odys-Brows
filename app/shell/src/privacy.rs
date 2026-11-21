@@ -107,6 +107,7 @@ pub fn clear(profile: &Path, flags: Flags) -> Report {
         forget_closed_tabs(profile, &mut report);
         // Saved assistant conversations are browsing history too.
         remove(&profile.join("chats.json"), &mut report);
+        remove(&profile.join("chat-images"), &mut report);
     }
     if flags.site_data {
         for name in SITE_DATA {

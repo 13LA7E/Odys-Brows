@@ -115,7 +115,7 @@ try:
 
     # --- new chat, history, delete
     ui("document.querySelector('.chat-new').click(); 1"); time.sleep(0.5)
-    check('New chat shows the empty state with suggestions', V("!!document.querySelector('.chat-empty')") and V("document.querySelectorAll('.chat-suggestion').length") == 3)
+    check('New chat shows the empty state with suggestions', V("!!document.querySelector('.chat-empty')") and V("document.querySelectorAll('.chat-suggestion').length") == 4)
     type_send('a fresh topic'); wait(lambda: V("document.querySelector('.chat-send').getAttribute('aria-label')") == 'Send', 10); time.sleep(1.5)
     check('a second conversation is listed', V("document.querySelectorAll('.chat-item').length") == 2, V("document.querySelectorAll('.chat-item').length"))
     ui("document.querySelectorAll('.chat-item-open')[1].click(); 1"); time.sleep(1)

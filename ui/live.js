@@ -5,7 +5,7 @@ import { focusHelm } from './pagebasics.js';
 import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
 import { setWallpaper, wallpaperVersion } from './newtab.js';
-import { chatUpdate, chatFocusInput, chatAdopt } from './chat.js';
+import { chatUpdate, chatFocusInput, chatAdopt, chatCaptured, chatToast } from './chat.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
@@ -130,7 +130,7 @@ export async function startLive() {
       // A question to you is void once the assistant has finished or been stopped.
       if (state.prompts?.some((p) => p.kind === 'agent-confirm')) state.prompts = state.prompts.filter((p) => p.kind !== 'agent-confirm');
       if (origin === 'chat' && state.chat) {
-        const m = { role: 'assistant', text: target.text || '(No answer)', steps: target.steps, sources: target.sources };
+        const m = { role: 'assistant', text: target.text || '(No answer)', steps: target.steps, sources: target.sources, time: Math.floor(Date.now() / 1000) };
         state.chat.messages = [...state.chat.messages, m];
         state.chatStream = null;
       } else if (!target.text) {
@@ -381,9 +381,22 @@ export async function startLive() {
       if (msg.event) onAiEvent(msg.event);
     } else if (msg.type === 'chat-list') {
       state.chatList = msg.chats || [];
+      if (state.chat?.id) {
+        const row = state.chatList.find((c) => c.id === state.chat.id);
+        if (row) { state.chat.title = row.title; state.chat.pinned = row.pinned; }
+      }
       chatUpdate(state);
+    } else if (msg.type === 'chat-found') {
+      if (msg.query === state.chatQuery) { state.chatFound = msg.chats || []; chatUpdate(state); }
+    } else if (msg.type === 'chat-exported') {
+      chatToast(msg.ok ? `Saved to ${msg.path}` : (msg.message || 'Could not save'));
+    } else if (msg.type === 'ai-models') {
+      state.aiModels = { models: msg.models || [], error: msg.error || '' };
+      chatUpdate(state);
+    } else if (msg.type === 'page-captured') {
+      chatCaptured(msg);
     } else if (msg.type === 'chat-data') {
-      state.chat = msg.chat ? { id: msg.chat.id, messages: msg.chat.messages || [] } : null;
+      state.chat = msg.chat ? { id: msg.chat.id, title: msg.chat.title, pinned: !!msg.chat.pinned, messages: msg.chat.messages || [] } : null;
       chatUpdate(state);
       chatFocusInput();
     } else if (msg.type === 'chat-started') {

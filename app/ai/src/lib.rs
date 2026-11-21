@@ -233,6 +233,30 @@ impl AiClient {
         }
     }
 
+    /// The models an Ollama-style local server has installed (empty for other providers).
+    pub async fn list_local_models(&self, config: &AiConfig) -> Result<Vec<String>, String> {
+        if config.provider != ProviderKind::Local {
+            return Ok(Vec::new());
+        }
+        let url = format!("{}/api/tags", local_root(&config.endpoint));
+        let resp = self
+            .http
+            .get(&url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|e| format!("Cannot reach the local AI at {url}: {e}"))?;
+        let body: Value = resp.json().await.map_err(|e| e.to_string())?;
+        Ok(body["models"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| m["name"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     /// Ask a question and stream response events to `sink`.
     pub async fn ask(
         &self,

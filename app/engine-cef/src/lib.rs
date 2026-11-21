@@ -776,26 +776,91 @@ wrap_browser_view_delegate! {
 }
 
 // A one-shot listener for the answer to a screenshot request (DevTools `Page.captureScreenshot`).
+// For a full-page capture it first asks for the page size (`Page.getLayoutMetrics`), then captures
+// that whole area; the second call uses `id | SHOT_STEP2` so the two never share a message id.
+const SHOT_STEP2: i32 = 0x4000_0000;
+const SHOT_STEPS: i32 = SHOT_STEP2;
+/// Largest side of a full-page picture in pixels, and the tallest page that is captured.
+const SHOT_MAX_SIDE: f64 = 2600.0;
+const SHOT_MAX_PAGE_HEIGHT: f64 = 9000.0;
+
+fn send_capture(host: &BrowserHost, id: i32, clip: Option<(f64, f64, f64)>) {
+    let Some(mut params) = dictionary_value_create() else {
+        return;
+    };
+    params.set_string(
+        Some(&CefString::from("format")),
+        Some(&CefString::from("jpeg")),
+    );
+    params.set_int(Some(&CefString::from("quality")), 60);
+    if let Some((w, h, scale)) = clip {
+        params.set_bool(Some(&CefString::from("captureBeyondViewport")), 1);
+        if let Some(mut c) = dictionary_value_create() {
+            c.set_double(Some(&CefString::from("x")), 0.0);
+            c.set_double(Some(&CefString::from("y")), 0.0);
+            c.set_double(Some(&CefString::from("width")), w);
+            c.set_double(Some(&CefString::from("height")), h);
+            c.set_double(Some(&CefString::from("scale")), scale);
+            params.set_dictionary(Some(&CefString::from("clip")), Some(&mut c));
+        }
+    }
+    host.execute_dev_tools_method(
+        id,
+        Some(&CefString::from("Page.captureScreenshot")),
+        Some(&mut params),
+    );
+}
+
 wrap_dev_tools_message_observer! {
-    struct ShotObserver { view: ViewId }
+    struct ShotObserver { view: ViewId, full: bool, base: i32 }
     impl DevToolsMessageObserver {
         fn on_dev_tools_method_result(
             &self,
-            _browser: Option<&mut Browser>,
+            browser: Option<&mut Browser>,
             message_id: ::std::os::raw::c_int,
             success: ::std::os::raw::c_int,
             result: Option<&[u8]>,
         ) {
+            // Every listener hears every answer for this page: only act on our own request.
+            if message_id & !SHOT_STEPS != self.base {
+                return;
+            }
+            let step = message_id & SHOT_STEPS;
+            let text = result.map(|r| String::from_utf8_lossy(r).into_owned()).unwrap_or_default();
+            let host = browser.and_then(|b| b.host());
+            // Step 1 of a full-page capture: the page size is known, now capture all of it.
+            if self.full && step == 0 {
+                let size = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| {
+                    let c = v.get("cssContentSize").or_else(|| v.get("contentSize"))?;
+                    Some((c.get("width")?.as_f64()?, c.get("height")?.as_f64()?))
+                });
+                if success != 0
+                    && let Some((w, h)) = size
+                    && let Some(host) = &host
+                {
+                    let w = w.clamp(100.0, 4000.0);
+                    let h = h.clamp(100.0, SHOT_MAX_PAGE_HEIGHT);
+                    let scale = (SHOT_MAX_SIDE / w.max(h)).min(1.0);
+                    send_capture(host, message_id | SHOT_STEP2, Some((w, h, scale)));
+                    return;
+                }
+                // The size could not be read: fall back to what is on screen.
+                if let Some(host) = &host {
+                    send_capture(host, message_id | SHOT_STEP2, None);
+                    return;
+                }
+            }
             let json = if success != 0 {
-                result.map(|r| String::from_utf8_lossy(r).into_owned()).unwrap_or_default()
+                text
             } else {
                 "{\"error\":\"The page could not be captured.\"}".to_string()
             };
+            let id = message_id & !SHOT_STEPS;
             // The listener is not needed any more.
             STATE.with(|s| {
-                s.borrow_mut().shot_regs.remove(&message_id);
+                s.borrow_mut().shot_regs.remove(&id);
             });
-            emit(Event::AgentResult { view: self.view, id: message_id as u64, json });
+            emit(Event::AgentResult { view: self.view, id: id as u64, json });
         }
     }
 }
@@ -1597,32 +1662,28 @@ impl CefEngine {
         });
     }
 
-    /// Take a screenshot of a page (what its renderer draws, even under our overlays) as a JPEG.
+    /// Take a screenshot of a page (what its renderer draws, even under our overlays) as a JPEG:
+    /// the visible part, or with `full_page` the whole page (up to 9000 px tall).
     /// The answer, `{"data": "<base64>"}`, arrives as [`Event::AgentResult`] with `id` = `message_id`.
-    pub fn capture_screenshot(&self, view: ViewId, message_id: i32) {
+    pub fn capture_screenshot(&self, view: ViewId, message_id: i32, full_page: bool) {
         with_browser(view, |b| {
             let Some(host) = b.host() else { return };
-            let mut observer = ShotObserver::new(view);
+            let mut observer = ShotObserver::new(view, full_page, message_id);
             let reg = host.add_dev_tools_message_observer(Some(&mut observer));
             if let Some(reg) = reg {
                 STATE.with(|s| {
                     s.borrow_mut().shot_regs.insert(message_id, reg);
                 });
             }
-            let Some(params) = dictionary_value_create() else {
-                return;
-            };
-            params.set_string(
-                Some(&CefString::from("format")),
-                Some(&CefString::from("jpeg")),
-            );
-            params.set_int(Some(&CefString::from("quality")), 60);
-            let mut params = params;
-            host.execute_dev_tools_method(
-                message_id,
-                Some(&CefString::from("Page.captureScreenshot")),
-                Some(&mut params),
-            );
+            if full_page {
+                host.execute_dev_tools_method(
+                    message_id,
+                    Some(&CefString::from("Page.getLayoutMetrics")),
+                    None,
+                );
+            } else {
+                send_capture(&host, message_id, None);
+            }
         });
     }
 
