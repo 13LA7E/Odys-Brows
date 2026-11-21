@@ -872,6 +872,7 @@ impl Shell {
             }
             FromUi::OpenPrivateWindow => open_private_window(),
             FromUi::FocusWindow => engine.focus_ui(),
+            FromUi::SetNotchHidden { hidden } => engine.set_notch_hidden(hidden),
             FromUi::SetOverlayRects { rects } => {
                 let rects = rects
                     .iter()

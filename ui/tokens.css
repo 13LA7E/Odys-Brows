@@ -82,7 +82,7 @@
   --helm-h: 52px;
   --helm-bottom: 28px;
   --notch-h: 34px;
-  --notch-shift: 6px; /* the notch sits this far past the right edge, moving its icons right (keep NOTCH_SHIFT in engine-cef in step) */
+  --notch-shift: 0px; /* the notch sits this far past the right edge, moving its icons right (keep NOTCH_SHIFT in engine-cef in step) */
 }
 
 .private {

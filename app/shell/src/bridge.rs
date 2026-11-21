@@ -86,6 +86,10 @@ pub enum FromUi {
     OpenPrivateWindow,
     /// Bring our window forward and give it keyboard focus (a click while another app is on top).
     FocusWindow,
+    /// The notch slid away (true) or came back (false); see `Engine::set_notch_hidden`.
+    SetNotchHidden {
+        hidden: bool,
+    },
     /// Where the UI draws over the page area, so the page windows leave holes there (AUDIT-06).
     SetOverlayRects {
         rects: Vec<OverlayRect>,

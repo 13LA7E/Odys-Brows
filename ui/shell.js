@@ -328,6 +328,7 @@ export function renderShell(root, state) {
   regionsUsed = new Set();
   root.classList.toggle('private', !!state.private);
   root.dataset.overPage = state.page === 'web' ? '1' : '0';
+  syncNotch(root, state);
   if (state.settings?.accent) {
     applyAccent(state.settings.accent);
   }
@@ -757,6 +758,13 @@ export function renderShell(root, state) {
     }), { enter: true, exit: true }));
   }
 
+  if (notchAutoHide && state.live) {
+    add(region('notch-grip', 1, () => {
+      const grip = el('div', 'notch-grip');
+      grip.append(el('span'));
+      return grip;
+    }));
+  }
   add(region('notch', {
     count: state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
     open: !!state.shieldsOpen,
@@ -798,6 +806,67 @@ export function renderShell(root, state) {
   root.querySelector('.helm')?.classList.toggle('is-loading', !!state.isLoading && state.page === 'web');
   restoreFocus(root, focused);
   watchOverlays(root, state);
+}
+
+// --- Notch auto-hide (AUDIT-28) -------------------------------------------------------------
+// Over a web page the notch would cover the page's own top-right controls (a Sign in button,
+// an account menu). So it shows for a moment after the page appears, slides away, and comes back
+// while the pointer is in the top-right strip. Its hole in the page window shrinks to that strip
+// while hidden.
+let notchAutoHide = false;
+let notchHidden = false;
+let notchHideTimer = 0;
+let notchHover = false;
+let notchWired = false;
+
+function setNotchHidden(root, hidden) {
+  root.dataset.notch = hidden ? 'hidden' : 'shown';
+  if (hidden === notchHidden) return;
+  notchHidden = hidden;
+  if (hidden) {
+    // Let the slide-out finish inside the hole before the hole shrinks.
+    setTimeout(() => {
+      if (notchHidden) window.odysseyBridge?.(JSON.stringify({ type: 'set-notch-hidden', hidden: true }));
+    }, cssMs('--dur-base', 200) + 30);
+  } else {
+    window.odysseyBridge?.(JSON.stringify({ type: 'set-notch-hidden', hidden: false }));
+  }
+}
+
+function scheduleNotchHide(root, ms) {
+  clearTimeout(notchHideTimer);
+  notchHideTimer = setTimeout(() => {
+    if (notchAutoHide && !notchHover) setNotchHidden(root, true);
+  }, ms);
+}
+
+function syncNotch(root, state) {
+  const want = state.live === true && state.page === 'web' && !state.shieldsOpen
+    && !(state.prompts || []).some((p) => p.view === state.activeTab);
+  if (!notchWired && state.live) {
+    notchWired = true;
+    const near = (n) => n && n.closest && n.closest('.notch, .notch-grip');
+    root.addEventListener('pointerover', (e) => {
+      if (!near(e.target)) return;
+      notchHover = true;
+      clearTimeout(notchHideTimer);
+      if (notchAutoHide) setNotchHidden(root, false);
+    });
+    root.addEventListener('pointerout', (e) => {
+      if (!near(e.target) || near(e.relatedTarget)) return;
+      notchHover = false;
+      if (notchAutoHide) scheduleNotchHide(root, 700);
+    });
+  }
+  if (want && !notchAutoHide) {
+    notchAutoHide = true;
+    setNotchHidden(root, false);
+    scheduleNotchHide(root, 2500); // visible for a moment when the page appears
+  } else if (!want && notchAutoHide) {
+    notchAutoHide = false;
+    clearTimeout(notchHideTimer);
+    setNotchHidden(root, false);
+  }
 }
 
 // --- Overlays over the page (AUDIT-06) ---------------------------------------------------

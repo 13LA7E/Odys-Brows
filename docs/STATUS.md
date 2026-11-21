@@ -111,6 +111,11 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: notch covers page controls (owner choice: auto-hide)
+
+- The notch hid pages' top-right controls (YouTube's Sign in). Owner chose **auto-hide** and **shift back to 0**. Over a web page the notch shows for 2.5 s, slides away and comes back while the pointer is in a 4 px strip at the top-right (hides 0.7 s after leaving); on the new-tab and internal pages it stays. The page window's notch hole shrinks to that strip while hidden. Live check `tools/live_check/notch_autohide.py` (9 checks, including Win32 region tests); picture `out/live/notch-autohide.png`.
+- Window buttons are not reachable while hidden until the pointer goes to the top-right (by design of the choice).
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: owner feedback on the polish
 
 - **Removed** the click effect (ring and particles) from the sky, as asked.

@@ -101,6 +101,10 @@ struct State {
     /// windows cover the UI, so each of these is cut out of them (AUDIT-06).
     #[cfg_attr(not(windows), allow(dead_code))]
     overlay_holes: Vec<(ViewRect, i32)>,
+    /// While true the notch is slid away and only a thin strip of it is cut out of the page
+    /// windows (the hover strip that brings it back).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    notch_hidden: bool,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -171,6 +175,7 @@ fn update_page_window_region(
     height: i32,
     origin_x: i32,
     holes: &[(ViewRect, i32)],
+    notch_hidden: bool,
 ) {
     unsafe {
         let h = win.window_handle().0 as isize;
@@ -191,13 +196,18 @@ fn update_page_window_region(
         // Cutting out the notch leaves the main window's notch controls (shields, minimize,
         // maximize, close) visible and interactive.
         let notch_w = (224.0 * dpi).round() as i32;
-        let notch_h = (34.0 * dpi).round() as i32;
+        // Hidden: only a 4 DIP strip along the top stays cut out, so the pointer can reach it.
+        let notch_h = if notch_hidden {
+            (4.0 * dpi).round() as i32
+        } else {
+            (34.0 * dpi).round() as i32
+        };
         // Only the bottom-left corner is rounded (--r-notch: 0 0 0 14px): the round rectangle is
         // made taller and wider than the window so the other corners fall outside it.
         let r2 = (28.0 * dpi).round() as i32;
         // The UI notch sits NOTCH_SHIFT past the right edge (--notch-shift in tokens.css), so its
         // hole starts that much further right.
-        const NOTCH_SHIFT: f32 = 6.0;
+        const NOTCH_SHIFT: f32 = 0.0;
         let shift = (NOTCH_SHIFT * dpi).round() as i32;
         let notch_rgn = win32::CreateRoundRectRgn(
             (w - notch_w + shift).max(0),
@@ -267,6 +277,7 @@ fn refresh_holes() {
                 c.height.max(1),
                 b.x,
                 &s.overlay_holes,
+                s.notch_hidden,
             );
         }
     });
@@ -294,7 +305,7 @@ fn place(id: ViewId) {
         }));
         if page.visible {
             #[cfg(windows)]
-            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes);
+            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes, s.notch_hidden);
             win.show();
         } else {
             win.hide();
@@ -1544,6 +1555,21 @@ impl CefEngine {
         }
         #[cfg(not(windows))]
         let _ = changed;
+    }
+
+    /// Slide the notch away (or back): while hidden only a thin hover strip is cut out of the
+    /// page windows, so the whole page is usable underneath.
+    pub fn set_notch_hidden(&self, hidden: bool) {
+        let changed = STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            let changed = s.notch_hidden != hidden;
+            s.notch_hidden = hidden;
+            changed
+        });
+        if changed {
+            #[cfg(windows)]
+            refresh_holes();
+        }
     }
 
     /// Move keyboard focus from a page window to our UI (Ctrl+L, F6). Pages are separate
