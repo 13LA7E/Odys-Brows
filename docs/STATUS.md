@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
-| Current task | **Stage F, AUDIT-40 (privacy options)**, then 41, 35, 36, 37, 39, 42. STORE and AUDIT-38 are done; the owner should look at the General section screenshot (`out/live/settings-general-00.png`) before more Settings sections are built on that style. |
+| Current task | **Stage F, AUDIT-41 (changeable keyboard shortcuts)**, then 35, 36, 37, 39, 42. Done: STORE, AUDIT-38, AUDIT-40. |
 | State | Phase R is done except AUDIT-23 (blocked on D-013), AUDIT-31 (Linux) and the items listed as not done in PHASES. AUDIT-01, 03, 32, 33 and 34 are done and verified live (this session). Everything is verified on Windows only. **Uncommitted on purpose:** the D-024 rule edits (see below). |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
@@ -110,6 +110,13 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 Copy this template for each session:
 
 ```
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-40 privacy
+
+- Clear history and site data on exit, a working Global Privacy Control, "Clear history now". Details, the options I did not port (and why) and the live checks are in PHASES. New file `app/shell/src/privacy.rs`; new engine event `AppClosing`.
+- **Important fix:** a normal close used to leave an empty saved session (next start restored no tabs). Fixed; see PHASES.
+- Verified live: `privacy_clear.py` (17), plus `restore`, `data_pages`, `general_settings` (16), `passwords_page`, `sleep_session`, `popups_history`, `settings_fixes` all pass. Visual check unchanged. Not verified: Linux; the Chromium file names for site data on versions other than the bundled one.
+- Owner: please look at `docs/evidence/2026-11-21/settings-privacy.png`.
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: STORE and AUDIT-38
 

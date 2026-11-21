@@ -130,6 +130,22 @@ fn fields() -> Vec<Field> {
             kind: Kind::IntRange(0, 1440),
             default: || json!(10),
         },
+        // --- Privacy (AUDIT-40)
+        Field {
+            key: "globalPrivacyControl",
+            kind: Kind::Bool,
+            default: || json!(true),
+        },
+        Field {
+            key: "clearHistoryOnExit",
+            kind: Kind::Bool,
+            default: || json!(false),
+        },
+        Field {
+            key: "clearSiteDataOnExit",
+            kind: Kind::Bool,
+            default: || json!(false),
+        },
         // --- Passwords
         Field {
             key: "offerSavePasswords",
@@ -228,7 +244,8 @@ mod tests {
             "accent": "Rose", "trail": "Wide", "searchEngine": "Custom",
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
-            "sleepMinutes": 0, "offerSavePasswords": false, "autofillPasswords": false
+            "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
+            "clearSiteDataOnExit": true, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);

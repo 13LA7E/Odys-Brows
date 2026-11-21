@@ -15,6 +15,9 @@ export const DEFAULT_SETTINGS = {
   linkTarget: 'New tab',
   connections: 8,
   sleepMinutes: 10,
+  globalPrivacyControl: true,
+  clearHistoryOnExit: false,
+  clearSiteDataOnExit: false,
   offerSavePasswords: true,
   autofillPasswords: true,
 };
@@ -781,30 +784,53 @@ export function renderSettings(container, state, onUpdate) {
   } else if (currentSection === 'Privacy') {
     const title = el('h1', null, 'Privacy');
     title.style.cssText = 'margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px;color:var(--text-strong);';
-    const sub = el('div', null, 'Constellations sends zero telemetry or tracking data.');
-    sub.style.cssText = 'margin-top:8px;font-size:15px;color:var(--text-muted);';
-    content.append(title, sub);
+    content.append(title);
 
     const rows = el('div');
-    rows.style.cssText = 'margin-top:28px;';
+    rows.style.cssText = 'margin-top:20px;';
+    const rerender = () => renderSettings(container, state, onUpdate);
+    const toggle = (key, on) => (val) => {
+      settings[key] = val;
+      saveSettings(settings);
+      rerender();
+    };
 
     rows.append(makeRow(
-      'Global Privacy Control (GPC)',
-      'Notify websites not to sell or share your browsing data.',
-      makeSwitch(settings.doNotTrack !== false, (val) => {
-        settings.doNotTrack = val;
-        saveSettings(settings);
-        renderSettings(container, state, onUpdate);
-      })
+      'Global Privacy Control',
+      'Tell websites not to sell or share your data (sent with every web request).',
+      makeSwitch(settings.globalPrivacyControl !== false, toggle('globalPrivacyControl'))
     ));
 
-    const clearBtn = makeButton('Clear browsing data', false, () => {
+    const group = el('div', null, 'Clear when Constellations closes');
+    group.style.cssText = 'font-size:14.5px;font-weight:600;color:var(--text-strong);margin:22px 0 2px 0;';
+    rows.append(group);
+    rows.append(makeRow(
+      'Browsing history',
+      'History, closed tabs, favicons and suggestions. Open tabs stay.',
+      makeSwitch(!!settings.clearHistoryOnExit, toggle('clearHistoryOnExit'))
+    ));
+    rows.append(makeRow(
+      'Cookies and site data',
+      'Signs you out of websites. Saved passwords stay.',
+      makeSwitch(!!settings.clearSiteDataOnExit, toggle('clearSiteDataOnExit'))
+    ));
+
+    const clearBtn = makeButton('Clear history now', false, () => {
       if (typeof window.odysseyBridge === 'function') {
         window.odysseyBridge(JSON.stringify({ type: 'clear-all-history' }));
       }
-      alert('Browsing history and cached data cleared.');
+      state.privacyStatus = 'History cleared';
+      rerender();
     });
-    rows.append(makeRow('Clear data', 'Delete all browsing history and session visits.', clearBtn));
+    const clearRow = el('div');
+    clearRow.style.cssText = 'display:flex;align-items:center;gap:14px;margin-top:18px;';
+    clearRow.append(clearBtn);
+    if (state.privacyStatus) {
+      const st = el('span', null, state.privacyStatus);
+      st.style.cssText = 'font-size:13.5px;color:var(--text-soft);';
+      clearRow.append(st);
+    }
+    rows.append(clearRow);
 
     content.append(rows);
   } else if (currentSection === 'Shortcuts') {

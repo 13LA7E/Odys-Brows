@@ -10,6 +10,7 @@ mod auth;
 mod brand;
 mod bridge;
 mod extensions;
+mod privacy;
 mod selftest;
 mod settings;
 
@@ -191,6 +192,9 @@ struct Shell {
     active_downloads: HashMap<u32, Option<ViewId>>,
     /// The URL last written to history per tab, so one navigation isn't recorded twice.
     last_recorded: HashMap<ViewId, String>,
+    /// The app is closing: the pages closing with it must not change the saved session or the
+    /// closed-tabs list (a normal close used to save an empty session).
+    quitting: bool,
     /// "Save password?" questions waiting for an answer. The password stays here, in Rust.
     pending_logins: HashMap<u64, PendingLogin>,
     /// "Which login?" questions: request -> (tab, site key).
@@ -262,6 +266,7 @@ impl Default for Shell {
             download_paths: HashMap::new(),
             active_downloads: HashMap::new(),
             last_recorded: HashMap::new(),
+            quitting: false,
             pending_logins: HashMap::new(),
             pending_fills: HashMap::new(),
             next_request: 0,
@@ -468,7 +473,7 @@ impl Shell {
             self.shown = None;
         }
 
-        if self.is_private {
+        if self.is_private || self.quitting {
             return None;
         }
 
@@ -582,6 +587,9 @@ impl Shell {
     /// (called by a timer) writes what is still pending.
     fn persist_session(&self) {
         if self.is_private {
+            return;
+        }
+        if self.quitting {
             return;
         }
         self.persist_dirty.set(true);
@@ -1172,6 +1180,7 @@ impl Shell {
             }
             FromUi::SaveSettings { settings } => {
                 let settings = settings::normalize(&settings);
+                engine.set_global_privacy_control(settings["globalPrivacyControl"] != false);
                 if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
                     segdl::set_connections(c as usize);
                 }
@@ -1192,6 +1201,7 @@ impl Shell {
                 if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
                     segdl::set_connections(c as usize);
                 }
+                engine.set_global_privacy_control(settings["globalPrivacyControl"] != false);
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
                 for t in &self.tabs {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
@@ -1739,6 +1749,22 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::ShortcutPrevTab => {
                 s.handle(&mut CefEngine, FromUi::PrevTab);
             }
+            engine_api::Event::AppClosing => {
+                if !s.quitting {
+                    // Save the session as it is now, then ignore the pages closing after it.
+                    s.persist_dirty.set(true);
+                    s.flush_session();
+                    s.quitting = true;
+                    // Clear history on exit: let go of the database so its file can be removed
+                    // once the engine has shut down (Windows can't delete a file that's open).
+                    if !s.is_private
+                        && privacy::Flags::from_settings(&load_settings_or_default(&profile_dir()))
+                            .history
+                    {
+                        s.history = None;
+                    }
+                }
+            }
             engine_api::Event::ShortcutNewPrivateWindow => open_private_window(),
             engine_api::Event::ShortcutQuit => CefEngine.quit(),
             engine_api::Event::ShortcutFocusAddress => {
@@ -1818,6 +1844,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::ShortcutNewTab
                 | engine_api::Event::ShortcutNewPrivateWindow
                 | engine_api::Event::ShortcutQuit
+                | engine_api::Event::AppClosing
                 | engine_api::Event::ShortcutCloseTab { .. }
                 | engine_api::Event::ShortcutReload { .. }
                 | engine_api::Event::ShortcutBack { .. }
@@ -1924,6 +1951,19 @@ fn main() {
         let _ = PROFILE_OVERRIDE.set(p.clone());
     }
     let start_profile = profile_arg.clone();
+    // "Clear when Constellations closes" (AUDIT-40): the clearing runs once the engine has shut
+    // down, and again here at the next start when the last run didn't end cleanly.
+    let managed = !is_private && !any_selftest;
+    if managed {
+        let profile = profile_dir();
+        if privacy::mark_running(&profile) {
+            let flags = privacy::Flags::from_settings(&load_settings_or_default(&profile));
+            let report = privacy::clear(&profile, flags);
+            if !report.failed.is_empty() {
+                eprintln!("Couldn't clear everything: {:?}", report.failed);
+            }
+        }
+    }
     let result = engine_cef::run(
         move || engine_cef::StartOptions {
             // Self-tests use a throwaway profile so they never touch real data.
@@ -1971,6 +2011,14 @@ fn main() {
     match result {
         Ok(engine_cef::Role::Helper(code)) => std::process::exit(code),
         Ok(engine_cef::Role::BrowserFinished) => {
+            if managed {
+                let profile = profile_dir();
+                let flags = privacy::Flags::from_settings(&load_settings_or_default(&profile));
+                let report = privacy::on_clean_exit(&profile, flags);
+                if !report.failed.is_empty() {
+                    eprintln!("Couldn't clear everything: {:?}", report.failed);
+                }
+            }
             if any_selftest {
                 std::process::exit(if selftest::result() == Some(true) {
                     0
@@ -2490,6 +2538,23 @@ mod tests {
 
         assert_eq!(shell.closed_tabs.len(), 1);
         assert_eq!(shell.closed_tabs[0].url, "https://new.example");
+    }
+
+    #[test]
+    fn pages_closing_with_the_app_are_not_recorded_or_saved() {
+        let mut shell = Shell::default();
+        shell.tabs.push(Tab::new(30, None));
+        shell.tab_urls.insert(30, "https://closing.example".into());
+        shell.quitting = true;
+        assert!(
+            shell.close_tab(30).is_none(),
+            "no closed-tab record while quitting"
+        );
+        assert!(shell.closed_tabs.is_empty());
+        assert!(
+            !shell.persist_dirty.get(),
+            "nothing is queued for the session file"
+        );
     }
 
     #[test]

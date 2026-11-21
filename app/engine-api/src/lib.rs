@@ -183,6 +183,9 @@ pub enum Event {
     },
     ShortcutRelightClosedTab,
     ShortcutQuit,
+    /// The browser is closing (every route: the close button, Alt+F4, the taskbar). Sent once,
+    /// before the pages close, so the shell can save the session first.
+    AppClosing,
     ShortcutNewPrivateWindow,
     ShortcutPrint {
         view: ViewId,

@@ -79,9 +79,9 @@ try:
     # custom engine
     open_general()
     pick_engine('Custom')
+    wait(lambda: ui("document.querySelectorAll('.settings-content input').length") == 2, 5, 0.1)
     ui("(()=>{const i=[...document.querySelectorAll('.settings-content input')]; i[1].value='javascript:alert(1)%s'; i[1].dispatchEvent(new Event('input',{bubbles:true}))})()")
-    time.sleep(0.3)
-    note = S("[...document.querySelectorAll('.settings-content div')].map(d=>d.textContent).find(t=>t.startsWith('Use http'))")
+    note = wait(lambda: (lambda n: n if isinstance(n, str) and n.startswith('"Use http') else None)(S("[...document.querySelectorAll('.settings-content div')].map(d=>d.textContent).find(t=>t.startsWith('Use http'))")), 4, 0.2)
     check('a bad custom URL is refused with a message', isinstance(note, str) and 'Use http or https' in note, note)
     ui("(()=>{const i=[...document.querySelectorAll('.settings-content input')]; i[0].value='Mine'; i[0].dispatchEvent(new Event('input',{bubbles:true})); i[1].value='https://example.com/find?term=%s&x=1'; i[1].dispatchEvent(new Event('input',{bubbles:true}))})()")
     time.sleep(0.5)

@@ -37,6 +37,9 @@ pub struct StartOptions {
     pub extension_paths: Vec<String>,
 }
 
+/// Send `Sec-GPC: 1` (Global Privacy Control) with web requests (Settings > Privacy).
+static GPC_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 static EXTENSION_PATHS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 /// Why the engine could not start, in words we can show the user.
@@ -409,7 +412,8 @@ wrap_window_delegate! {
         }
 
         fn can_close(&self, _window: Option<&mut Window>) -> i32 {
-            // Closing the main window closes every page with it.
+            // Tell the shell first (it saves the session), then close every page with the window.
+            emit(Event::AppClosing);
             let windows: Vec<Window> = STATE.with(|s| {
                 s.borrow().pages.values().filter_map(|p| p.window.clone()).collect()
             });
@@ -1310,6 +1314,16 @@ wrap_resource_request_handler! {
                 return ReturnValue::CONTINUE;
             }
 
+            if GPC_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+                && (url_str.starts_with("https://") || url_str.starts_with("http://"))
+            {
+                req.set_header_by_name(
+                    Some(&CefString::from("Sec-GPC")),
+                    Some(&CefString::from("1")),
+                    1,
+                );
+            }
+
             let source_url = frame
                 .map(|f| CefString::from(&f.url()).to_string())
                 .unwrap_or_default();
@@ -1620,6 +1634,11 @@ impl CefEngine {
             #[cfg(windows)]
             refresh_holes();
         }
+    }
+
+    /// Turn the Global Privacy Control header on or off.
+    pub fn set_global_privacy_control(&self, on: bool) {
+        GPC_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The main window's native handle (0 when not known), for dialogs shown over it.
