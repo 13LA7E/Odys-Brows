@@ -875,6 +875,24 @@ wrap_display_handler! {
                 }
                 return 1;
             }
+            if let Some(v) = text.strip_prefix("__ody_agent__:") {
+                if v.len() < 200_000
+                    && let Some((id, json)) = v.split_once(':')
+                    && let Ok(id) = id.parse::<u64>()
+                {
+                    emit(Event::AgentResult { view: self.id, id, json: json.to_string() });
+                }
+                return 1;
+            }
+            if let Some(v) = text.strip_prefix("__ody_agent__:") {
+                if v.len() < 200_000
+                    && let Some((id, json)) = v.split_once(':')
+                    && let Ok(id) = id.parse::<u64>()
+                {
+                    emit(Event::AgentResult { view: self.id, id, json: json.to_string() });
+                }
+                return 1;
+            }
             if text == "__ody_fill__:1" {
                 emit(Event::LoginFieldClicked { view: self.id });
                 return 1;
@@ -1551,6 +1569,26 @@ impl CefEngine {
 
     /// Fill the login form the user clicked in this page (autofill). The site was already checked
     /// by the caller against the browser's own record of the tab's URL.
+    /// Run a script in a web page for the assistant (page control). The answer comes back as
+    /// [`Event::AgentResult`] through the console, so nothing in the page gets a way to call us.
+    pub fn run_page_script(&self, view: ViewId, script: &str) {
+        with_browser(view, |b| {
+            if let Some(f) = b.main_frame() {
+                f.execute_java_script(Some(&CefString::from(script)), None, 0);
+            }
+        });
+    }
+
+    /// Run a script in a web page for the assistant (page control). The answer comes back as
+    /// [`Event::AgentResult`] through the console, so nothing in the page gets a way to call us.
+    pub fn run_page_script(&self, view: ViewId, script: &str) {
+        with_browser(view, |b| {
+            if let Some(f) = b.main_frame() {
+                f.execute_java_script(Some(&CefString::from(script)), None, 0);
+            }
+        });
+    }
+
     pub fn fill_login(&self, view: ViewId, username: &str, password: &str) {
         let script = fill_login_script(username, password);
         with_browser(view, |b| {

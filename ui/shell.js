@@ -780,7 +780,8 @@ export function renderShell(root, state) {
   }
 
   // Permission and certificate questions for the tab being shown (AUDIT-21).
-  const prompt = (state.prompts || []).find((p) => p.view === state.activeTab);
+  // The assistant's "allow this?" question shows whatever tab it is working in.
+  const prompt = (state.prompts || []).find((p) => p.view === state.activeTab || p.kind === 'agent-confirm');
   if (prompt) {
     add(region('prompt', prompt, () => renderPromptCard(prompt, (answer) => {
       state.prompts = state.prompts.filter((p) => p !== prompt);
@@ -790,6 +791,7 @@ export function renderShell(root, state) {
           certificate: { type: 'answer-certificate', request: prompt.request, proceed: answer },
           'save-login': { type: 'answer-save-login', request: prompt.request, action: answer },
           'fill-choice': { type: 'answer-fill', request: prompt.request, id: answer },
+          'agent-confirm': { type: 'agent-answer', request: prompt.request, allow: !!answer },
         };
         window.odysseyBridge(JSON.stringify(msgs[prompt.kind]));
       }

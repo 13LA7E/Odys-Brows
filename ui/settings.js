@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS = {
   reduceMotion: 'Auto',
   pinnedExtensions: [],
   aiTools: true,
+  aiControl: true,
   radius: 'Default',
   uiScale: '100%',
   showNavButtons: true,
@@ -754,6 +755,16 @@ export function renderSettings(container, state, onUpdate) {
 
     // What the assistant may do for you (local and cloud models; Odysseus has its own tools).
     if (edit.provider === 'local' || edit.provider === 'cloud') {
+      rows.append(makeRow(
+        'Control the page',
+        'Let the assistant read the tab you are on and click, type, scroll and switch tabs for you. It asks first before anything that buys, sends or deletes, and never fills in passwords or card numbers. Needs the switch above.',
+        makeSwitch(settings.aiControl !== false && settings.aiTools !== false, (val) => {
+          settings.aiControl = val;
+          saveSettings(settings);
+          if (onUpdate) onUpdate('aiControl', val);
+          renderSettings(container, state, onUpdate);
+        })
+      ));
       rows.append(makeRow(
         'Search and open pages',
         'Let the assistant search the web, read pages and open tabs when you ask. Each step is shown in the answer. It never fills in forms or uses your passwords.',

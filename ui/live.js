@@ -127,6 +127,8 @@ export async function startLive() {
       if (!target.text) target.text = `Error: ${ev.data}`;
     } else if (ev.type === 'done') {
       target.done = true;
+      // A question to you is void once the assistant has finished or been stopped.
+      if (state.prompts?.some((p) => p.kind === 'agent-confirm')) state.prompts = state.prompts.filter((p) => p.kind !== 'agent-confirm');
       if (origin === 'chat' && state.chat) {
         const m = { role: 'assistant', text: target.text || '(No answer)', steps: target.steps, sources: target.sources };
         state.chat.messages = [...state.chat.messages, m];
@@ -197,6 +199,10 @@ export async function startLive() {
         state.page = 'none';
         state.helm = { kind: 'empty' };
       }
+      renderShellLive();
+    } else if (msg.type === 'agent-confirm') {
+      state.prompts = (state.prompts || []).filter((p) => p.kind !== 'agent-confirm');
+      state.prompts.push({ kind: 'agent-confirm', view: state.activeTab, request: msg.request, text: msg.text });
       renderShellLive();
     } else if (msg.type === 'toggle-ask') {
       revealHelm();

@@ -134,6 +134,12 @@ pub enum Event {
     /// A keyboard shortcut the user pressed in a page window: the id of the command it is bound
     /// to (see the shell's `shortcuts.rs`). The bindings come from `set_key_bindings`.
     Command { view: ViewId, id: String },
+    /// A page answered a script the assistant ran in it (see the shell's `agent`): the request id
+    /// and the JSON text it produced. Page content is untrusted; the id only routes the answer.
+    AgentResult { view: ViewId, id: u64, json: String },
+    /// A page answered a script the assistant ran in it (see the shell's `agent`): the request id
+    /// and the JSON text it produced. Page content is untrusted; the id only routes the answer.
+    AgentResult { view: ViewId, id: u64, json: String },
     /// Alt+F4: close the whole browser (not rebindable).
     ShortcutQuit,
     /// The browser is closing (every route: the close button, Alt+F4, the taskbar). Sent once,

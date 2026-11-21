@@ -231,6 +231,10 @@ Written while finishing AUDIT-35 to 42. Each item can be reopened; none changes 
 - **Left out for good (D-025):** light themes, rail on the right, tab style and tab bar position, window blur and window opacity.
 - **Interface size** (90 to 125%) scales the whole interface with CSS zoom; the page windows follow because the rail width and the holes are reported in screen pixels.
 
+## D-027 Assistant page control. Proposed (needs the owner's OK)
+
+The assistant may run small scripts in the tab being shown to read it and to click, type, select and scroll (the shell already did this for password autofill; this is more). It is bounded by: no passwords, card numbers or code fields; a confirmation card before risky clicks; public web addresses only; a Settings switch (default on) and off in private windows; every step visible. The alternative is to ship it off by default. Decide, and say if the confirmation words list (buy, pay, send, delete, submit, subscribe, accept, install, sign out...) should be longer or shorter.
+
 ## Open questions for the owner
 
 | ID | Question | Needed by |

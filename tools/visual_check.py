@@ -45,7 +45,14 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 def serve():
     handler = functools.partial(_QuietHandler, directory=str(ROOT))
-    httpd = socketserver.TCPServer(("127.0.0.1", 0), handler)
+    # Threaded, with a long queue: the UI is many small modules the browser asks for at once, and a
+    # one-request-at-a-time server drops some of them (the first board then fails to load).
+    class _Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        request_queue_size = 128
+        allow_reuse_address = True
+
+    httpd = _Server(("127.0.0.1", 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, httpd.server_address[1]
 

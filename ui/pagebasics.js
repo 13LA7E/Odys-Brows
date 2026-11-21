@@ -215,6 +215,7 @@ export function renderPromptCard(prompt, onAnswer) {
     certificate: () => "This connection isn't private",
     'save-login': () => `${prompt.update ? 'Update' : 'Save'} password for ${prompt.host}?`,
     'fill-choice': () => `Fill a saved login for ${prompt.host}?`,
+    'agent-confirm': () => prompt.text,
   };
   const title = el('div', null, heading[prompt.kind]());
   title.style.cssText = 'font-size:15.5px;line-height:1.5;color:var(--text);';
@@ -241,6 +242,8 @@ export function renderPromptCard(prompt, onAnswer) {
   };
   if (prompt.kind === 'permission') {
     row.append(btn('Block', false, false), btn('Allow', true, true));
+  } else if (prompt.kind === 'agent-confirm') {
+    row.append(btn('No', false, false), btn('Yes, do it', true, true));
   } else if (prompt.kind === 'certificate') {
     row.append(btn('Go back', false, false), btn('Continue anyway', true, true));
   } else if (prompt.kind === 'save-login') {

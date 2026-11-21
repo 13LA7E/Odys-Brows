@@ -8,6 +8,7 @@
     windows_subsystem = "windows"
 )]
 
+mod agent_js;
 mod auth;
 mod brand;
 mod bridge;
@@ -37,6 +38,11 @@ const RAIL_WIDTH: i32 = 56;
 /// Where the profile lives: `%LOCALAPPDATA%\<name>` on Windows, `$XDG_DATA_HOME/<name>` or
 /// `~/.local/share/<name>` on Linux, the temp folder as a last resort.
 static PROFILE_OVERRIDE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+thread_local! {
+    /// The shell, reachable from tasks posted to the UI thread (the assistant's page control).
+    static SHELL_REF: RefCell<Option<Rc<RefCell<Shell>>>> = const { RefCell::new(None) };
+}
 
 fn profile_dir() -> PathBuf {
     // `--profile-dir=` moves the shell's own files (settings, session, history, vault) too.
@@ -185,6 +191,11 @@ struct Shell {
     history: Option<HistoryStore>,
     tab_visit_id: HashMap<ViewId, i64>,
     tab_urls: HashMap<ViewId, String>,
+    /// Page scripts the assistant started, waiting for the page's answer: request id -> (tab, reply).
+    agent_pending: HashMap<u64, (ViewId, tokio::sync::oneshot::Sender<String>)>,
+    /// Questions to the user ("allow this click?") waiting for the answer.
+    agent_confirms: HashMap<u64, tokio::sync::oneshot::Sender<String>>,
+    agent_next: u64,
     tab_titles: HashMap<ViewId, String>,
     closed_tabs: VecDeque<ClosedTabRecord>,
     next_closed_id: u64,
@@ -262,6 +273,9 @@ impl Default for Shell {
             history: None,
             tab_visit_id: HashMap::new(),
             tab_urls: HashMap::new(),
+            agent_pending: HashMap::new(),
+            agent_confirms: HashMap::new(),
+            agent_next: 0,
             tab_titles: HashMap::new(),
             closed_tabs: VecDeque::new(),
             next_closed_id: 1,
@@ -529,6 +543,136 @@ impl Shell {
             wallpaper::load(&profile_dir())
         };
         engine.send_to_ui(&bridge::to_json(&ToUi::Wallpaper { data, error }));
+    }
+
+    fn next_agent_id(&mut self) -> u64 {
+        self.agent_next += 1;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64)
+            .unwrap_or(0);
+        // Not guessable by a page that only sees earlier ids: counter in the low bits, noise above.
+        (nanos << 20) | (self.agent_next & 0xFFFFF)
+    }
+
+    fn is_web_tab(&self, view: ViewId) -> bool {
+        self.tab_urls
+            .get(&view)
+            .is_some_and(|u| u.starts_with("http://") || u.starts_with("https://"))
+    }
+
+    /// Does one thing the assistant asked for. Always answers `tx` (or drops it, which the
+    /// assistant reads as "no answer").
+    fn agent_request(
+        &mut self,
+        engine: &mut CefEngine,
+        req: ai::HostRequest,
+        tx: tokio::sync::oneshot::Sender<String>,
+    ) {
+        use ai::HostRequest as R;
+        match req {
+            R::Script { name, args } => {
+                let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) else {
+                    let _ = tx.send(
+                        "No web page is open in this tab. Use new_tab or navigate first.".into(),
+                    );
+                    return;
+                };
+                let id = self.next_agent_id();
+                let Some(script) = agent_js::script(&name, &args, id) else {
+                    let _ = tx.send(format!("Unknown action {name}."));
+                    return;
+                };
+                self.agent_pending.insert(id, (view, tx));
+                engine.run_page_script(view, &script);
+            }
+            R::ListTabs => {
+                let mut out = String::new();
+                for t in &self.tabs {
+                    let url = self.tab_urls.get(&t.view).map(String::as_str).unwrap_or("");
+                    let title = self
+                        .tab_titles
+                        .get(&t.view)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    let space = ["Home", "Work", "Personal"][t.space.min(2)];
+                    out.push_str(&format!(
+                        "id {}{} [{}] {} - {}\n",
+                        t.view,
+                        if Some(t.view) == self.shown {
+                            " (shown)"
+                        } else {
+                            ""
+                        },
+                        space,
+                        title.chars().take(60).collect::<String>(),
+                        url.chars().take(100).collect::<String>()
+                    ));
+                }
+                let _ = tx.send(if out.is_empty() {
+                    "No tabs.".into()
+                } else {
+                    out
+                });
+            }
+            R::SwitchTab(id) => {
+                if self.contains(id) {
+                    self.show(engine, id);
+                    engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: id }));
+                    let _ = tx.send(format!("Switched to tab {id}."));
+                } else {
+                    let _ = tx.send(format!("There is no tab {id}."));
+                }
+            }
+            R::CloseTab(id) => {
+                if self.contains(id) {
+                    self.handle(engine, FromUi::Close { view: Some(id) });
+                    let _ = tx.send(format!("Closed tab {id}."));
+                } else {
+                    let _ = tx.send(format!("There is no tab {id}."));
+                }
+            }
+            R::Navigate(url) => match self.shown.filter(|v| self.is_web_tab(*v)) {
+                Some(view) => {
+                    engine.navigate(view, &url);
+                    let _ = tx.send(format!("Going to {url}."));
+                }
+                None => {
+                    self.handle(
+                        engine,
+                        FromUi::Open {
+                            url: url.clone(),
+                            opener: None,
+                        },
+                    );
+                    let _ = tx.send(format!("Opened {url}."));
+                }
+            },
+            R::History(kind) => {
+                if let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) {
+                    match kind.as_str() {
+                        "back" => engine.go_back(view),
+                        "forward" => engine.go_forward(view),
+                        _ => engine.reload(view),
+                    }
+                    let _ = tx.send(format!("Did {kind}."));
+                } else {
+                    let _ = tx.send("No web page is open in this tab.".into());
+                }
+            }
+            R::NewTab(url) => {
+                self.handle(engine, FromUi::Open { url, opener: None });
+                let _ = tx.send(format!(
+                    "Opened a new tab (id {}).",
+                    self.shown.unwrap_or(0)
+                ));
+            }
+            R::Confirm(text) => {
+                let id = self.next_agent_id();
+                self.agent_confirms.insert(id, tx);
+                engine.send_to_ui(&bridge::to_json(&ToUi::AgentConfirm { request: id, text }));
+            }
+        }
     }
 
     fn shortcuts_now(&self) -> serde_json::Value {
@@ -1725,7 +1869,14 @@ impl Shell {
                     });
                 });
             }
+            FromUi::AgentAnswer { request, allow } => {
+                if let Some(tx) = self.agent_confirms.remove(&request) {
+                    let _ = tx.send(if allow { "yes" } else { "no" }.into());
+                }
+            }
             FromUi::AiCancel => {
+                // Questions waiting for you are void once the assistant is stopped.
+                self.agent_confirms.clear();
                 self.ai_cancel.store(true, Ordering::Relaxed);
             }
             FromUi::AiAsk {
@@ -1740,7 +1891,26 @@ impl Shell {
                 let config = self.ai_config.clone();
                 let dir = profile_dir();
                 let save = !self.is_private;
-                let tools = save && load_settings_or_default(&dir)["aiTools"] != false;
+                let settings_now = load_settings_or_default(&dir);
+                let tools = save && settings_now["aiTools"] != false;
+                // Page control (click, type, scroll, tabs): needs the tools, and is off in private windows.
+                let host: Option<ai::Host> = if tools && settings_now["aiControl"] != false {
+                    Some(Arc::new(|req: ai::HostRequest| {
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        CefEngine.post_ui(move || {
+                            SHELL_REF.with(|r| {
+                                if let Some(sh) = r.borrow().as_ref()
+                                    && let Ok(mut s) = sh.try_borrow_mut()
+                                {
+                                    s.agent_request(&mut CefEngine, req, tx);
+                                }
+                            });
+                        });
+                        rx
+                    }))
+                } else {
+                    None
+                };
 
                 // History: what was said before in this conversation, then the new question.
                 let mut history: Vec<ai::ChatMessage> = Vec::new();
@@ -1793,6 +1963,7 @@ impl Shell {
                                 history,
                                 context.as_deref(),
                                 tools,
+                                host,
                                 cancel,
                                 move |ev| {
                                     match &ev {
@@ -2055,6 +2226,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     let pending_events: Rc<RefCell<VecDeque<engine_api::Event>>> =
         Rc::new(RefCell::new(VecDeque::new()));
     let pending_events_sink = pending_events.clone();
+    SHELL_REF.with(|r| *r.borrow_mut() = Some(shell.clone()));
     let events_shell = shell.clone();
     fn dispatch_engine_event(s: &mut Shell, event: &engine_api::Event) {
         match event {
@@ -2094,6 +2266,17 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::FormInputChanged { view, has_input } => {
                 if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
                     t.has_form_input = *has_input;
+                }
+            }
+            engine_api::Event::AgentResult { view, id, json } => {
+                if let Some((v, tx)) = s.agent_pending.remove(id) {
+                    if v == *view {
+                        let text =
+                            serde_json::from_str::<String>(json).unwrap_or_else(|_| json.clone());
+                        let _ = tx.send(text);
+                    } else {
+                        s.agent_pending.insert(*id, (v, tx));
+                    }
                 }
             }
             engine_api::Event::AudioChanged { view, playing } => {
@@ -2149,6 +2332,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::LoginFieldClicked { .. }
                 | engine_api::Event::ShortcutQuit
                 | engine_api::Event::AppClosing
+                | engine_api::Event::AgentResult { .. }
                 | engine_api::Event::Command { .. }
                 | engine_api::Event::NewWindowRequested { .. }
         )

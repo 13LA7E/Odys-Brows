@@ -296,6 +296,11 @@ pub enum FromUi {
     ChatClearAll,
     /// Cancel active AI request (P7-01, P7-03).
     AiCancel,
+    /// The user's answer to a question the assistant asked before doing something on a page.
+    AgentAnswer {
+        request: u64,
+        allow: bool,
+    },
     /// Test an AI provider connection from Settings (P7-01, P7-02).
     AiTestConnection {
         config: ai::AiConfig,
@@ -467,6 +472,12 @@ pub enum ToUi {
     Wallpaper {
         data: Option<String>,
         error: Option<String>,
+    },
+    /// The assistant wants to do something that needs your OK (click a button that buys, sends or
+    /// deletes). Answer with `agent-answer`.
+    AgentConfirm {
+        request: u64,
+        text: String,
     },
     /// Saved conversations, newest first.
     ChatList {
