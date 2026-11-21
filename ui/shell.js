@@ -247,17 +247,20 @@ function panelSig(state) {
 
 /** Sky options from live state, falling back to the saved settings. */
 function skyOptions(state) {
-  const mode = String(state.starsMode || state.settings?.stars || 'still').toLowerCase();
-  const comets = state.shootingStars ?? state.settings?.shootingStars ?? false;
-  const cursor = state.settings?.starsFollowCursor !== false;
-  return { mode, comets: !!comets, cursor };
+  const set = state.settings || {};
+  let mode = String(state.starsMode || set.stars || 'still').toLowerCase();
+  let comets = !!(state.shootingStars ?? set.shootingStars ?? false);
+  let cursor = set.starsFollowCursor !== false;
+  // Low power (AUDIT-36): a still sky, no comets, no cursor links: nothing runs.
+  if (set.lowPower === true && mode !== 'off') { mode = 'still'; comets = false; cursor = false; }
+  return { mode, comets, cursor, density: set.skyDensity || '100%', speed: set.skySpeed || 'Normal', cometRate: set.cometRate || 'Normal' };
 }
 
 function mountSky(state, add) {
   const first = state.sky && state.sky[0];
   const so = skyOptions(state);
   const key = JSON.stringify([
-    so.mode, so.comets, so.cursor, !!state.private, starColour(state.settings, !!state.private),
+    so.mode, so.comets, so.cursor, so.density, so.speed, so.cometRate, !!state.private, starColour(state.settings, !!state.private),
     window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
     first ? [first.x, first.y] : 0,
   ]);
@@ -268,11 +271,15 @@ function mountSky(state, add) {
       mode: so.mode,
       shootingStars: so.comets,
       cursor: so.cursor,
+      density: so.density,
+      speed: so.speed,
+      cometRate: so.cometRate,
       starColor: starColour(state.settings, !!state.private),
       private: state.private,
     });
     skyKey = key;
   }
+  window.__skyInfo = () => skyHandle?.info();
   add(skyHandle.canvas);
   // A web page covers the sky; don't animate what nobody can see (AUDIT-34).
   skyHandle.setPaused(state.live === true && state.page === 'web');

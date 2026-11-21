@@ -24,6 +24,10 @@ export const DEFAULT_SETTINGS = {
   offerSavePasswords: true,
   autofillPasswords: true,
   shortcuts: {},
+  skyDensity: '100%',
+  skySpeed: 'Normal',
+  cometRate: 'Normal',
+  lowPower: false,
   theme: 'Default',
   customThemes: {},
 };
@@ -362,6 +366,25 @@ export function renderSettings(container, state, onUpdate) {
         renderSettings(container, state, onUpdate);
       })
     ));
+
+    // Sky options (AUDIT-36). Not in the approved design, so fixture mode leaves them out. Each one
+    // only shows when it can do something: no stars, nothing to tune; no drifting, no speed.
+    if (!document.documentElement.classList.contains('fixture') && (settings.stars || 'Still') !== 'Off') {
+      const pick = (key) => (v) => {
+        settings[key] = v;
+        saveSettings(settings);
+        if (onUpdate) onUpdate(key, v);
+        renderSettings(container, state, onUpdate);
+      };
+      rows.append(makeRow('Star density', 'How many stars are drawn.', makeSegmented(['25%', '50%', '75%', '100%'], settings.skyDensity || '100%', pick('skyDensity'))));
+      if (settings.stars === 'Drifting') {
+        rows.append(makeRow('Drift speed', 'How fast the stars move.', makeSegmented(['Slow', 'Normal', 'Fast'], settings.skySpeed || 'Normal', pick('skySpeed'))));
+      }
+      if (settings.shootingStars) {
+        rows.append(makeRow('Shooting star rate', 'How often a comet crosses.', makeSegmented(['Rare', 'Normal', 'Often'], settings.cometRate || 'Normal', pick('cometRate'))));
+      }
+      rows.append(makeRow('Low power', 'A still sky: no drifting, comets or cursor lines. Saves battery.', makeSwitch(settings.lowPower === true, (val) => pick('lowPower')(val))));
+    }
 
     // Themes (AUDIT-35)
     // Not in the approved design, so fixture mode leaves it out.

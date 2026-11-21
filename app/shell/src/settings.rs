@@ -141,6 +141,27 @@ fn fields() -> Vec<Field> {
             kind: Kind::Bool,
             default: || json!(true),
         },
+        // --- Sky options (AUDIT-36)
+        Field {
+            key: "skyDensity",
+            kind: Kind::Choice(&["25%", "50%", "75%", "100%"]),
+            default: || json!("100%"),
+        },
+        Field {
+            key: "skySpeed",
+            kind: Kind::Choice(&["Slow", "Normal", "Fast"]),
+            default: || json!("Normal"),
+        },
+        Field {
+            key: "cometRate",
+            kind: Kind::Choice(&["Rare", "Normal", "Often"]),
+            default: || json!("Normal"),
+        },
+        Field {
+            key: "lowPower",
+            kind: Kind::Bool,
+            default: || json!(false),
+        },
         // --- Appearance
         Field {
             key: "accent",
@@ -316,7 +337,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);

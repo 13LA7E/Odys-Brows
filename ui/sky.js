@@ -79,12 +79,17 @@ export function createSky(container, options = {}) {
     }
   }
 
+  // Star density option (AUDIT-36): keep a fixed share of the stars (100% = all, the design).
+  const keep = { '25%': 25, '50%': 50, '75%': 75 }[options.density];
+  if (keep) stars = stars.filter((_, i) => (i * 37) % 100 < keep);
+  const driftScale = { Slow: 0.5, Normal: 1, Fast: 2 }[options.speed] || 1;
+
   // Pre-calculate deterministic drift velocities (very slow: 0.02 - 0.06 px/frame)
   for (let i = 0; i < stars.length; i++) {
     const angle = ((i * 47) % 360) * (Math.PI / 180);
     const speed = 0.02 + ((i * 13) % 4) * 0.01;
-    stars[i].vx = Math.cos(angle) * speed;
-    stars[i].vy = Math.sin(angle) * speed;
+    stars[i].vx = Math.cos(angle) * speed * driftScale;
+    stars[i].vy = Math.sin(angle) * speed * driftScale;
   }
 
   // Stars have no depth in our data; a bigger star counts as nearer (Odyssey's `z`).
@@ -102,7 +107,10 @@ export function createSky(container, options = {}) {
   let rafId = null;
   let lastTime = 0;
   let waitTimer = 0;
-  let nextCometTime = performance.now() + 15000 + Math.random() * 15000;
+  // How often comets cross: Rare = half as often, Often = twice as often (default 15 to 30 s apart).
+  const cometScale = { Rare: 2, Normal: 1, Often: 0.5 }[options.cometRate] || 1;
+  const cometGap = () => (15000 + Math.random() * 15000) * cometScale;
+  let nextCometTime = performance.now() + cometGap();
   let currentComet = null;
   let isDestroyed = false;
   let paused = false;
@@ -241,6 +249,30 @@ export function createSky(container, options = {}) {
       }
     }
 
+    // Shooting stars (rare, subtle comets across new tab)
+    if (enableComets && canAnimate) {
+      if (!currentComet && now >= nextCometTime) {
+        const startX = 200 + Math.random() * Math.max(1, width - 400);
+        const startY = 50 + Math.random() * 200;
+        const angle = (25 + Math.random() * 20) * (Math.PI / 180); // gentle downward slant
+        currentComet = { x: startX, y: startY, angle, length: 50, speed: 380, distance: 0, maxDistance: 280, alpha: 0 };
+      }
+      if (currentComet) {
+        currentComet.distance += currentComet.speed * dt;
+        currentComet.x += Math.cos(currentComet.angle) * currentComet.speed * dt;
+        currentComet.y += Math.sin(currentComet.angle) * currentComet.speed * dt;
+        const frac = currentComet.distance / currentComet.maxDistance;
+        if (frac < 0.2) currentComet.alpha = (frac / 0.2) * 0.45;
+        else if (frac > 0.7) currentComet.alpha = (1 - (frac - 0.7) / 0.3) * 0.45;
+        else currentComet.alpha = 0.45;
+        drawComet(currentComet);
+        if (frac >= 1) {
+          currentComet = null;
+          nextCometTime = now + cometGap();
+        }
+      }
+    }
+
     ctx.globalAlpha = 1.0;
 
     if (mode === 'drifting' || (enableComets && canAnimate)) {
@@ -336,6 +368,8 @@ export function createSky(container, options = {}) {
   const handle = {
     canvas,
     isRunning: () => rafId !== null,
+    /** For automated checks: what this sky is showing. */
+    info: () => ({ stars: stars.length, mode, comets: enableComets, cursor: cursorOpt, drift: driftScale, cometScale, comet: !!currentComet }),
     /** Pause while nothing can see the sky (a web page covers it); resume when shown (AUDIT-34). */
     setPaused(p) {
       if (paused === p || isDestroyed) return;
