@@ -179,6 +179,9 @@ mod win32 {
     unsafe extern "system" {
         pub fn SetWindowRgn(h: isize, rgn: isize, redraw: i32) -> i32;
         pub fn GetDpiForWindow(h: isize) -> u32;
+        pub fn GetWindowLongPtrW(h: isize, index: i32) -> isize;
+        pub fn SetWindowLongPtrW(h: isize, index: i32, value: isize) -> isize;
+        pub fn SetLayeredWindowAttributes(h: isize, key: u32, alpha: u8, flags: u32) -> i32;
     }
     #[link(name = "gdi32")]
     unsafe extern "system" {
@@ -187,6 +190,11 @@ mod win32 {
         pub fn DeleteObject(ho: isize) -> i32;
     }
     pub const RGN_DIFF: i32 = 4;
+    pub const GWL_EXSTYLE: i32 = -20;
+    pub const WS_EX_LAYERED: isize = 0x0008_0000;
+    pub const WS_EX_TRANSPARENT: isize = 0x0000_0020;
+    pub const WS_EX_NOACTIVATE: isize = 0x0800_0000;
+    pub const LWA_ALPHA: u32 = 2;
 }
 
 #[cfg(windows)]
@@ -1685,6 +1693,40 @@ impl CefEngine {
                 send_capture(&host, message_id, None);
             }
         });
+    }
+
+    /// Make a page window effectively invisible (1/255 opaque), click-through and never focused, so a
+    /// page that is not being shown can be put on screen for a moment to draw a frame for a
+    /// screenshot without the user seeing or touching it. Windows only; elsewhere this does nothing.
+    pub fn set_ghost(&self, view: ViewId, on: bool) {
+        #[cfg(windows)]
+        {
+            let win = STATE.with(|s| s.borrow().pages.get(&view).and_then(|p| p.window.clone()));
+            if let Some(win) = win {
+                let h = win.window_handle().0 as isize;
+                if h == 0 {
+                    return;
+                }
+                unsafe {
+                    let style = win32::GetWindowLongPtrW(h, win32::GWL_EXSTYLE);
+                    // Once layered a window stays layered; only opacity and input flags change.
+                    let click_through = win32::WS_EX_TRANSPARENT | win32::WS_EX_NOACTIVATE;
+                    if on {
+                        win32::SetWindowLongPtrW(
+                            h,
+                            win32::GWL_EXSTYLE,
+                            style | win32::WS_EX_LAYERED | click_through,
+                        );
+                        win32::SetLayeredWindowAttributes(h, 0, 1, win32::LWA_ALPHA);
+                    } else {
+                        win32::SetLayeredWindowAttributes(h, 0, 255, win32::LWA_ALPHA);
+                        win32::SetWindowLongPtrW(h, win32::GWL_EXSTYLE, style & !click_through);
+                    }
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = (view, on);
     }
 
     pub fn fill_login(&self, view: ViewId, username: &str, password: &str) {

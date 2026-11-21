@@ -798,6 +798,11 @@ export async function chatCaptured(msg) {
   if (!msg.ok) { m.toast(msg.message || 'The page could not be captured.'); return; }
   if (draft.images.length >= MAX_PICTURES) { m.toast(`At most ${MAX_PICTURES} pictures.`); return; }
   try {
+    // for automated checks: the size of the picture as it arrived
+    const probe = new Image();
+    probe.src = msg.data;
+    await probe.decode();
+    window.__lastCapture = [probe.naturalWidth, probe.naturalHeight];
     draft.images.push(await toJpegDataUrl(msg.data, 1800));
     m.toast(msg.message || (msg.title ? `Added a screenshot of “${msg.title.slice(0, 40)}”` : 'Added a screenshot'));
   } catch (_) { m.toast('The screenshot could not be used.'); }

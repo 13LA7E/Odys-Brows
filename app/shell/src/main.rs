@@ -204,7 +204,7 @@ struct Shell {
     /// Pages brought up off to the side for a screenshot: DevTools id -> tab (a page that is not
     /// shown draws no frames, so it cannot be captured until it is shown).
     shot_hidden: HashMap<u64, ViewId>,
-    /// Whole-page captures that could only give the visible part.
+    /// Whole-page captures that fell back to the visible part.
     shot_partial: std::collections::HashSet<u64>,
     tab_titles: HashMap<ViewId, String>,
     closed_tabs: VecDeque<ClosedTabRecord>,
@@ -583,47 +583,55 @@ impl Shell {
     fn start_capture(&mut self, engine: &mut CefEngine, view: ViewId, id: u64, full: bool) {
         if self.shown == Some(view) {
             engine.capture_screenshot(view, id as i32, full);
+            self.watch_capture(engine, view, id, full);
             return;
         }
-        let (w, h) = engine.client_size();
-        engine.set_bounds(
-            view,
-            Rect {
-                x: -30000,
-                y: 0,
-                width: (w - self.rail_width).max(1),
-                height: h.max(1),
-            },
-        );
+        // Put the page where it belongs but make it a see-through ghost for a moment: a window
+        // that is not on screen draws no frames, so it cannot be captured.
+        engine.set_bounds(view, page_bounds(engine, self.rail_width));
+        engine.set_ghost(view, true);
         engine.set_visible(view, true);
         self.shot_hidden.insert(id, view);
-        if full {
-            self.shot_partial.insert(id);
-        }
-        engine.after(400, move || {
+        engine.after(1200, move || {
             SHELL_REF.with(|r| {
                 if let Some(sh) = r.borrow().as_ref()
                     && let Ok(s) = sh.try_borrow()
                     && s.shot_hidden.contains_key(&id)
                 {
-                    // A page that is off screen draws no new frames: it can give the part it last
-                    // showed, not the whole page.
+                    CefEngine.capture_screenshot(view, id as i32, full);
+                }
+            });
+        });
+        self.watch_capture(engine, view, id, full);
+    }
+
+    /// If a picture does not arrive: a whole-page capture is retried as the visible part (some pages
+    /// do not answer a second whole-page request), and after that it is reported as failed. Either
+    /// way a page brought up for the picture goes back into hiding.
+    fn watch_capture(&mut self, engine: &mut CefEngine, view: ViewId, id: u64, full: bool) {
+        engine.after(7_000, move || {
+            SHELL_REF.with(|r| {
+                if let Some(sh) = r.borrow().as_ref()
+                    && let Ok(mut s) = sh.try_borrow_mut()
+                    && full
+                    && (s.ui_captures.contains_key(&id) || s.agent_pending.contains_key(&id))
+                {
+                    s.shot_partial.insert(id);
                     CefEngine.capture_screenshot(view, id as i32, false);
                 }
             });
         });
-        // Whatever happens, the page goes back into hiding.
-        engine.after(10_000, move || {
+        engine.after(16_000, move || {
             SHELL_REF.with(|r| {
                 if let Some(sh) = r.borrow().as_ref()
                     && let Ok(mut s) = sh.try_borrow_mut()
                 {
                     s.end_capture(id);
+                    s.shot_partial.remove(&id);
                     if let Some((_, tx)) = s.agent_pending.remove(&id) {
                         let _ = tx.send("Not done: the page could not be captured.".into());
                     }
-                    if let Some((v, request)) = s.ui_captures.remove(&id) {
-                        let _ = v;
+                    if let Some((_, request)) = s.ui_captures.remove(&id) {
                         CefEngine.send_to_ui(&bridge::to_json(&ToUi::PageCaptured {
                             request,
                             ok: false,
@@ -644,6 +652,9 @@ impl Shell {
             && self.shown != Some(view)
         {
             CefEngine.set_visible(view, false);
+            CefEngine.set_ghost(view, false);
+            CefEngine.set_bounds(view, page_bounds(&CefEngine, self.rail_width));
+            CefEngine.focus_ui();
         }
     }
 
@@ -2588,7 +2599,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                             title,
                             url,
                             message: if partial {
-                                "Only the visible part could be captured (the page is not on screen).".into()
+                                "Only the visible part could be captured.".into()
                             } else {
                                 String::new()
                             },
