@@ -444,7 +444,7 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
 /** The live answer card: your question, what the assistant is doing, the answer, then the footer. */
 function renderLiveAnswer(answer, onOpenSource, onContinue) {
   const card = el('div', 'answer-card answer-live');
-  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--answer-w, var(--helm-w))) / 2);bottom:90px;width:var(--answer-w, 560px);box-sizing:border-box;border-radius:var(--r-answer);font-family:var(--answer-font, inherit);background:var(--surface);box-shadow:var(--shadow-popover);padding:18px 24px 16px;max-height:calc(100% - 190px);overflow-y:auto;scrollbar-width:thin;';
+  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--answer-w, var(--helm-w))) / 2);bottom:90px;width:var(--answer-w, 560px);box-sizing:border-box;border-radius:var(--r-answer);font-family:var(--answer-font, inherit);background:var(--surface);box-shadow:var(--shadow-popover);padding:18px 24px 16px;max-height:calc(100% - 190px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;';
 
   if (answer.question) {
     const q = el('div', 'ans-q', answer.question);

@@ -442,7 +442,7 @@ export function renderChatPage(container, state, actions) {
     searchTimer = setTimeout(() => actions.search(search.value.trim()), 180);
   });
   const list = el('div', 'chat-list');
-  list.style.cssText = 'flex:1;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:1px;min-height:0;';
+  list.style.cssText = 'flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;display:flex;flex-direction:column;gap:1px;min-height:0;';
   const clearBtn = el('button', 'chat-clear', 'Clear all history');
   clearBtn.type = 'button';
   clearBtn.style.cssText = 'border:0;background:none;color:var(--text-muted);font:inherit;font-size:12.5px;cursor:pointer;text-align:left;padding:10px 8px 0;';
@@ -554,7 +554,7 @@ export function renderChatPage(container, state, actions) {
   });
 
   const scroll = el('div', 'chat-scroll');
-  scroll.style.cssText = 'flex:1;overflow-y:auto;scrollbar-width:thin;padding:14px 24px 12px;position:relative;';
+  scroll.style.cssText = 'flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;padding:14px 24px 12px;position:relative;';
   const column = el('div', 'chat-column');
   column.style.cssText = 'max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:22px;min-height:100%;';
   scroll.append(column);
@@ -580,7 +580,7 @@ export function renderChatPage(container, state, actions) {
   ta.rows = 1;
   ta.placeholder = 'Message your assistant';
   ta.setAttribute('aria-label', 'Message');
-  ta.style.cssText = 'border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;font-size:15px;line-height:1.5;padding:4px 0;min-height:32px;max-height:160px;box-sizing:border-box;overflow-y:auto;caret-color:var(--accent);width:100%;';
+  ta.style.cssText = 'border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;font-size:15px;line-height:1.5;padding:4px 0;min-height:32px;max-height:160px;box-sizing:border-box;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;caret-color:var(--accent);width:100%;';
   const tools = el('div');
   tools.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const file = el('input');
