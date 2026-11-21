@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS = {
   wallpaperDim: '40%',
   wallpaperBlur: 'Off',
   reduceMotion: 'Auto',
+  pinnedExtensions: [],
   radius: 'Default',
   uiScale: '100%',
   showNavButtons: true,

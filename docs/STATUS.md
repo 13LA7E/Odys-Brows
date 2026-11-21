@@ -128,6 +128,10 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: spaces, rail overlap, extension pins
+
+- Fixed spaces, the new-tab/rail overlap, added the Chrome Web Store button and notch pinning (details in PHASES). Verified live: `spaces.py` 11/11, `ext_pin.py` 10/10. Not verified: Linux; extension popups from the notch (not built).
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: visual check, Browsing and ClosedTabs
 
 - **Proved the cause:** the diff images show differing pixels only inside the fake web page's text (headline, body, byline, nav links); the rail, Helm, notch and download card were identical. Side by side with `design/png/Browsing.png`: the design used a Times-metric serif (Liberation Serif) and an Arial-metric sans; this PC used Georgia and Segoe UI, which are wider, so lines wrapped differently.

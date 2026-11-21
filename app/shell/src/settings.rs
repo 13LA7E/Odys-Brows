@@ -123,6 +123,22 @@ fn clean_custom_themes(v: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
+/// Ids of the extensions pinned to the notch: at most 24 short plain strings.
+fn clean_pinned(v: &Value) -> Option<Value> {
+    let list = v.as_array()?;
+    let mut out: Vec<Value> = Vec::new();
+    for item in list {
+        let Some(id) = item.as_str() else { continue };
+        if id.is_empty() || id.chars().count() > 64 || id.chars().any(char::is_control) {
+            continue;
+        }
+        if out.len() < 24 && !out.iter().any(|x| x == id) {
+            out.push(json!(id));
+        }
+    }
+    Some(Value::Array(out))
+}
+
 fn fields() -> Vec<Field> {
     vec![
         // --- Sky (AUDIT-36 adds more)
@@ -140,6 +156,12 @@ fn fields() -> Vec<Field> {
             key: "starsFollowCursor",
             kind: Kind::Bool,
             default: || json!(true),
+        },
+        // --- Extensions pinned to the notch
+        Field {
+            key: "pinnedExtensions",
+            kind: Kind::Custom(clean_pinned),
+            default: || json!([]),
         },
         // --- Motion (AUDIT-42)
         Field {
@@ -415,7 +437,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "showClock": false, "clockFormat": "12-hour", "showGreeting": false, "greetingName": "Sam", "showTrailHint": false, "wallpaperDim": "60%", "wallpaperBlur": "Light", "reduceMotion": "On", "radius": "Round", "uiScale": "110%", "showNavButtons": false, "showReload": false, "answerFont": "Mono", "answerSize": "Large", "answerWidth": "Wide", "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "showClock": false, "clockFormat": "12-hour", "showGreeting": false, "greetingName": "Sam", "showTrailHint": false, "wallpaperDim": "60%", "wallpaperBlur": "Light", "reduceMotion": "On", "pinnedExtensions": ["abc"], "radius": "Round", "uiScale": "110%", "showNavButtons": false, "showReload": false, "answerFont": "Mono", "answerSize": "Large", "answerWidth": "Wide", "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);

@@ -120,6 +120,8 @@ struct State {
     /// follows the animation and the page shows through as the notch moves away.
     #[cfg_attr(not(windows), allow(dead_code))]
     notch_height: f32,
+    /// Width of the notch in DIP as the UI reports it (0 = not reported yet).
+    notch_width: f32,
     /// Keyboard shortcuts for page windows: modifiers + key code -> command id.
     key_bindings: Vec<KeyBinding>,
 }
@@ -193,6 +195,7 @@ fn update_page_window_region(
     origin_x: i32,
     holes: &[(ViewRect, i32)],
     notch_height: f32,
+    notch_width: f32,
 ) {
     unsafe {
         let h = win.window_handle().0 as isize;
@@ -212,7 +215,13 @@ fn update_page_window_region(
         // Notch in top-right corner: height 34 DIP, width 224 DIP.
         // Cutting out the notch leaves the main window's notch controls (shields, minimize,
         // maximize, close) visible and interactive.
-        let notch_w = (224.0 * dpi).round() as i32;
+        // The notch grows when extensions are pinned: the UI reports its width (0 = not reported: 224).
+        let notch_w = ((if notch_width > 0.0 {
+            notch_width
+        } else {
+            224.0
+        }) * dpi)
+            .round() as i32;
         // The notch hole is as tall as the notch currently is (34 when fully shown, 4 for the hover
         // strip when slid away, in between while it moves).
         let shown = if notch_height > 0.0 {
@@ -281,6 +290,7 @@ fn refresh_holes() {
                 b.x,
                 &s.overlay_holes,
                 s.notch_height,
+                s.notch_width,
             );
         }
     });
@@ -308,7 +318,15 @@ fn place(id: ViewId) {
         }));
         if page.visible {
             #[cfg(windows)]
-            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes, s.notch_height);
+            update_page_window_region(
+                win,
+                pw,
+                ph,
+                b.x,
+                &s.overlay_holes,
+                s.notch_height,
+                s.notch_width,
+            );
             win.show();
         } else {
             win.hide();
@@ -1544,12 +1562,16 @@ impl CefEngine {
 
     /// Tell the engine how much of the notch is showing (DIP from the top). While it slides the UI
     /// reports every frame, and the hole in the page windows follows.
-    pub fn set_notch_height(&self, height: f32) {
+    pub fn set_notch_height(&self, height: f32, width: f32) {
         let changed = STATE.with(|s| {
             let mut s = s.borrow_mut();
-            let changed = (s.notch_height - height).abs() > 0.4;
+            let changed = (s.notch_height - height).abs() > 0.4
+                || (width > 0.0 && (s.notch_width - width).abs() > 0.4);
             if changed {
                 s.notch_height = height;
+                if width > 0.0 {
+                    s.notch_width = width;
+                }
             }
             changed
         });

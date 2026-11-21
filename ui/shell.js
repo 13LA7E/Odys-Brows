@@ -6,7 +6,7 @@
 import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine } from './helm.js';
-import { renderSettings, applyAccent } from './settings.js';
+import { renderSettings, applyAccent, saveSettings } from './settings.js';
 import { applySavedTheme, resolveTheme, starColour } from './themes.js';
 import { applyInterface, interfaceScale } from './interface.js';
 import { renderHistory, formatDayGroups } from './history.js';
@@ -29,8 +29,21 @@ function svg(tag, attrs) {
   return e;
 }
 
-function notch(count, onToggleShields, onOpenExtensions, showExtensions = true) {
+function notch(count, onToggleShields, onOpenExtensions, showExtensions = true, pinned = []) {
   const n = el('div', 'notch');
+  // Pinned extensions get their own button, so the notch grows with each one (AUDIT: owner request).
+  for (const ext of pinned) {
+    const b = el('button', 'notch-pinned');
+    b.setAttribute('aria-label', ext.name);
+    b.title = ext.name;
+    b.dataset.extId = ext.id;
+    b.style.cssText = 'padding:0 6px;height:34px;background:transparent;border:none;color:var(--text-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;';
+    const chip = el('span', null, (ext.name || '?').trim().charAt(0).toUpperCase());
+    chip.style.cssText = 'width:20px;height:20px;border-radius:6px;background:var(--w-field);color:var(--accent);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;';
+    b.append(chip);
+    b.addEventListener('click', () => { if (typeof onOpenExtensions === 'function') onOpenExtensions(); });
+    n.append(b);
+  }
   if (showExtensions) {
     const extBtn = el('button', 'notch-extensions');
     extBtn.setAttribute('aria-label', 'Extensions');
@@ -336,6 +349,20 @@ export function openLink(state, url) {
     : { type: 'open', url }));
 }
 
+/** The tabs of the space you are in (Home, Work, Personal); tabs without a space belong to Home. */
+/** The enabled extensions you pinned (in the order they were pinned). */
+function pinnedExtensions(state) {
+  const ids = state.settings?.pinnedExtensions;
+  if (!Array.isArray(ids) || !state.extensions) return [];
+  return ids.map((id) => state.extensions.find((e) => e.id === id && e.enabled)).filter(Boolean);
+}
+
+function tabsInSpace(state) {
+  if (!state.tabs) return state.tabs;
+  const space = state.activeSpace ?? 0;
+  return state.tabs.filter((t) => (t.space ?? 0) === space);
+}
+
 export function renderShell(root, state) {
   window.__renderCount += 1;
   lastSignature = signature(state);
@@ -375,7 +402,7 @@ export function renderShell(root, state) {
   const rail = el('nav', `rail rail-${state.rail}`);
   rail.setAttribute('aria-label', 'Trail');
   if (state.rail === 'collapsed' || state.rail === 'private') {
-    const tabs = state.tabs || Array.from({ length: state.tabCount || 1 }, (_, i) => ({ id: i + 1 }));
+    const tabs = tabsInSpace(state) || Array.from({ length: state.tabCount || 1 }, (_, i) => ({ id: i + 1 }));
     renderCollapsedRail(rail, {
       tabs,
       activeTab: state.activeTab ?? 1,
@@ -458,7 +485,7 @@ export function renderShell(root, state) {
     });
   } else if (state.rail === 'expanded') {
     renderExpandedRail(rail, {
-      tabs: state.tabs || [],
+      tabs: tabsInSpace(state) || [],
       activeTab: state.activeTab ?? 1,
       activeSpace: state.activeSpace ?? 0,
       closed: state.closed || [],
@@ -625,6 +652,14 @@ export function renderShell(root, state) {
               window.odysseyBridge(JSON.stringify({ type: 'remove-extension', id }));
             }
           },
+          pinned: state.settings?.pinnedExtensions || [],
+          onPin: (id, pin) => {
+            const cur = (state.settings?.pinnedExtensions || []).filter((x) => x !== id);
+            if (pin) cur.push(id);
+            state.settings = { ...(state.settings || {}), pinnedExtensions: cur.slice(-24) };
+            saveSettings(state.settings);
+            renderShell(root, state);
+          },
           onLoadUnpacked: (path) => {
             if (typeof window.odysseyBridge === 'function') {
               window.odysseyBridge(JSON.stringify({ type: 'load-unpacked-extension', path }));
@@ -645,7 +680,8 @@ export function renderShell(root, state) {
     add(region('private-copy', state.privateCopy || {}, () => renderPrivateCopy(state.privateCopy || {})));
   } else if (state.page === 'none') {
     add(region('newtab', {
-      tabs: (state.tabs || []).map((t) => [t.id, t.title, t.url, t.parent]),
+      tabs: (tabsInSpace(state) || []).map((t) => [t.id, t.title, t.url, t.parent]),
+      space: state.activeSpace ?? 0,
       activeTab: state.activeTab, newTab: state.newTab, minute: state.minute,
       opts: [state.settings?.showClock, state.settings?.clockFormat, state.settings?.showGreeting,
         state.settings?.greetingName, state.settings?.showTrailHint, state.settings?.wallpaperDim,
@@ -796,9 +832,11 @@ export function renderShell(root, state) {
       return grip;
     }));
   }
+  const pinnedExts = pinnedExtensions(state);
   add(region('notch', {
     count: state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
     open: !!state.shieldsOpen,
+    pinned: pinnedExts.map((e) => [e.id, e.name]),
   }, () =>
     notch(
       // Live: only a web page has a count (AUDIT-25).
@@ -816,7 +854,8 @@ export function renderShell(root, state) {
           window.odysseyBridge(JSON.stringify({ type: 'get-extensions' }));
         }
       },
-      !document.documentElement.classList.contains('fixture')
+      !document.documentElement.classList.contains('fixture'),
+      pinnedExts
     )
   ));
 
@@ -948,6 +987,7 @@ const OVERLAY_SELECTOR = '.downloads-popover, .answer-card, .shields-popover, .f
 let overlayObserver = null;
 let lastOverlayJson = '[]';
 let lastNotchHeight = 34;
+let lastNotchWidth = 224;
 let overlayTimer = 0;
 
 function reportOverlays() {
@@ -961,10 +1001,13 @@ function reportOverlays() {
   const notch = document.querySelector('.notch');
   if (notch) {
     const h = Math.max(4, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
-    if (h !== lastNotchHeight) {
+    const w = Math.round(notch.getBoundingClientRect().width);
+    document.documentElement.style.setProperty('--notch-w', `${w}px`);
+    if (h !== lastNotchHeight || w !== lastNotchWidth) {
       lastNotchHeight = h;
+      lastNotchWidth = w;
       (window.__notchHeights = window.__notchHeights || []).push(h);
-      window.odysseyBridge(JSON.stringify({ type: 'set-notch-height', height: h }));
+      window.odysseyBridge(JSON.stringify({ type: 'set-notch-height', height: h, width: w }));
     }
   }
   const json = JSON.stringify(rects);

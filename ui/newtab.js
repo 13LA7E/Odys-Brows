@@ -206,7 +206,7 @@ export function renderNewTab(container, state, onSelectTab) {
 
   // 1. Clock, greeting, date block (left 120, top 92)
   const header = el('div', 'newtab-header');
-  header.style.cssText = 'position:absolute;left:120px;top:92px;pointer-events:none;';
+  header.style.cssText = 'position:absolute;left:calc(var(--rail) + 64px);top:92px;pointer-events:none;transition:left var(--dur-slow) var(--ease-in-out);';
 
   const set = state.settings || {};
   const name = typeof set.greetingName === 'string' ? set.greetingName.trim() : '';
@@ -241,7 +241,7 @@ export function renderNewTab(container, state, onSelectTab) {
 
   // 2. Hint text (left 120, top 262, width 260)
   const hintEl = el('div', 'newtab-hint', data.hint || 'Your open tabs, drawn as a trail. Select a star to jump back to it.');
-  hintEl.style.cssText = 'position:absolute;left:120px;top:262px;font-size:13px;color:var(--text-muted);width:260px;line-height:1.5;pointer-events:none;';
+  hintEl.style.cssText = 'position:absolute;left:calc(var(--rail) + 64px);top:262px;transition:left var(--dur-slow) var(--ease-in-out);font-size:13px;color:var(--text-muted);width:260px;line-height:1.5;pointer-events:none;';
   if (set.showTrailHint !== false) container.append(hintEl);
 
   // 3. Constellation points and edges

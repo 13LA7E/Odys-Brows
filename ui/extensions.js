@@ -36,7 +36,15 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
   const loadUnpackedBtn = el('button', 'btn-load-unpacked', 'Load unpacked');
   loadUnpackedBtn.style.cssText =
     'padding:8px 16px;background:var(--surface);border:1px solid var(--w-border);color:var(--text);border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;';
-  topActions.append(loadUnpackedBtn);
+  // Link to the Chrome Web Store: opens it in a tab of its own.
+  const storeBtn = el('button', 'btn-web-store', 'Chrome Web Store');
+  storeBtn.style.cssText =
+    'padding:8px 16px;background:var(--surface);border:1px solid var(--w-border);color:var(--accent);border-radius:8px;font-size:13.5px;font-weight:500;cursor:pointer;';
+  storeBtn.title = 'Find extensions in the Chrome Web Store';
+  storeBtn.addEventListener('click', () => {
+    window.odysseyBridge?.(JSON.stringify({ type: 'open', url: 'https://chromewebstore.google.com/category/extensions' }));
+  });
+  topActions.append(storeBtn, loadUnpackedBtn);
   header.append(titleCol, topActions);
   wrap.append(header);
 
@@ -170,7 +178,16 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
         }
       });
 
-      controls.append(toggle, removeBtn);
+      // Pin to the notch (only an enabled extension can be pinned): the notch grows to fit it.
+      const isPinned = (actions.pinned || []).includes(ext.id);
+      const pinBtn = el('button', 'ext-pin', isPinned ? 'Unpin' : 'Pin');
+      pinBtn.setAttribute('aria-pressed', String(isPinned));
+      pinBtn.title = isPinned ? 'Remove from the top bar' : 'Show in the top bar';
+      pinBtn.disabled = !ext.enabled;
+      pinBtn.style.cssText = `font-size:13px;color:${isPinned ? 'var(--accent)' : 'var(--text-muted)'};background:transparent;border:none;cursor:${ext.enabled ? 'pointer' : 'default'};padding:4px 8px;border-radius:6px;${ext.enabled ? '' : 'opacity:.4;'}`;
+      pinBtn.addEventListener('click', () => { if (actions.onPin) actions.onPin(ext.id, !isPinned); });
+
+      controls.append(toggle, pinBtn, removeBtn);
       card.append(left, controls);
       list.append(card);
     });

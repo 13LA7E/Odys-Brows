@@ -139,6 +139,9 @@ pub enum FromUi {
     /// How much of the notch is showing, in DIP from the top (it slides away over web pages).
     SetNotchHeight {
         height: f64,
+        /// How wide the notch is (it grows with pinned extensions); older UIs leave it out.
+        #[serde(default)]
+        width: Option<f64>,
     },
     /// Where the UI draws over the page area, so the page windows leave holes there (AUDIT-06).
     SetOverlayRects {
@@ -331,6 +334,8 @@ pub enum FromUi {
 pub enum ToUi {
     ViewOpened {
         view: ViewId,
+        /// Which space (Home, Work, Personal) the tab lives in.
+        space: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         opener: Option<ViewId>,
         #[serde(skip_serializing_if = "Option::is_none")]

@@ -178,6 +178,8 @@ struct Shell {
     shown: Option<ViewId>,
     rail_width: i32,
     active_space: usize,
+    /// The tab you were on last in each space (Home, Work, Personal), so switching back returns to it.
+    space_last: [Option<ViewId>; 3],
     is_private: bool,
     history: Option<HistoryStore>,
     tab_visit_id: HashMap<ViewId, i64>,
@@ -254,6 +256,7 @@ impl Default for Shell {
             shown: None,
             rail_width: RAIL_WIDTH,
             active_space: 0,
+            space_last: [None; 3],
             is_private: false,
             history: None,
             tab_visit_id: HashMap::new(),
@@ -834,6 +837,14 @@ impl Shell {
         }
     }
 
+    /// The space a tab belongs to (0 when unknown).
+    fn space_of(&self, view: ViewId) -> usize {
+        self.tabs
+            .iter()
+            .find(|t| t.view == view)
+            .map_or(self.active_space, |t| t.space)
+    }
+
     fn switch_space_state(&mut self, space: usize) -> Option<ViewId> {
         let space = space.min(2);
         self.active_space = space;
@@ -843,7 +854,10 @@ impl Shell {
             .map(|t| t.space == space)
             .unwrap_or(false);
         if !current_in_space {
-            let target = self.tabs.iter().find(|t| t.space == space).map(|t| t.view);
+            let remembered = self.space_last[space]
+                .filter(|v| self.tabs.iter().any(|t| t.view == *v && t.space == space));
+            let target =
+                remembered.or_else(|| self.tabs.iter().find(|t| t.space == space).map(|t| t.view));
             if target.is_some() {
                 self.shown = target;
             }
@@ -853,8 +867,21 @@ impl Shell {
     }
 
     fn switch_space(&mut self, engine: &mut CefEngine, space: usize) {
+        let before = self.shown;
         if let Some(target) = self.switch_space_state(space) {
+            // show() hides the page that was showing, so put it back first (the state step moved it).
+            self.shown = before;
             self.show(engine, target);
+            engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: target }));
+        } else if !self.tabs.iter().any(|t| t.space == self.active_space) {
+            // An empty space opens with a new tab, so the page of the space you left is not left showing.
+            self.handle(
+                engine,
+                FromUi::Open {
+                    url: String::new(),
+                    opener: None,
+                },
+            );
         }
         self.persist_session();
         engine.send_to_ui(&bridge::to_json(&ToUi::SpaceChanged {
@@ -887,6 +914,7 @@ impl Shell {
             self.on_url_changed(view, url);
             engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                 view,
+                space: self.space_of(view),
                 opener: None,
                 url: Some(url.to_string()),
             }));
@@ -1033,6 +1061,9 @@ impl Shell {
             engine.set_visible(view, true);
         }
         self.shown = Some(view);
+        if let Some(sp) = self.tabs.iter().find(|t| t.view == view).map(|t| t.space) {
+            self.space_last[sp.min(2)] = Some(view);
+        }
         self.persist_session();
     }
 
@@ -1085,6 +1116,7 @@ impl Shell {
         }
         engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
             view,
+            space: self.space_of(view),
             opener,
             url: (!url.is_empty()).then(|| url.to_string()),
         }));
@@ -1132,6 +1164,7 @@ impl Shell {
                 self.show(engine, view);
                 engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                     view,
+                    space: self.space_of(view),
                     opener,
                     url: if url.is_empty() {
                         None
@@ -1172,6 +1205,7 @@ impl Shell {
                     self.show(engine, new_view);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: new_view,
+                        space: self.space_of(new_view),
                         opener: None,
                         url: Some(url.clone()),
                     }));
@@ -1338,9 +1372,10 @@ impl Shell {
                 engine.send_to_ui(&bridge::to_json(&msg));
                 self.send_vault();
             }
-            FromUi::SetNotchHeight { height } => {
-                engine.set_notch_height(height.clamp(0.0, 200.0) as f32)
-            }
+            FromUi::SetNotchHeight { height, width } => engine.set_notch_height(
+                height.clamp(0.0, 200.0) as f32,
+                width.unwrap_or(0.0).clamp(0.0, 1200.0) as f32,
+            ),
             FromUi::SetOverlayRects { rects } => {
                 let rects = rects
                     .iter()
@@ -1408,6 +1443,7 @@ impl Shell {
                 for t in &self.tabs {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: t.view,
+                        space: self.space_of(t.view),
                         opener: t.opener,
                         url: self.tab_urls.get(&t.view).cloned(),
                     }));
@@ -1424,6 +1460,9 @@ impl Shell {
                         }));
                     }
                 }
+                engine.send_to_ui(&bridge::to_json(&ToUi::SpaceChanged {
+                    space: self.active_space,
+                }));
                 // The UI treats the last replayed tab as active; tell it which one really is.
                 if let Some(v) = self.shown {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewShown { view: v }));
@@ -1525,6 +1564,7 @@ impl Shell {
                     self.on_url_changed(view, &url);
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view,
+                        space: self.space_of(view),
                         opener,
                         url: Some(url),
                     }));

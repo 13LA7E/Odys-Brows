@@ -96,10 +96,11 @@ export async function startLive() {
       if (!state.tabs) state.tabs = [];
       let tab = state.tabs.find((t) => t.id === msg.view);
       if (!tab) {
-        tab = { id: msg.view, title: 'New tab', parent: msg.opener, url: msg.url || '' };
+        tab = { id: msg.view, title: 'New tab', parent: msg.opener, url: msg.url || '', space: msg.space ?? 0 };
         state.tabs.push(tab);
       } else {
         if (msg.url) tab.url = msg.url;
+        tab.space = msg.space ?? tab.space ?? 0;
         // An early url/title event may have created this tab out of order; the replay from
         // Rust defines the order, so move it to the end.
         state.tabs = state.tabs.filter((t) => t !== tab);
