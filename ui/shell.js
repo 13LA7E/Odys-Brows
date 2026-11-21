@@ -42,7 +42,11 @@ function notch(count, onToggleShields, onOpenExtensions, showExtensions = true, 
     const chip = el('span', null, (ext.name || '?').trim().charAt(0).toUpperCase());
     chip.style.cssText = 'width:20px;height:20px;border-radius:6px;background:var(--w-field);color:var(--accent);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;';
     b.append(chip);
-    b.addEventListener('click', () => { if (typeof onOpenExtensions === 'function') onOpenExtensions(); });
+    // The button opens the extension's own popup when it has one, else the Extensions page.
+    b.addEventListener('click', () => {
+      if (ext.popup) window.odysseyBridge?.(JSON.stringify({ type: 'open-extension-popup', id: ext.id }));
+      else if (typeof onOpenExtensions === 'function') onOpenExtensions();
+    });
     n.append(b);
   }
   if (showExtensions) {

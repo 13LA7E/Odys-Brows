@@ -38,6 +38,8 @@ export const DEFAULT_SETTINGS = {
   reduceMotion: 'Auto',
   pinnedExtensions: [],
   aiTools: true,
+  autoUpdateCheck: true,
+  updateUrl: '',
   aiControl: true,
   radius: 'Default',
   uiScale: '100%',
@@ -1109,10 +1111,45 @@ export function renderSettings(container, state, onUpdate) {
     engineBadge.style.cssText = 'font-size:13.5px;color:var(--text-soft);';
     rows.append(makeRow('Engine', 'Chromium Embedded Framework with native Rust shell.', engineBadge));
 
-    const checkBtn = makeButton('Check for updates', false, () => {
-      alert('Constellations is up to date.');
+    // Updates: look, download, check the signature, install.
+    const up = state.update || {};
+    const send = (m) => window.odysseyBridge?.(JSON.stringify(m));
+    const upBox = el('div');
+    upBox.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;';
+    const upText = el('span', 'update-status');
+    upText.style.cssText = 'font-size:13px;color:var(--text-soft);';
+    const label = {
+      checking: 'Looking for updates…',
+      uptodate: 'You have the latest version.',
+      available: `Version ${up.version} is available.`,
+      downloading: `Downloading version ${up.version}… ${Math.round((up.progress || 0) * 100)}%`,
+      ready: `Version ${up.version} is ready.`,
+      error: up.message || 'Something went wrong.',
+    };
+    if (up.state) upText.textContent = label[up.state] || '';
+    if (up.state) upBox.append(upText);
+    if (up.state === 'available') upBox.append(makeButton('Download and check', true, () => send({ type: 'install-update' })));
+    else if (up.state === 'ready') upBox.append(makeButton('Restart and install', true, () => send({ type: 'apply-update' })));
+    else if (up.state !== 'checking' && up.state !== 'downloading') upBox.append(makeButton('Check for updates', false, () => send({ type: 'check-updates' })));
+    const updRow = makeRow('Updates', 'Updates are signed by us and checked before they are installed.', upBox);
+    if (up.state === 'available' && up.notes) {
+      const n = el('div', 'update-notes', up.notes);
+      n.style.cssText = 'font-size:12.5px;color:var(--text-muted);margin-top:6px;line-height:1.45;';
+      updRow.firstChild.append(n);
+    }
+    rows.append(updRow);
+    rows.append(makeRow('Check automatically', 'Look for a new version a little after Constellations starts. Nothing about you is sent.', makeSwitch(settings.autoUpdateCheck !== false, (val) => {
+      settings.autoUpdateCheck = val;
+      saveSettings(settings);
+      if (onUpdate) onUpdate('autoUpdateCheck', val);
+      renderSettings(container, state, onUpdate);
+    })));
+    const urlBox = makeTextInput(settings.updateUrl || '', 'Default server', false, (v) => {
+      settings.updateUrl = v.trim();
+      saveSettings(settings);
+      if (onUpdate) onUpdate('updateUrl', settings.updateUrl);
     });
-    rows.append(makeRow('Updates', 'Check if a newer build is available.', checkBtn));
+    rows.append(makeRow('Update server', 'Leave empty for the official one. Only https addresses are used.', urlBox));
 
     content.append(rows);
   }

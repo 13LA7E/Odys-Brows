@@ -25,6 +25,12 @@ base64.workspace = true
 # Reason: read the text of PDF files the user attaches to a chat message (attachments.rs).
 pdf-extract = "0.12"
 # Reason: a Word (.docx) file is a zip of XML; read its text for attachments (attachments.rs).
+# Reason: work out Chromium's id for an unpacked extension (SHA-256 of its path) to open its popup.
+sha2 = "0.10"
+# Reason: check the Ed25519 signature on an update before it is run (updater.rs).
+ed25519-dalek = "2"
+# Reason: download the update manifest and file (updater.rs).
+reqwest.workspace = true
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [lints]

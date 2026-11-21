@@ -16,6 +16,12 @@ pub struct ExtensionInfo {
     pub memory_mb: f64,
     pub cpu_pct: f64,
     pub path: Option<String>,
+    /// Chromium's own id for this extension (what its pages live under).
+    #[serde(default)]
+    pub chrome_id: String,
+    /// The page its toolbar button opens (`action.default_popup`), if any.
+    #[serde(default)]
+    pub popup: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -28,6 +34,34 @@ struct ManifestV3 {
     pub permissions: Vec<String>,
     #[serde(default)]
     pub optional_permissions: Vec<String>,
+    #[serde(default)]
+    pub action: Option<ActionManifest>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ActionManifest {
+    #[serde(default)]
+    pub default_popup: Option<String>,
+}
+
+/// The id Chromium gives an unpacked extension (one without a `key`): the SHA-256 of its absolute
+/// path as the platform stores it (UTF-16 on Windows), first 16 bytes, each nibble written as a
+/// letter a to p. Used to open the extension's popup page.
+pub fn chrome_extension_id(path: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    #[cfg(windows)]
+    for u in path.encode_utf16() {
+        h.update(u.to_le_bytes());
+    }
+    #[cfg(not(windows))]
+    h.update(path.as_bytes());
+    let d = h.finalize();
+    d[..16]
+        .iter()
+        .flat_map(|b| [b >> 4, b & 0xF])
+        .map(|n| (b'a' + n) as char)
+        .collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -110,6 +144,7 @@ impl ExtensionsStore {
         let version = manifest.version.unwrap_or_else(|| "1.0.0".to_string());
         let description = manifest.description.unwrap_or_default();
         let permissions = manifest.permissions;
+        let manifest_popup = manifest.action.and_then(|a| a.default_popup);
 
         // Deterministic ID derived from path
         let id = format!("{:x}", md5_hash(path.to_string_lossy().as_bytes()));
@@ -126,11 +161,24 @@ impl ExtensionsStore {
             memory_mb: 0.0,
             cpu_pct: 0.0,
             path: Some(path.to_string_lossy().to_string()),
+            chrome_id: chrome_extension_id(&path.to_string_lossy()),
+            popup: manifest_popup.filter(|p| valid_popup_path(p)),
         };
 
         self.extensions.insert(id, info.clone());
         Ok(info)
     }
+}
+
+/// A relative path inside the extension: no scheme, no `..`, no leading slash.
+fn valid_popup_path(p: &str) -> bool {
+    !p.is_empty()
+        && p.len() < 200
+        && !p.contains("..")
+        && !p.contains(':')
+        && !p.starts_with('/')
+        && !p.starts_with('\\')
+        && !p.chars().any(char::is_control)
 }
 
 fn md5_hash(data: &[u8]) -> u64 {
@@ -194,5 +242,31 @@ mod tests {
         assert!(res.unwrap_err().contains("Manifest V2 is deprecated"));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn the_chromium_id_is_32_letters_and_depends_on_the_path() {
+        let a = chrome_extension_id(r"C:\x\one");
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| ('a'..='p').contains(&c)));
+        assert_eq!(a, chrome_extension_id(r"C:\x\one"));
+        assert_ne!(a, chrome_extension_id(r"C:\x\two"));
+    }
+
+    #[test]
+    fn popup_paths_stay_inside_the_extension() {
+        for ok in ["popup.html", "ui/popup.html"] {
+            assert!(valid_popup_path(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "../x.html",
+            "/etc/x",
+            "https://evil.test/",
+            r"a\b:c",
+            r"\\server\share",
+        ] {
+            assert!(!valid_popup_path(bad), "{bad}");
+        }
     }
 }

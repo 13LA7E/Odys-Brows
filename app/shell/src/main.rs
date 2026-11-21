@@ -19,6 +19,7 @@ mod privacy;
 mod selftest;
 mod settings;
 mod shortcuts;
+mod updater;
 mod wallpaper;
 
 use bridge::{FromUi, ToUi};
@@ -197,6 +198,11 @@ struct Shell {
     /// Questions to the user ("allow this click?") waiting for the answer.
     agent_confirms: HashMap<u64, tokio::sync::oneshot::Sender<String>>,
     agent_next: u64,
+    /// The extension popup that is open (a small window under the notch), if any.
+    popup: Option<ViewId>,
+    /// A newer, signed version that was found, and the downloaded file once it has been checked.
+    update_available: Option<updater::Available>,
+    update_file: Option<PathBuf>,
     /// The web tab you were on last. The assistant works there when you are on a page of ours (the
     /// chat page is a tab too).
     last_web: Option<ViewId>,
@@ -287,6 +293,9 @@ impl Default for Shell {
             agent_pending: HashMap::new(),
             agent_confirms: HashMap::new(),
             agent_next: 0,
+            popup: None,
+            update_available: None,
+            update_file: None,
             last_web: None,
             ui_captures: HashMap::new(),
             shot_hidden: HashMap::new(),
@@ -558,6 +567,125 @@ impl Shell {
             wallpaper::load(&profile_dir())
         };
         engine.send_to_ui(&bridge::to_json(&ToUi::Wallpaper { data, error }));
+    }
+
+    fn send_update(&self, state: &str, version: &str, notes: &str, message: &str, progress: f64) {
+        CefEngine.send_to_ui(&bridge::to_json(&ToUi::UpdateStatus {
+            state: state.into(),
+            version: version.into(),
+            notes: notes.into(),
+            message: message.into(),
+            progress,
+        }));
+    }
+
+    /// Looks for a newer version. `silent` (the automatic check) says nothing unless one is found.
+    fn begin_update_check(&mut self, silent: bool) {
+        if self.is_private {
+            return;
+        }
+        let settings = load_settings_or_default(&profile_dir());
+        if silent && settings["autoUpdateCheck"] == false {
+            return;
+        }
+        let custom = settings["updateUrl"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let url = if custom.is_empty() {
+            updater::DEFAULT_MANIFEST_URL.to_string()
+        } else {
+            custom
+        };
+        if !silent {
+            self.send_update("checking", "", "", "", 0.0);
+        }
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let res = rt.block_on(updater::check(&url, &updater::current_version()));
+            CefEngine.post_ui(move || {
+                SHELL_REF.with(|r| {
+                    if let Some(sh) = r.borrow().as_ref()
+                        && let Ok(mut s) = sh.try_borrow_mut()
+                    {
+                        s.on_update_checked(res, silent);
+                    }
+                });
+            });
+        });
+    }
+
+    fn on_update_checked(&mut self, res: Result<Option<updater::Available>, String>, silent: bool) {
+        match res {
+            Ok(Some(a)) => {
+                self.send_update("available", &a.version, &a.notes, "", 0.0);
+                self.update_available = Some(a);
+            }
+            Ok(None) => {
+                self.update_available = None;
+                if !silent {
+                    self.send_update("uptodate", &updater::current_version(), "", "", 0.0);
+                }
+            }
+            Err(e) => {
+                if !silent {
+                    self.send_update("error", "", "", &e, 0.0);
+                }
+            }
+        }
+    }
+
+    fn begin_update_download(&mut self) {
+        let Some(a) = self.update_available.clone() else {
+            self.send_update("error", "", "", "There is no update to download.", 0.0);
+            return;
+        };
+        self.send_update("downloading", &a.version, &a.notes, "", 0.0);
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let dir = std::env::temp_dir().join("Constellations-Updates");
+            let last = std::sync::atomic::AtomicU64::new(0);
+            let version = a.version.clone();
+            let notes = a.notes.clone();
+            let res = rt.block_on(updater::download(&a, &dir, |got, total| {
+                // about ten messages a second at most
+                let pct = (got * 1000 / total.max(1)).min(1000);
+                if last.swap(pct, std::sync::atomic::Ordering::Relaxed) != pct {
+                    let (v, n) = (version.clone(), notes.clone());
+                    CefEngine.post_ui(move || {
+                        CefEngine.send_to_ui(&bridge::to_json(&ToUi::UpdateStatus {
+                            state: "downloading".into(),
+                            version: v,
+                            notes: n,
+                            message: String::new(),
+                            progress: pct as f64 / 1000.0,
+                        }));
+                    });
+                }
+            }));
+            CefEngine.post_ui(move || {
+                SHELL_REF.with(|r| {
+                    if let Some(sh) = r.borrow().as_ref()
+                        && let Ok(mut s) = sh.try_borrow_mut()
+                    {
+                        match res {
+                            Ok(path) => {
+                                s.update_file = Some(path);
+                                s.send_update("ready", &a.version, &a.notes, "", 1.0);
+                            }
+                            Err(e) => s.send_update("error", &a.version, &a.notes, &e, 0.0),
+                        }
+                    }
+                });
+            });
+        });
     }
 
     fn next_agent_id(&mut self) -> u64 {
@@ -2273,6 +2401,53 @@ impl Shell {
                     });
                 });
             }
+            FromUi::CheckUpdates => self.begin_update_check(false),
+            FromUi::InstallUpdate => self.begin_update_download(),
+            FromUi::ApplyUpdate => match self.update_file.clone() {
+                Some(path) if path.exists() => match updater::start_installer(&path) {
+                    Ok(()) => engine.quit(),
+                    Err(e) => self.send_update("error", "", "", &e, 0.0),
+                },
+                _ => self.send_update(
+                    "error",
+                    "",
+                    "",
+                    "The update file is gone; check again.",
+                    0.0,
+                ),
+            },
+            FromUi::OpenExtensionPopup { id } => {
+                if let Some(old) = self.popup.take() {
+                    engine.close_view(old);
+                }
+                let ext = self
+                    .extensions
+                    .list()
+                    .into_iter()
+                    .find(|e| e.id == id && e.enabled);
+                if let Some(ext) = ext
+                    && let Some(page) = ext.popup.as_deref()
+                    && !ext.chrome_id.is_empty()
+                {
+                    let url = format!("chrome-extension://{}/{}", ext.chrome_id, page);
+                    let (w, _) = engine.client_size();
+                    let view = engine.create_popup(
+                        &url,
+                        Rect {
+                            x: (w - 392).max(0),
+                            y: 36,
+                            width: 380,
+                            height: 540,
+                        },
+                    );
+                    self.popup = Some(view);
+                }
+            }
+            FromUi::CloseExtensionPopup => {
+                if let Some(old) = self.popup.take() {
+                    engine.close_view(old);
+                }
+            }
             FromUi::ChatSwitchAlt { id, at, to } => {
                 if !self.is_private {
                     let _ = chats::switch_alt(&profile_dir(), &id, at, to);
@@ -2667,6 +2842,18 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         Rc::new(RefCell::new(VecDeque::new()));
     let pending_events_sink = pending_events.clone();
     SHELL_REF.with(|r| *r.borrow_mut() = Some(shell.clone()));
+    // A quiet look for a newer version a little after start (not while testing the app itself).
+    if !any_selftest && !is_private {
+        CefEngine.after(20_000, || {
+            SHELL_REF.with(|r| {
+                if let Some(sh) = r.borrow().as_ref()
+                    && let Ok(mut s) = sh.try_borrow_mut()
+                {
+                    s.begin_update_check(true);
+                }
+            });
+        });
+    }
     let events_shell = shell.clone();
     fn dispatch_engine_event(s: &mut Shell, event: &engine_api::Event) {
         match event {
@@ -2706,6 +2893,12 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::FormInputChanged { view, has_input } => {
                 if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
                     t.has_form_input = *has_input;
+                }
+            }
+            engine_api::Event::PopupDeactivated { view } => {
+                if s.popup == Some(*view) {
+                    s.popup = None;
+                    CefEngine.close_view(*view);
                 }
             }
             engine_api::Event::AgentResult { view, id, json } => {
@@ -2815,6 +3008,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::ShortcutQuit
                 | engine_api::Event::AppClosing
                 | engine_api::Event::AgentResult { .. }
+                | engine_api::Event::PopupDeactivated { .. }
                 | engine_api::Event::Command { .. }
                 | engine_api::Event::NewWindowRequested { .. }
         )
@@ -2830,6 +3024,22 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             _ => false,
         };
         if sleeping_noise {
+            return;
+        }
+        // An extension popup is not a tab: its page events must not make one in the UI.
+        let popup_noise = match &event {
+            engine_api::Event::UrlChanged { view, .. }
+            | engine_api::Event::TitleChanged { view, .. }
+            | engine_api::Event::LoadingChanged { view, .. }
+            | engine_api::Event::AudioChanged { view, .. }
+            | engine_api::Event::FormInputChanged { view, .. }
+            | engine_api::Event::ShieldsCountChanged { view, .. } => events_shell
+                .try_borrow()
+                .map(|s| s.popup == Some(*view))
+                .unwrap_or(false),
+            _ => false,
+        };
+        if popup_noise {
             return;
         }
         if is_shell_event(&event) {

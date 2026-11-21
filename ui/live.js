@@ -395,6 +395,9 @@ export async function startLive() {
       chatUpdate(state);
     } else if (msg.type === 'page-captured') {
       chatCaptured(msg);
+    } else if (msg.type === 'update-status') {
+      state.update = { state: msg.state, version: msg.version, notes: msg.notes, message: msg.message, progress: msg.progress };
+      renderShellLive();
     } else if (msg.type === 'transcribed') {
       chatTranscribed(msg, state);
     } else if (msg.type === 'chat-data') {

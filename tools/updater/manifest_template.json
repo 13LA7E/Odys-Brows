@@ -1,15 +1,13 @@
 {
-  "version": "0.1.0",
-  "notes": "Constellations 0.1.0 release.",
-  "pub_date": "2026-11-20T00:00:00Z",
+  "version": "0.2.0",
+  "notes": "What is new in this version.",
+  "pub_date": "2026-12-01T10:00:00Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "<minisign/ed25519-signature>",
-      "url": "https://github.com/13LA7E/Odys-Brows/releases/download/v0.1.0/Constellations-Setup-0.1.0.exe"
-    },
-    "linux-x86_64": {
-      "signature": "<minisign/ed25519-signature>",
-      "url": "https://github.com/13LA7E/Odys-Brows/releases/download/v0.1.0/Constellations-0.1.0-x86_64.AppImage"
+      "url": "https://github.com/13LA7E/Odys-Brows/releases/download/v0.2.0/Constellations-Setup-0.2.0.exe",
+      "sha256": "<64 hex characters, made by tools/updater/sign.py>",
+      "size": 0,
+      "signature": "<base64 Ed25519 signature, made by tools/updater/sign.py>"
     }
   }
 }

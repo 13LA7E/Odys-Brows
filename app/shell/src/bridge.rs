@@ -260,6 +260,18 @@ pub enum FromUi {
     },
     /// Request installed extensions list (P6-01).
     GetExtensions,
+    /// Look for a newer version (Settings > About).
+    CheckUpdates,
+    /// Download the update that was found and check it.
+    InstallUpdate,
+    /// Start the installer of a downloaded update and close the browser.
+    ApplyUpdate,
+    /// Open an extension's toolbar popup under the notch.
+    OpenExtensionPopup {
+        id: String,
+    },
+    /// Close the extension popup, if one is open.
+    CloseExtensionPopup,
     /// Toggle an extension on/off (P6-01).
     ToggleExtension {
         id: String,
@@ -550,6 +562,14 @@ pub enum ToUi {
     /// One saved conversation (none when it does not exist).
     ChatData {
         chat: Option<crate::chats::ChatView>,
+    },
+    /// Where the update stands: checking, uptodate, available, downloading, ready or error.
+    UpdateStatus {
+        state: String,
+        version: String,
+        notes: String,
+        message: String,
+        progress: f64,
     },
     /// The words found in a recording.
     Transcribed {

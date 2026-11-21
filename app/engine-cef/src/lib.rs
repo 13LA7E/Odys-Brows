@@ -92,6 +92,8 @@ struct Page {
     /// Last scroll position the page reported (for restoring after sleep).
     scroll_y: f64,
     restore_scroll: Option<f64>,
+    /// A popup (an extension's button popup): where it sits in the main window, in DIP.
+    popup: Option<ViewRect>,
 }
 
 #[derive(Default)]
@@ -317,6 +319,21 @@ fn place(id: ViewId) {
             return;
         };
         let c = main.client_area_bounds_in_screen();
+        if let Some(r) = page.popup {
+            // A popup is a small window of its own, not a page filling the area next to the rail.
+            win.set_bounds(Some(&Rect {
+                x: c.x + r.x,
+                y: c.y + r.y,
+                width: r.width.max(1),
+                height: r.height.max(1),
+            }));
+            if page.visible {
+                win.show();
+            } else {
+                win.hide();
+            }
+            return;
+        }
         let b = page.bounds;
         let pw = (c.width - b.x).max(1);
         let ph = c.height.max(1);
@@ -734,6 +751,11 @@ wrap_window_delegate! {
                     height: c.height,
                 }));
                 w.layout();
+            }
+        }
+        fn on_window_activation_changed(&self, _window: Option<&mut Window>, active: ::std::os::raw::c_int) {
+            if active == 0 && STATE.with(|s| s.borrow().pages.get(&self.id).is_some_and(|p| p.popup.is_some())) {
+                emit(Event::PopupDeactivated { view: self.id });
             }
         }
         fn on_window_destroyed(&self, _window: Option<&mut Window>) {
@@ -1779,6 +1801,19 @@ impl CefEngine {
         let _ = (view, on);
     }
 
+    /// Open a small popup window (an extension's toolbar popup) at `rect` inside the main window.
+    pub fn create_popup(&mut self, url: &str, rect: ViewRect) -> ViewId {
+        let id = self.create_view(url);
+        STATE.with(|s| {
+            if let Some(p) = s.borrow_mut().pages.get_mut(&id) {
+                p.popup = Some(rect);
+                p.visible = true;
+            }
+        });
+        place(id);
+        id
+    }
+
     pub fn fill_login(&self, view: ViewId, username: &str, password: &str) {
         let script = fill_login_script(username, password);
         with_browser(view, |b| {
@@ -1921,6 +1956,7 @@ impl Engine for CefEngine {
                     saved_url: None,
                     scroll_y: 0.0,
                     restore_scroll: None,
+                    popup: None,
                 },
             );
             id
