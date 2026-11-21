@@ -26,6 +26,18 @@ FONT_CSS = "\n".join(
 )
 
 
+# The boards' fake web page names Georgia and system-ui, which differ per machine; the design PNGs
+# were drawn with Times- and Arial-metric fonts. Use the bundled Liberation fonts (also used by our
+# fixture pages) so the previews, and the visual check against them, look the same on any OS.
+FIXTURE_FONTS = "../../ui/fixtures/fonts/"
+FONT_CSS += (
+    "\n@font-face{font-family:'Fixture Serif';font-weight:400;src:url('%sLiberationSerif-Regular.ttf') format('truetype')}"
+    "\n@font-face{font-family:'Fixture Serif';font-weight:700;src:url('%sLiberationSerif-Bold.ttf') format('truetype')}"
+    "\n@font-face{font-family:'Fixture Sans';font-weight:400;src:url('%sLiberationSans-Regular.ttf') format('truetype')}"
+    % (FIXTURE_FONTS, FIXTURE_FONTS, FIXTURE_FONTS)
+)
+
+
 def default_accent(raw):
     """Each board declares its own default accent in data-props (Private uses lilac)."""
     m = re.search(r"data-props='(.*?)'>", raw, re.S)
@@ -101,6 +113,8 @@ def convert(path):
     if left:
         raise SystemExit("%s: unresolved template values %s" % (path.name, sorted(set(left))))
 
+    body = body.replace("Georgia,'Times New Roman',serif", "'Fixture Serif',serif")
+    body = body.replace("system-ui,sans-serif", "'Fixture Sans',sans-serif")
     return (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         "<title>%s</title>\n<style>%s\n%s\nhtml,body{width:1280px;height:800px;overflow:hidden}</style>\n"
