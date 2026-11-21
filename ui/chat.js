@@ -457,7 +457,7 @@ export function renderChatPage(container, state, actions) {
   main.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;position:relative;';
 
   const head = el('div', 'chat-head');
-  head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:30px 24px 6px 16px;min-height:44px;box-sizing:border-box;';
+  head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:56px 24px 6px 16px;min-height:44px;box-sizing:border-box;';
   const toggle = iconButton('sidebar', 'Show or hide the chat list', () => { sideOpen = !sideOpen; try { localStorage.setItem('chat_side', sideOpen ? 'open' : 'closed'); } catch (_) { /* ignore */ } applySide(); }, 'chat-side-toggle');
   const title = el('div', 'chat-title');
   title.style.cssText = 'flex:1;min-width:0;font-size:15px;font-weight:500;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 8px;border-radius:var(--r-row);cursor:text;';
