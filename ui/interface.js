@@ -26,7 +26,7 @@ export function interfaceScale() { return scale; }
 /** Applies the saved interface options (cheap when nothing changed). `root` is the #app element. */
 export function applyInterface(settings, root) {
   const s = settings || {};
-  const key = JSON.stringify([s.radius, s.uiScale, s.showNavButtons, s.showReload, s.answerFont, s.answerSize, s.answerWidth, window.innerWidth, window.innerHeight]);
+  const key = JSON.stringify([s.reduceMotion, s.radius, s.uiScale, s.showNavButtons, s.showReload, s.answerFont, s.answerSize, s.answerWidth, window.innerWidth, window.innerHeight]);
   if (key === lastKey) return;
   lastKey = key;
   const docEl = document.documentElement;
@@ -40,6 +40,10 @@ export function applyInterface(settings, root) {
   set('--answer-size', size && size !== SIZES.Default ? `${size}px` : null);
   const width = WIDTHS[s.answerWidth];
   set('--answer-w', width && width !== WIDTHS.Default ? `${width}px` : null);
+
+  if (s.reduceMotion === 'On') docEl.dataset.reduce = 'on';
+  else if (s.reduceMotion === 'Off') docEl.dataset.reduce = 'off';
+  else delete docEl.dataset.reduce;
 
   if (root) {
     root.dataset.nav = s.showNavButtons === false ? 'off' : 'on';

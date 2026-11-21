@@ -253,7 +253,9 @@ function skyOptions(state) {
   let comets = !!(state.shootingStars ?? set.shootingStars ?? false);
   let cursor = set.starsFollowCursor !== false;
   // Low power (AUDIT-36): a still sky, no comets, no cursor links: nothing runs.
-  if (set.lowPower === true && mode !== 'off') { mode = 'still'; comets = false; cursor = false; }
+  // Reduce motion (AUDIT-42) does the same: a still sky, nothing runs. Auto follows the system.
+  const reduced = set.reduceMotion === 'On' || (set.reduceMotion !== 'Off' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if ((set.lowPower === true || reduced) && mode !== 'off') { mode = 'still'; comets = false; cursor = false; }
   return { mode, comets, cursor, density: set.skyDensity || '100%', speed: set.skySpeed || 'Normal', cometRate: set.cometRate || 'Normal' };
 }
 
@@ -261,7 +263,7 @@ function mountSky(state, add) {
   const first = state.sky && state.sky[0];
   const so = skyOptions(state);
   const key = JSON.stringify([
-    so.mode, so.comets, so.cursor, so.density, so.speed, so.cometRate, !!state.private, starColour(state.settings, !!state.private),
+    so.mode, so.comets, so.cursor, state.settings?.reduceMotion || 'Auto', so.density, so.speed, so.cometRate, !!state.private, starColour(state.settings, !!state.private),
     window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
     first ? [first.x, first.y] : 0,
   ]);

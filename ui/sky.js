@@ -117,7 +117,14 @@ export function createSky(container, options = {}) {
   let idle = false;
   let lastActivity = performance.now();
 
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  // Reduce motion (AUDIT-42): the setting wins; Auto follows the system.
+  const systemReduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const prefersReducedMotion = {
+    get matches() {
+      const r = document.documentElement.dataset.reduce;
+      return r === 'on' || (r !== 'off' && systemReduce.matches);
+    },
+  };
 
   function drawStar(st, x = st.x, y = st.y, o = st.o) {
     ctx.beginPath();

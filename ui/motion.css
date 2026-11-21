@@ -59,16 +59,28 @@ button:active:not(:disabled) { box-shadow: inset 0 0 0 100vmax var(--press-wash)
 .helm-dl-progress { transition: stroke-dasharray var(--dur-base) linear; }
 .helm-dl-btn.pulse { animation: ody-pulse var(--dur-slow) var(--ease-out); }
 
+/* Reduced motion (AUDIT-42): follows the system setting (Settings > Reduce motion = Auto), or is forced
+   on (data-reduce='on') or off (data-reduce='off'). The rules are the same in both places. */
 @media (prefers-reduced-motion: reduce) {
-  #app { transition: none; }
-  button:active { transform: none !important; }
-  .enter, .page-in, .section-in, .star-enter { animation-name: ody-fade; }
-  .branch-enter { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
-  .leaving { transform: none; }
-  #app[data-over-page='1'] .enter { animation: none; }
-  .helm.is-loading::after { animation: none; opacity: .6; }
-  .helm-dl-btn.pulse { animation: none; }
+  :root:not([data-reduce='off']) #app { transition: none; }
+  :root:not([data-reduce='off']) button:active { transform: none !important; }
+  :root:not([data-reduce='off']) .enter, :root:not([data-reduce='off']) .page-in,
+  :root:not([data-reduce='off']) .section-in, :root:not([data-reduce='off']) .star-enter { animation-name: ody-fade; }
+  :root:not([data-reduce='off']) .branch-enter { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  :root:not([data-reduce='off']) .leaving { transform: none; }
+  :root:not([data-reduce='off']) #app[data-over-page='1'] .enter { animation: none; }
+  :root:not([data-reduce='off']) .helm.is-loading::after { animation: none; opacity: .6; }
+  :root:not([data-reduce='off']) .helm-dl-btn.pulse { animation: none; }
 }
+:root[data-reduce='on'] #app { transition: none; }
+:root[data-reduce='on'] button:active { transform: none !important; }
+:root[data-reduce='on'] .enter, :root[data-reduce='on'] .page-in,
+:root[data-reduce='on'] .section-in, :root[data-reduce='on'] .star-enter { animation-name: ody-fade; }
+:root[data-reduce='on'] .branch-enter { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+:root[data-reduce='on'] .leaving { transform: none; }
+:root[data-reduce='on'] #app[data-over-page='1'] .enter { animation: none; }
+:root[data-reduce='on'] .helm.is-loading::after { animation: none; opacity: .6; }
+:root[data-reduce='on'] .helm-dl-btn.pulse { animation: none; }
 
 /* Fixture and visual-check mode, and anything that sets data-motion="off". */
 :root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after {

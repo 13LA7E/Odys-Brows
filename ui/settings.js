@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS = {
   showTrailHint: true,
   wallpaperDim: '40%',
   wallpaperBlur: 'Off',
+  reduceMotion: 'Auto',
   radius: 'Default',
   uiScale: '100%',
   showNavButtons: true,
@@ -414,6 +415,7 @@ export function renderSettings(container, state, onUpdate) {
         return g;
       };
       rows.append(group('Interface'));
+      rows.append(makeRow('Reduce motion', 'Auto follows your system setting. On makes menus fade instead of slide and keeps the sky still.', makeSegmented(['Auto', 'On', 'Off'], settings.reduceMotion || 'Auto', set('reduceMotion'))));
       rows.append(makeRow('Corner roundness', 'How round cards, menus and buttons are.', makeSegmented(['Sharp', 'Default', 'Round'], settings.radius || 'Default', set('radius'))));
       rows.append(makeRow('Interface size', 'Makes everything bigger or smaller.', makeSegmented(['90%', '100%', '110%', '125%'], settings.uiScale || '100%', set('uiScale'))));
       rows.append(makeRow('Back and forward buttons', 'Show them in the Helm.', makeSwitch(settings.showNavButtons !== false, set('showNavButtons'))));

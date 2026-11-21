@@ -141,6 +141,12 @@ fn fields() -> Vec<Field> {
             kind: Kind::Bool,
             default: || json!(true),
         },
+        // --- Motion (AUDIT-42)
+        Field {
+            key: "reduceMotion",
+            kind: Kind::Choice(&["Auto", "On", "Off"]),
+            default: || json!("Auto"),
+        },
         // --- Interface options (AUDIT-39)
         Field {
             key: "radius",
@@ -409,7 +415,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "showClock": false, "clockFormat": "12-hour", "showGreeting": false, "greetingName": "Sam", "showTrailHint": false, "wallpaperDim": "60%", "wallpaperBlur": "Light", "radius": "Round", "uiScale": "110%", "showNavButtons": false, "showReload": false, "answerFont": "Mono", "answerSize": "Large", "answerWidth": "Wide", "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "showClock": false, "clockFormat": "12-hour", "showGreeting": false, "greetingName": "Sam", "showTrailHint": false, "wallpaperDim": "60%", "wallpaperBlur": "Light", "reduceMotion": "On", "radius": "Round", "uiScale": "110%", "showNavButtons": false, "showReload": false, "answerFont": "Mono", "answerSize": "Large", "answerWidth": "Wide", "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);
