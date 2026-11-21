@@ -124,6 +124,8 @@ struct State {
     notch_width: f32,
     /// Keyboard shortcuts for page windows: modifiers + key code -> command id.
     key_bindings: Vec<KeyBinding>,
+    /// Screenshot requests in flight: DevTools message id -> its observer registration.
+    shot_regs: HashMap<i32, Registration>,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -773,6 +775,31 @@ wrap_browser_view_delegate! {
     }
 }
 
+// A one-shot listener for the answer to a screenshot request (DevTools `Page.captureScreenshot`).
+wrap_dev_tools_message_observer! {
+    struct ShotObserver { view: ViewId }
+    impl DevToolsMessageObserver {
+        fn on_dev_tools_method_result(
+            &self,
+            _browser: Option<&mut Browser>,
+            message_id: ::std::os::raw::c_int,
+            success: ::std::os::raw::c_int,
+            result: Option<&[u8]>,
+        ) {
+            let json = if success != 0 {
+                result.map(|r| String::from_utf8_lossy(r).into_owned()).unwrap_or_default()
+            } else {
+                "{\"error\":\"The page could not be captured.\"}".to_string()
+            };
+            // The listener is not needed any more.
+            STATE.with(|s| {
+                s.borrow_mut().shot_regs.remove(&message_id);
+            });
+            emit(Event::AgentResult { view: self.view, id: message_id as u64, json });
+        }
+    }
+}
+
 wrap_life_span_handler! {
     struct PageLife { id: ViewId }
 
@@ -872,15 +899,6 @@ wrap_display_handler! {
                         username: u.to_string(),
                         password: p.to_string(),
                     });
-                }
-                return 1;
-            }
-            if let Some(v) = text.strip_prefix("__ody_agent__:") {
-                if v.len() < 200_000
-                    && let Some((id, json)) = v.split_once(':')
-                    && let Ok(id) = id.parse::<u64>()
-                {
-                    emit(Event::AgentResult { view: self.id, id, json: json.to_string() });
                 }
                 return 1;
             }
@@ -1579,13 +1597,27 @@ impl CefEngine {
         });
     }
 
-    /// Run a script in a web page for the assistant (page control). The answer comes back as
-    /// [`Event::AgentResult`] through the console, so nothing in the page gets a way to call us.
-    pub fn run_page_script(&self, view: ViewId, script: &str) {
+    /// Take a screenshot of a page (what its renderer draws, even under our overlays) as a JPEG.
+    /// The answer, `{"data": "<base64>"}`, arrives as [`Event::AgentResult`] with `id` = `message_id`.
+    pub fn capture_screenshot(&self, view: ViewId, message_id: i32) {
         with_browser(view, |b| {
-            if let Some(f) = b.main_frame() {
-                f.execute_java_script(Some(&CefString::from(script)), None, 0);
+            let Some(host) = b.host() else { return };
+            let mut observer = ShotObserver::new(view);
+            let reg = host.add_dev_tools_message_observer(Some(&mut observer));
+            if let Some(reg) = reg {
+                STATE.with(|s| {
+                    s.borrow_mut().shot_regs.insert(message_id, reg);
+                });
             }
+            let Some(params) = dictionary_value_create() else { return };
+            params.set_string(Some(&CefString::from("format")), Some(&CefString::from("jpeg")));
+            params.set_int(Some(&CefString::from("quality")), 60);
+            let mut params = params;
+            host.execute_dev_tools_method(
+                message_id,
+                Some(&CefString::from("Page.captureScreenshot")),
+                Some(&mut params),
+            );
         });
     }
 

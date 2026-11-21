@@ -137,9 +137,6 @@ pub enum Event {
     /// A page answered a script the assistant ran in it (see the shell's `agent`): the request id
     /// and the JSON text it produced. Page content is untrusted; the id only routes the answer.
     AgentResult { view: ViewId, id: u64, json: String },
-    /// A page answered a script the assistant ran in it (see the shell's `agent`): the request id
-    /// and the JSON text it produced. Page content is untrusted; the id only routes the answer.
-    AgentResult { view: ViewId, id: u64, json: String },
     /// Alt+F4: close the whole browser (not rebindable).
     ShortcutQuit,
     /// The browser is closing (every route: the close button, Alt+F4, the taskbar). Sent once,
