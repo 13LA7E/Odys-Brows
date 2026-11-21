@@ -128,6 +128,13 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: visual check, Browsing and ClosedTabs
+
+- **Proved the cause:** the diff images show differing pixels only inside the fake web page's text (headline, body, byline, nav links); the rail, Helm, notch and download card were identical. Side by side with `design/png/Browsing.png`: the design used a Times-metric serif (Liberation Serif) and an Arial-metric sans; this PC used Georgia and Segoe UI, which are wider, so lines wrapped differently.
+- **Fix:** the fake page (`ui/fixtures/page-*.html`) now uses bundled fonts, Liberation Serif Regular and Bold and Liberation Sans Regular (`ui/fixtures/fonts/`, licence `LICENSE-Liberation.txt`, SIL OFL 1.1), instead of the system's. Familjen Grotesk could not be used: the design's page text is a serif, so a sans font could never match it. Only fixture mode uses these files. The 5 limit is unchanged and `design/` is untouched. Added no code dependency.
+- **Scores** (`visual_check.py`, all boards): Main 0.0, Browsing 0.1 (was 9.7), Settings 3.1, HelmAnswer 0.0 (was 4.1), ClosedTabs 0.1 (was 8.9), Private 0.0, History 0.6. `--selftest`: every board 0.0 (Private 0.0, History 0.0 shown).
+- Not verified: a Linux run (the bundled fonts make it the same there; unverified).
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-42 motion options (Stage F finished)
 
 - Reduce motion Auto / On / Off (details in PHASES). No speed multiplier (not wanted unless you say). **Fixed a regression from AUDIT-41** (a normal close lost the tabs); see PHASES. Verified live: `motion_options.py` 10/10; full re-run of the Stage F scripts all pass (shortcuts 23, themes 21, sky_options 14, newtab_options 27, interface_options 18, general_settings 16, privacy_clear 17, restore 8, popups_history 11, motion 13).
