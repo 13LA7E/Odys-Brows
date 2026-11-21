@@ -56,7 +56,7 @@ If your context window is small, read STATUS, then the one task, then only the s
 
 ## Hard rules
 
-- **Design is fixed.** Build what `design/png/*.png` shows, using the numbers in `docs/DESIGN.md`. Don't restyle, "improve", add gradients, glows, glitter or extra animation. If something isn't designed (`DESIGN.md` §10), design it in the same language, keep it quiet, and get the owner's OK with a screenshot.
+- **Design is fixed.** Build what `design/png/*.png` shows, using the numbers in `docs/DESIGN.md`. Don't restyle, "improve", or add gradients, glows or glitter. Motion is allowed only as specified in D-024 (quiet transitions, cursor-linked stars); nothing beyond it. If something isn't designed (`DESIGN.md` §10), design it in the same language, keep it quiet, and get the owner's OK with a screenshot.
 - **Windows and Linux both.** Every feature must build and run on both. If you can only test one, say so in the session log and add a line to STATUS "Needs testing on: Linux" (or Windows).
 - **Web content never gets IPC.** Only our own UI talks to the native side. Never pass secrets (API keys, the Odysseus token, passwords) to the UI or to web pages.
 - **Don't guess facts.** If you're not sure about an API, version or behaviour, look it up in the official docs or the source, and say in the log what you checked. If you can't check, write "unverified" next to it. The owner wants this.
