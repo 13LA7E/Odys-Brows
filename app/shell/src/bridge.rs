@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 /// Largest message we accept from the UI (EDGE_CASES §1: huge input).
 pub const MAX_MESSAGE_BYTES: usize = 256 * 1024;
+/// The one message that carries a file: the new-tab wallpaper (4 MB image as text). wallpaper.rs checks it.
+pub const MAX_WALLPAPER_MESSAGE_BYTES: usize = 6 * 1024 * 1024;
 
 fn deserialize_url<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -112,6 +114,12 @@ pub enum FromUi {
         #[serde(default)]
         id: Option<String>,
     },
+    /// The picked new-tab wallpaper as a `data:` URL (checked in Rust, saved in the profile).
+    SetWallpaper {
+        data: String,
+    },
+    /// Remove the wallpaper.
+    ClearWallpaper,
     /// Bind a shortcut: `combo` like `Ctrl+Shift+K` to command `id` (checked in Rust).
     SetShortcut {
         id: String,
@@ -433,6 +441,11 @@ pub enum ToUi {
     Shortcuts {
         commands: serde_json::Value,
     },
+    /// The new-tab wallpaper (a `data:` URL, or none) and, if a change was refused, why.
+    Wallpaper {
+        data: Option<String>,
+        error: Option<String>,
+    },
     /// The answer to `set-shortcut` / `reset-shortcuts`; `shortcuts` is what is now saved.
     ShortcutResult {
         ok: bool,
@@ -494,7 +507,12 @@ pub struct ClosedTabInfo {
 
 /// Parse one message from the UI. `Err` carries a short reason for the log.
 pub fn parse(json: &str) -> Result<FromUi, String> {
-    if json.len() > MAX_MESSAGE_BYTES {
+    let limit = if json.starts_with(r#"{"type":"set-wallpaper""#) {
+        MAX_WALLPAPER_MESSAGE_BYTES
+    } else {
+        MAX_MESSAGE_BYTES
+    };
+    if json.len() > limit {
         return Err(format!("message too large ({} bytes)", json.len()));
     }
     serde_json::from_str(json).map_err(|e| e.to_string())
@@ -700,6 +718,14 @@ mod tests {
             "a".repeat(MAX_MESSAGE_BYTES)
         );
         assert!(parse(&huge).unwrap_err().contains("too large"));
+        // only the wallpaper may be big, and not without limit
+        let wp = |n: usize| format!(r#"{{"type":"set-wallpaper","data":"{}"}}"#, "a".repeat(n));
+        assert!(parse(&wp(MAX_MESSAGE_BYTES * 4)).is_ok());
+        assert!(
+            parse(&wp(MAX_WALLPAPER_MESSAGE_BYTES))
+                .unwrap_err()
+                .contains("too large")
+        );
     }
 
     #[test]

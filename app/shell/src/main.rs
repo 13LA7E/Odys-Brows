@@ -14,6 +14,7 @@ mod privacy;
 mod selftest;
 mod settings;
 mod shortcuts;
+mod wallpaper;
 
 use bridge::{FromUi, ToUi};
 use engine_api::{Engine, Rect, ViewId};
@@ -511,6 +512,16 @@ impl Shell {
             }
             _ => {}
         }
+    }
+
+    /// Tells the UI which wallpaper is saved (none in private windows).
+    fn send_wallpaper(&self, engine: &mut CefEngine, error: Option<String>) {
+        let data = if self.is_private {
+            None
+        } else {
+            wallpaper::load(&profile_dir())
+        };
+        engine.send_to_ui(&bridge::to_json(&ToUi::Wallpaper { data, error }));
     }
 
     fn shortcuts_now(&self) -> serde_json::Value {
@@ -1226,6 +1237,20 @@ impl Shell {
             FromUi::OpenPrivateWindow => open_private_window(),
             FromUi::FocusWindow => engine.focus_ui(),
             FromUi::RunCommand { id } => self.run_command(&id, None),
+            FromUi::SetWallpaper { data } => {
+                let result = if self.is_private {
+                    Err("Wallpapers can't be changed in a private window.".to_string())
+                } else {
+                    wallpaper::save(&profile_dir(), &data)
+                };
+                self.send_wallpaper(engine, result.err());
+            }
+            FromUi::ClearWallpaper => {
+                if !self.is_private {
+                    wallpaper::clear(&profile_dir());
+                }
+                self.send_wallpaper(engine, None);
+            }
             FromUi::SetShortcut { id, combo } => {
                 let current = self.shortcuts_now();
                 let result = shortcuts::set_binding(&current, &id, &combo);
@@ -1377,6 +1402,7 @@ impl Shell {
                 engine.set_global_privacy_control(settings["globalPrivacyControl"] != false);
                 self.publish_shortcuts(&settings, engine);
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
+                self.send_wallpaper(engine, None);
                 for t in &self.tabs {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
                         view: t.view,

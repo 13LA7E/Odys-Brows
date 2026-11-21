@@ -2234,6 +2234,7 @@ name = "shell"
 version = "0.1.0"
 dependencies = [
  "ai",
+ "base64 0.22.1",
  "embed-resource",
  "engine-api",
  "engine-cef",

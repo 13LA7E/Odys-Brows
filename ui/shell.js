@@ -9,7 +9,7 @@ import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine }
 import { renderSettings, applyAccent } from './settings.js';
 import { applySavedTheme, resolveTheme, starColour } from './themes.js';
 import { renderHistory, formatDayGroups } from './history.js';
-import { renderNewTab } from './newtab.js';
+import { renderNewTab, wallpaperVersion } from './newtab.js';
 import { renderErrorPage, renderPromptCard } from './pagebasics.js';
 import { renderExtensionsPage } from './extensions.js';
 
@@ -641,6 +641,9 @@ export function renderShell(root, state) {
     add(region('newtab', {
       tabs: (state.tabs || []).map((t) => [t.id, t.title, t.url, t.parent]),
       activeTab: state.activeTab, newTab: state.newTab, minute: state.minute,
+      opts: [state.settings?.showClock, state.settings?.clockFormat, state.settings?.showGreeting,
+        state.settings?.greetingName, state.settings?.showTrailHint, state.settings?.wallpaperDim,
+        state.settings?.wallpaperBlur, wallpaperVersion()],
     }, () => {
     const wrap = el('div', 'newtab-region');
     wrap.style.display = 'contents';

@@ -20,6 +20,8 @@ vault.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Reason: decode and check the new-tab wallpaper image the user picks (wallpaper.rs).
+base64.workspace = true
 
 [lints]
 workspace = true

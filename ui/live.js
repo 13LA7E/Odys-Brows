@@ -4,6 +4,7 @@ import { onMessage } from './bridge.js';
 import { focusHelm } from './pagebasics.js';
 import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
+import { setWallpaper, wallpaperVersion } from './newtab.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
@@ -247,6 +248,10 @@ export async function startLive() {
         state.canGoBack = msg.can_go_back;
         state.canGoForward = msg.can_go_forward;
       }
+    } else if (msg.type === 'wallpaper') {
+      setWallpaper(msg.data);
+      state.wallpaper = { has: !!msg.data, error: msg.error || '', rev: wallpaperVersion() };
+      renderShellLive();
     } else if (msg.type === 'shortcuts') {
       setShortcutTable(msg.commands);
       state.shortcutList = msg.commands;

@@ -28,6 +28,13 @@ export const DEFAULT_SETTINGS = {
   skySpeed: 'Normal',
   cometRate: 'Normal',
   lowPower: false,
+  showClock: true,
+  clockFormat: '24-hour',
+  showGreeting: true,
+  greetingName: '',
+  showTrailHint: true,
+  wallpaperDim: '40%',
+  wallpaperBlur: 'Off',
   theme: 'Default',
   customThemes: {},
 };
@@ -496,25 +503,67 @@ export function renderSettings(container, state, onUpdate) {
     const rows = el('div');
     rows.style.cssText = 'margin-top:28px;';
 
-    rows.append(makeRow(
-      'Clock & greeting',
-      'Show time and good morning/evening greeting on empty tab.',
-      makeSwitch(settings.showClock !== false, (val) => {
-        settings.showClock = val;
+    const keep = (key) => (v) => {
+      settings[key] = v;
+      saveSettings(settings);
+      if (onUpdate) onUpdate(key, v);
+      renderSettings(container, state, onUpdate);
+    };
+    rows.append(makeRow('Clock and date', 'Show the time and date on a new tab.', makeSwitch(settings.showClock !== false, keep('showClock'))));
+    if (settings.showClock !== false) {
+      rows.append(makeRow('Clock format', '24-hour (15:30) or 12-hour (3:30 PM).', makeSegmented(['24-hour', '12-hour'], settings.clockFormat || '24-hour', keep('clockFormat'))));
+    }
+    rows.append(makeRow('Greeting', 'A good morning or evening line above the clock.', makeSwitch(settings.showGreeting !== false, keep('showGreeting'))));
+    if (settings.showGreeting !== false) {
+      const nameBox = el('input');
+      nameBox.type = 'text';
+      nameBox.maxLength = 30;
+      nameBox.value = settings.greetingName || '';
+      nameBox.placeholder = 'Your name';
+      nameBox.setAttribute('aria-label', 'Your name');
+      nameBox.style.cssText = 'width:200px;height:34px;border-radius:10px;border:1px solid var(--w-field);background:var(--w-field);color:var(--text);font:inherit;font-size:13.5px;padding:0 12px;';
+      nameBox.addEventListener('change', () => {
+        settings.greetingName = nameBox.value.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 30);
         saveSettings(settings);
-        renderSettings(container, state, onUpdate);
-      })
-    ));
+        if (onUpdate) onUpdate('greetingName', settings.greetingName);
+      });
+      rows.append(makeRow('Your name', 'Added to the greeting. Stays on this computer.', nameBox));
+    }
+    rows.append(makeRow('Tab trail hint', 'The short note about open tabs drawn as stars.', makeSwitch(settings.showTrailHint !== false, keep('showTrailHint'))));
 
-    rows.append(makeRow(
-      'Tab trail guide hint',
-      'Show the hint explaining open tabs drawn as stars.',
-      makeSwitch(settings.showTrailHint !== false, (val) => {
-        settings.showTrailHint = val;
-        saveSettings(settings);
-        renderSettings(container, state, onUpdate);
-      })
-    ));
+    // Wallpaper: one image of your own, on the new tab only.
+    const wp = state.wallpaper || {};
+    const file = el('input');
+    file.type = 'file';
+    file.accept = 'image/png,image/jpeg,image/webp';
+    file.style.display = 'none';
+    file.setAttribute('aria-label', 'Wallpaper file');
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const bad = (m) => { state.wallpaper = { ...wp, error: m }; renderSettings(container, state, onUpdate); };
+      if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { bad('Use a PNG, JPEG or WebP image.'); return; }
+      if (f.size > 4 * 1024 * 1024) { bad('That image is too big (4 MB at most).'); return; }
+      const reader = new FileReader();
+      reader.onload = () => window.odysseyBridge?.(JSON.stringify({ type: 'set-wallpaper', data: String(reader.result) }));
+      reader.onerror = () => bad("Couldn't read that file.");
+      reader.readAsDataURL(f);
+    });
+    const wpBox = el('div');
+    wpBox.style.cssText = 'display:flex;gap:10px;align-items:center;';
+    wpBox.append(file, makeButton(wp.has ? 'Change image' : 'Choose image', false, () => file.click()));
+    if (wp.has) wpBox.append(makeButton('Remove', false, () => window.odysseyBridge?.(JSON.stringify({ type: 'clear-wallpaper' }))));
+    const wpRow = makeRow('Wallpaper', 'Your own picture behind the new tab (PNG, JPEG or WebP, up to 4 MB). Only the new tab uses it.', wpBox);
+    if (wp.error) {
+      const e = el('div', 'wallpaper-error', wp.error);
+      e.style.cssText = 'font-size:13px;margin-top:6px;color:var(--text-soft);';
+      wpRow.firstChild.append(e);
+    }
+    rows.append(wpRow);
+    if (wp.has) {
+      rows.append(makeRow('Dim', 'Darkens the picture so text stays easy to read.', makeSegmented(['0%', '20%', '40%', '60%', '80%'], settings.wallpaperDim || '40%', keep('wallpaperDim'))));
+      rows.append(makeRow('Blur', 'Softens the picture.', makeSegmented(['Off', 'Light', 'Medium', 'Strong'], settings.wallpaperBlur || 'Off', keep('wallpaperBlur'))));
+    }
 
     content.append(rows);
   } else if (currentSection === 'Shields') {

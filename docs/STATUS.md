@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
-| Current task | **Stage F, AUDIT-37 (new-tab clock and wallpapers)**, then 39, 42. Done: STORE, 38, 40, 41, 35, 36. |
+| Current task | **Stage F, AUDIT-39 (interface options)**, then 42. Done: STORE, 38, 40, 41, 35, 36, 37. |
 | State | Phase R is done except AUDIT-23 (blocked on D-013), AUDIT-31 (Linux) and the items listed as not done in PHASES. AUDIT-01, 03, 32, 33 and 34 are done and verified live (this session). Everything is verified on Windows only. **Uncommitted on purpose:** the D-024 rule edits (see below). |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
@@ -119,6 +119,10 @@ Copy this template for each session:
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-36 sky options
 
 - Density, drift speed, comet rate and Low power (details in PHASES). **Also fixed a regression of mine:** comets had stopped spawning in AUDIT-32. Verified live: `sky_options.py` 14/14. Not ported: extra sky types (they are glows; the design forbids them). Owner: tell me if you want them anyway.
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-37 new-tab options
+
+- Clock, greeting, name, hint and a wallpaper with dim and blur (details in PHASES). Verified live: `newtab_options.py` 27/27, plus `general_settings`, `themes`, `restore`. New dependency in the shell crate: `base64` (checks the wallpaper image). Not verified: Linux.
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-41 shortcuts
 

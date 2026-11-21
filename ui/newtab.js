@@ -36,8 +36,12 @@ export function getGreeting(date = new Date()) {
   return 'Good night';
 }
 
-/** Format clock time (HH:mm). */
-export function formatClock(date = new Date()) {
+/** Format clock time: "15:30", or "3:30 PM" with the 12-hour option. */
+export function formatClock(date = new Date(), twelveHour = false) {
+  if (twelveHour) {
+    const h = date.getHours() % 12 || 12;
+    return `${h}:${String(date.getMinutes()).padStart(2, '0')} ${date.getHours() < 12 ? 'AM' : 'PM'}`;
+  }
   const h = String(date.getHours()).padStart(2, '0');
   const m = String(date.getMinutes()).padStart(2, '0');
   return `${h}:${m}`;
@@ -183,6 +187,17 @@ export function layoutConstellation(tabs = [], activeTabId = null, bounds = {}) 
   return { points, edges };
 }
 
+// The wallpaper is big, so it lives here and not in the UI state that gets compared on every render.
+let wallpaperUrl = '';
+let wallpaperRev = 0;
+export function setWallpaper(url) {
+  const next = typeof url === 'string' && url.startsWith('data:image/') ? url : '';
+  if (next !== wallpaperUrl) { wallpaperUrl = next; wallpaperRev += 1; }
+  return wallpaperRev;
+}
+export function hasWallpaper() { return !!wallpaperUrl; }
+export function wallpaperVersion() { return wallpaperRev; }
+
 /** Render New Tab greeting, clock, date, hint, and constellation. */
 export function renderNewTab(container, state, onSelectTab) {
   const data = state.newTab || {};
@@ -193,22 +208,41 @@ export function renderNewTab(container, state, onSelectTab) {
   const header = el('div', 'newtab-header');
   header.style.cssText = 'position:absolute;left:120px;top:92px;pointer-events:none;';
 
-  const greetingEl = el('div', null, data.greeting || getGreeting());
+  const set = state.settings || {};
+  const name = typeof set.greetingName === 'string' ? set.greetingName.trim() : '';
+  const greetingEl = el('div', null, data.greeting || (name ? `${getGreeting()}, ${name}` : getGreeting()));
   greetingEl.style.cssText = 'font-size:15px;color:var(--text-muted);';
 
-  const clockEl = el('div', null, data.clock || formatClock());
+  const clockEl = el('div', null, data.clock || formatClock(new Date(), set.clockFormat === '12-hour'));
   clockEl.style.cssText = 'font-size:84px;font-weight:400;letter-spacing:-3px;line-height:1.05;color:var(--text-strong);margin-top:4px;';
 
   const dateEl = el('div', null, data.date || formatDate());
   dateEl.style.cssText = 'font-size:15px;color:var(--text-muted);margin-top:2px;';
 
-  header.append(greetingEl, clockEl, dateEl);
-  container.append(header);
+  // Options (AUDIT-37): each one off removes its line; everything on is the approved design.
+  if (set.showGreeting !== false) header.append(greetingEl);
+  if (set.showClock !== false) header.append(clockEl, dateEl);
+  if (header.children.length) container.append(header);
+
+  // Wallpaper (new tab only): a picked image under a flat dim, optionally blurred. None = nothing drawn.
+  if (wallpaperUrl) {
+    const blurPx = { Light: 4, Medium: 8, Strong: 16 }[set.wallpaperBlur] || 0;
+    const dim = (parseInt(set.wallpaperDim, 10) || 0) / 100;
+    const wp = el('div', 'newtab-wallpaper');
+    wp.style.cssText = `position:absolute;inset:${blurPx ? -blurPx * 2 : 0}px;background-image:url("${wallpaperUrl}");background-size:cover;background-position:center;${blurPx ? `filter:blur(${blurPx}px);` : ''}pointer-events:none;`;
+    const shade = el('div', 'newtab-wallpaper-dim');
+    shade.style.cssText = `position:absolute;inset:0;background:rgba(0,0,0,${dim});pointer-events:none;`;
+    const holder = el('div');
+    // Right of the rail, so the rail and its stars stay on the sky.
+    holder.style.cssText = 'position:absolute;top:0;right:0;bottom:0;left:var(--rail, 56px);overflow:hidden;pointer-events:none;';
+    holder.append(wp, shade);
+    container.insertBefore(holder, container.firstChild);
+  }
 
   // 2. Hint text (left 120, top 262, width 260)
   const hintEl = el('div', 'newtab-hint', data.hint || 'Your open tabs, drawn as a trail. Select a star to jump back to it.');
   hintEl.style.cssText = 'position:absolute;left:120px;top:262px;font-size:13px;color:var(--text-muted);width:260px;line-height:1.5;pointer-events:none;';
-  container.append(hintEl);
+  if (set.showTrailHint !== false) container.append(hintEl);
 
   // 3. Constellation points and edges
   let points = [];

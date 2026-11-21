@@ -184,6 +184,42 @@ fn fields() -> Vec<Field> {
             kind: Kind::Custom(clean_custom_themes),
             default: || json!({}),
         },
+        // --- New tab (AUDIT-37)
+        Field {
+            key: "showClock",
+            kind: Kind::Bool,
+            default: || json!(true),
+        },
+        Field {
+            key: "clockFormat",
+            kind: Kind::Choice(&["24-hour", "12-hour"]),
+            default: || json!("24-hour"),
+        },
+        Field {
+            key: "showGreeting",
+            kind: Kind::Bool,
+            default: || json!(true),
+        },
+        Field {
+            key: "greetingName",
+            kind: Kind::Text(30),
+            default: || json!(""),
+        },
+        Field {
+            key: "showTrailHint",
+            kind: Kind::Bool,
+            default: || json!(true),
+        },
+        Field {
+            key: "wallpaperDim",
+            kind: Kind::Choice(&["0%", "20%", "40%", "60%", "80%"]),
+            default: || json!("40%"),
+        },
+        Field {
+            key: "wallpaperBlur",
+            kind: Kind::Choice(&["Off", "Light", "Medium", "Strong"]),
+            default: || json!("Off"),
+        },
         // --- General (AUDIT-38)
         Field {
             key: "searchEngine",
@@ -337,7 +373,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "showClock": false, "clockFormat": "12-hour", "showGreeting": false, "greetingName": "Sam", "showTrailHint": false, "wallpaperDim": "60%", "wallpaperBlur": "Light", "skyDensity": "50%", "skySpeed": "Fast", "cometRate": "Rare", "lowPower": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);
