@@ -244,6 +244,8 @@ struct Shell {
     closed_tabs: VecDeque<ClosedTabRecord>,
     next_closed_id: u64,
     extensions: extensions::ExtensionsStore,
+    /// Store ids of extensions running in this browser right now (no restart needed for these).
+    live_ext: std::collections::HashSet<String>,
     vault: vault::VaultStore,
     ai_client: Arc<ai::AiClient>,
     ai_config: ai::AiConfig,
@@ -333,6 +335,7 @@ impl Default for Shell {
             closed_tabs: VecDeque::new(),
             next_closed_id: 1,
             extensions: extensions::ExtensionsStore::default(),
+            live_ext: std::collections::HashSet::new(),
             vault: vault_store,
             ai_client: Arc::new(ai::AiClient::new()),
             ai_config: ai_cfg,
@@ -767,6 +770,103 @@ impl Shell {
     /// If a picture does not arrive: a whole-page capture is retried as the visible part (some pages
     /// do not answer a second whole-page request), and after that it is reported as failed. Either
     /// way a page brought up for the picture goes back into hiding.
+    /// The extensions for the UI, with which of them already run in this browser.
+    fn ext_list(&self) -> Vec<extensions::ExtensionInfo> {
+        let mut list = self.extensions.list();
+        for e in &mut list {
+            e.live = e.enabled && self.live_ext.contains(&e.id);
+        }
+        list
+    }
+
+    fn send_ext_list(&self) {
+        CefEngine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
+            extensions: self.ext_list(),
+        }));
+    }
+
+    /// Start an extension in the running browser (a private DevTools command), so it works at once.
+    /// If Chromium refuses, it stays registered and starts at the next launch.
+    fn activate_extension(&mut self, key: String, download: Option<String>) {
+        let Some(info) = self.extensions.list().into_iter().find(|e| e.id == key) else {
+            return;
+        };
+        let Some(path) = info.path.clone() else {
+            return;
+        };
+        if self.live_ext.contains(&key) {
+            return;
+        }
+        CefEngine.devtools_call(
+            "Extensions.loadUnpacked",
+            serde_json::json!({ "path": path }),
+            move |res| {
+                CefEngine.post_ui(move || {
+                    SHELL_REF.with(|r| {
+                        if let Some(sh) = r.borrow().as_ref()
+                            && let Ok(mut s) = sh.try_borrow_mut()
+                        {
+                            s.extension_activated(key, res, download);
+                        }
+                    });
+                });
+            },
+        );
+    }
+
+    fn extension_activated(
+        &mut self,
+        key: String,
+        res: Result<serde_json::Value, String>,
+        download: Option<String>,
+    ) {
+        let name = self
+            .extensions
+            .list()
+            .into_iter()
+            .find(|e| e.id == key)
+            .map(|e| e.name)
+            .unwrap_or_default();
+        let note = match res {
+            Ok(v) => {
+                self.live_ext.insert(key.clone());
+                if let Some(id) = v.get("id").and_then(|i| i.as_str()) {
+                    self.extensions.set_chrome_id(&key, id);
+                    let _ = self.extensions.save(&profile_dir());
+                }
+                format!("Installed {name}. It is ready to use.")
+            }
+            Err(e) => {
+                eprintln!("Extension {name}: live load failed: {e}");
+                format!("Installed {name}. Restart Constellations to use it.")
+            }
+        };
+        self.send_ext_list();
+        if let Some(id) = download {
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::DownloadNote { id, text: note }));
+        }
+    }
+
+    /// Stop an extension in the running browser.
+    fn deactivate_extension(&mut self, key: &str) {
+        if !self.live_ext.remove(key) {
+            return;
+        }
+        if let Some(info) = self.extensions.list().into_iter().find(|e| e.id == key)
+            && !info.chrome_id.is_empty()
+        {
+            CefEngine.devtools_call(
+                "Extensions.uninstall",
+                serde_json::json!({ "id": info.chrome_id }),
+                |res| {
+                    if let Err(e) = res {
+                        eprintln!("Extension unload: {e}");
+                    }
+                },
+            );
+        }
+    }
+
     /// A downloaded Chrome extension (.crx) is unpacked into the profile and added to Extensions,
     /// instead of being handed to some other browser.
     fn install_downloaded_extension(&mut self, id: impl std::fmt::Display, path: &str) {
@@ -804,13 +904,9 @@ impl Shell {
         {
             Ok(info) => {
                 let _ = self.extensions.save(&profile_dir());
-                CefEngine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
-                    extensions: self.extensions.list(),
-                }));
-                note(format!(
-                    "Installed {}. Restart Constellations to use it.",
-                    info.name
-                ));
+                self.send_ext_list();
+                note(format!("Installing {}...", info.name));
+                self.activate_extension(info.id.clone(), Some(id.to_string()));
             }
             Err(e) => note(format!("Not installed: {e}")),
         }
@@ -2235,7 +2331,7 @@ impl Shell {
                 }
             }
             FromUi::GetExtensions => {
-                let list = self.extensions.list();
+                let list = self.ext_list();
                 engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
                     extensions: list,
                 }));
@@ -2243,27 +2339,39 @@ impl Shell {
             FromUi::ToggleExtension { id, enabled } => {
                 self.extensions.toggle(&id, enabled);
                 let _ = self.extensions.save(&profile_dir());
-                let list = self.extensions.list();
-                engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
-                    extensions: list,
-                }));
+                if enabled {
+                    self.activate_extension(id, None);
+                } else {
+                    self.deactivate_extension(&id);
+                }
+                self.send_ext_list();
             }
             FromUi::RemoveExtension { id } => {
+                self.deactivate_extension(&id);
+                // An extension we unpacked ourselves is deleted with it; a folder you loaded stays.
+                if let Some(path) = self
+                    .extensions
+                    .list()
+                    .into_iter()
+                    .find(|e| e.id == id)
+                    .and_then(|e| e.path)
+                {
+                    let managed = profile_dir().join("extensions");
+                    let p = PathBuf::from(path);
+                    if p.starts_with(&managed) && p != managed {
+                        let _ = std::fs::remove_dir_all(&p);
+                    }
+                }
                 self.extensions.remove(&id);
                 let _ = self.extensions.save(&profile_dir());
-                let list = self.extensions.list();
-                engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
-                    extensions: list,
-                }));
+                self.send_ext_list();
             }
             FromUi::LoadUnpackedExtension { path } => {
                 let p = PathBuf::from(&path);
-                if self.extensions.load_unpacked(&p).is_ok() {
+                if let Ok(info) = self.extensions.load_unpacked(&p) {
                     let _ = self.extensions.save(&profile_dir());
-                    let list = self.extensions.list();
-                    engine.send_to_ui(&bridge::to_json(&ToUi::ExtensionsLoaded {
-                        extensions: list,
-                    }));
+                    self.send_ext_list();
+                    self.activate_extension(info.id, None);
                 }
             }
             FromUi::AiGetConfig => {
@@ -2973,6 +3081,12 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         rail_width: saved_session.rail_width,
         active_space: saved_session.active_space,
         extensions: extensions::ExtensionsStore::load_or_default(&profile_dir()),
+        live_ext: extensions::ExtensionsStore::load_or_default(&profile_dir())
+            .list()
+            .into_iter()
+            .filter(|e| e.enabled && e.path.is_some())
+            .map(|e| e.id)
+            .collect(),
         ..Shell::default()
     }));
 

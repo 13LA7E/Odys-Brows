@@ -70,7 +70,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
   });
   wrap.append(loadRow);
 
-  const note = el('p', null, 'Extensions are loaded when Constellations starts. Changes here apply the next time you start it.');
+  const note = el('p', null, 'Extensions you add, turn on, turn off or remove here take effect straight away.');
   note.style.cssText = 'font-size:13px;color:var(--text-muted);margin:0 0 20px 0;';
   wrap.append(note);
 
@@ -109,7 +109,16 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       iconSvg.append(svg('path', {
         d: 'M4 11a2 2 0 0 1 .4-1.2l2.6-3.8A2 2 0 0 1 8.6 5H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8.6a2 2 0 0 1-1.6-.8L4.4 14.2A2 2 0 0 1 4 13v-2z',
       }));
-      iconWrap.append(iconSvg);
+      if (ext.icon) {
+        const img = el('img');
+        img.src = ext.icon;
+        img.alt = '';
+        img.style.cssText = 'width:30px;height:30px;object-fit:contain;border-radius:6px;';
+        iconWrap.style.background = 'var(--w-field)';
+        iconWrap.append(img);
+      } else {
+        iconWrap.append(iconSvg);
+      }
 
       const infoCol = el('div');
       const nameRow = el('div');
@@ -148,6 +157,11 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
         permsRow.append(pill);
       });
 
+      if (ext.enabled && !ext.live) {
+        const wait = el('div', 'ext-pending', 'Starts the next time you open Constellations.');
+        wait.style.cssText = 'font-size:12.5px;color:var(--accent);margin-bottom:8px;';
+        statsRow.append(wait);
+      }
       infoCol.append(nameRow, descEl, statsRow, permsRow);
       left.append(iconWrap, infoCol);
 
@@ -172,11 +186,27 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       const removeBtn = el('button', null, 'Remove');
       removeBtn.style.cssText =
         'font-size:13px;color:var(--text-muted);background:transparent;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;';
+      // Two clicks, so a slip does not remove it (the browser's confirm() box is not shown in our window).
+      let armed = 0;
       removeBtn.addEventListener('click', () => {
-        if (confirm(`Remove extension "${ext.name}"?`)) {
+        if (armed) {
+          clearTimeout(armed);
           if (actions.onRemove) actions.onRemove(ext.id);
+          return;
         }
+        removeBtn.textContent = 'Click again to remove';
+        removeBtn.style.color = 'var(--accent)';
+        armed = setTimeout(() => { armed = 0; removeBtn.textContent = 'Remove'; removeBtn.style.color = 'var(--text-muted)'; }, 3500);
       });
+
+      // Settings page of the extension, when it has one
+      const optionsBtn = ext.options && ext.chrome_id ? el('button', 'ext-options', 'Options') : null;
+      if (optionsBtn) {
+        optionsBtn.style.cssText = 'font-size:13px;color:var(--text-muted);background:transparent;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;';
+        optionsBtn.addEventListener('click', () => {
+          window.odysseyBridge?.(JSON.stringify({ type: 'open', url: `chrome-extension://${ext.chrome_id}/${ext.options}` }));
+        });
+      }
 
       // Pin to the notch (only an enabled extension can be pinned): the notch grows to fit it.
       const isPinned = (actions.pinned || []).includes(ext.id);
@@ -187,6 +217,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       pinBtn.style.cssText = `font-size:13px;color:${isPinned ? 'var(--accent)' : 'var(--text-muted)'};background:transparent;border:none;cursor:${ext.enabled ? 'pointer' : 'default'};padding:4px 8px;border-radius:6px;${ext.enabled ? '' : 'opacity:.4;'}`;
       pinBtn.addEventListener('click', () => { if (actions.onPin) actions.onPin(ext.id, !isPinned); });
 
+      if (optionsBtn) controls.append(optionsBtn);
       controls.append(toggle, pinBtn, removeBtn);
       card.append(left, controls);
       list.append(card);

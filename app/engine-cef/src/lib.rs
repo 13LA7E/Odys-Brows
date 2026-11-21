@@ -19,6 +19,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod dtpipe;
 mod ui_scheme;
 
 /// What the shell asks the engine to start with.
@@ -51,6 +52,7 @@ pub struct KeyBinding {
 /// Send `Sec-GPC: 1` (Global Privacy Control) with web requests (Settings > Privacy).
 static GPC_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+static DTPIPE_SWITCH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 static EXTENSION_PATHS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
 /// Why the engine could not start, in words we can show the user.
@@ -1668,6 +1670,48 @@ wrap_keyboard_handler! {
     }
 }
 
+// A window Chromium opens by itself (an extension's welcome page, chrome.tabs.create, Ctrl+N from
+// an extension...) is not one of ours: it would appear as a separate Chrome-looking window. Its
+// address is taken over as a tab in our Trail and that window is closed.
+wrap_display_handler! {
+    struct StrayDisplay {}
+
+    impl DisplayHandler {
+        fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, url: Option<&CefString>) {
+            if frame.map(|f| f.is_main() != 0) != Some(true) {
+                return;
+            }
+            let url = url.map(CefString::to_string).unwrap_or_default();
+            if url.is_empty() || url.starts_with("about:") || url.starts_with("chrome://newtab") {
+                return;
+            }
+            let Some(b) = browser else { return };
+            let opener = STATE.with(|s| s.borrow().pages.keys().next().copied());
+            if let Some(opener) = opener {
+                emit(Event::NewWindowRequested {
+                    opener,
+                    url,
+                    kind: NewWindowKind::ForegroundTab,
+                    user_gesture: true,
+                });
+            }
+            if let Some(host) = b.host() {
+                host.try_close_browser();
+            }
+        }
+    }
+}
+
+wrap_client! {
+    struct StrayClient {}
+
+    impl Client {
+        fn display_handler(&self) -> Option<DisplayHandler> {
+            Some(StrayDisplay::new())
+        }
+    }
+}
+
 wrap_client! {
     struct PageClient { id: ViewId }
 
@@ -1977,6 +2021,17 @@ impl CefEngine {
     pub fn after(&self, delay_ms: i64, f: impl FnOnce() + 'static) {
         let mut task = Later::new(std::rc::Rc::new(RefCell::new(Some(Box::new(f)))));
         post_delayed_task(ThreadId::UI, Some(&mut task), delay_ms);
+    }
+
+    /// A command to Chromium over the private DevTools pipe (browser-level, e.g. loading an
+    /// extension while running). `cb` is called on a helper thread with the result.
+    pub fn devtools_call(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        cb: impl FnOnce(Result<serde_json::Value, String>) + Send + 'static,
+    ) {
+        dtpipe::call(method, params, cb);
     }
 
     /// Post a closure from any thread to execute on the UI thread.
@@ -2326,6 +2381,10 @@ wrap_browser_process_handler! {
     struct Process {}
 
     impl BrowserProcessHandler {
+        fn default_client(&self) -> Option<Client> {
+            Some(StrayClient::new())
+        }
+
         fn on_before_child_process_launch(&self, command_line: Option<&mut CommandLine>) {
             let prefix = STATE.with(|s| s.borrow().ui_prefix.clone());
             if let Some(c) = command_line {
@@ -2389,6 +2448,15 @@ wrap_app! {
                         Some(&CefString::from("load-extension")),
                         Some(&CefString::from(paths.join(",").as_str())),
                     );
+                }
+                // A private channel to Chromium for loading/removing extensions while running.
+                if is_browser && let Some(pipes) = DTPIPE_SWITCH.get() {
+                    cmd.append_switch(Some(&CefString::from("remote-debugging-pipe")));
+                    cmd.append_switch_with_value(
+                        Some(&CefString::from("remote-debugging-io-pipes")),
+                        Some(&CefString::from(pipes.as_str())),
+                    );
+                    cmd.append_switch(Some(&CefString::from("enable-unsafe-extension-debugging")));
                 }
                 // P5-03: Process and cache tuning (documented Chromium flags)
                 cmd.append_switch_with_value(
@@ -2475,6 +2543,9 @@ pub fn run(
 
     let options = options();
     let _ = EXTENSION_PATHS.set(options.extension_paths.clone());
+    if let Some(pipes) = dtpipe::setup() {
+        let _ = DTPIPE_SWITCH.set(pipes);
+    }
     if !options.in_memory && !options.profile_dir.as_os_str().is_empty() {
         let _ = std::fs::create_dir_all(&options.profile_dir);
     }

@@ -235,6 +235,10 @@ Written while finishing AUDIT-35 to 42. Each item can be reopened; none changes 
 
 The assistant may run small scripts in the tab being shown to read it and to click, type, select and scroll (the shell already did this for password autofill; this is more). It is bounded by: no passwords, card numbers or code fields; a confirmation card before risky clicks; public web addresses only; a Settings switch (default on) and off in private windows; every step visible. The alternative is to ship it off by default. Decide, and say if the confirmation words list (buy, pay, send, delete, submit, subscribe, accept, install, sign out...) should be longer or shorter.
 
+## D-028 Live extensions over a private DevTools pipe. Proposed (needs the owner's OK)
+
+Extensions are added, turned on and off and removed while the browser runs (no restart). The shell talks to Chromium over two anonymous pipes (`--remote-debugging-pipe` with `--remote-debugging-io-pipes`, plus `--enable-unsafe-extension-debugging`), only this process holds the ends, and uses `Extensions.loadUnpacked` and `Extensions.uninstall`. There is no network port in a normal run. Windows only so far (the pipe code is `app/engine-cef/src/dtpipe.rs`). Windows opened by Chromium itself (an extension's welcome page, `chrome.tabs.create`) are taken over as tabs and closed (`default_client`).
+
 ## Open questions for the owner
 
 | ID | Question | Needed by |

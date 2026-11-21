@@ -23,6 +23,16 @@ pub struct ExtensionInfo {
     /// The page its toolbar button opens (`action.default_popup`), if any.
     #[serde(default)]
     pub popup: Option<String>,
+    /// Its settings page (`options_page` or `options_ui.page`), if any.
+    #[serde(default)]
+    pub options: Option<String>,
+    /// Loaded in the running browser (no restart needed); not saved.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub live: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -119,6 +129,13 @@ impl ExtensionsStore {
         }
     }
 
+    /// Chromium's id for a running extension (from the load answer).
+    pub fn set_chrome_id(&mut self, id: &str, chrome_id: &str) {
+        if let Some(e) = self.extensions.get_mut(id) {
+            e.chrome_id = chrome_id.to_string();
+        }
+    }
+
     pub fn remove(&mut self, id: &str) -> bool {
         self.extensions.remove(id).is_some()
     }
@@ -132,6 +149,8 @@ impl ExtensionsStore {
         let content = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
 
+        let raw: serde_json::Value =
+            serde_json::from_str(content.trim_start_matches('\u{feff}')).unwrap_or_default();
         // Store extensions often start with a byte order mark.
         let manifest: ManifestV3 = serde_json::from_str(content.trim_start_matches('\u{feff}'))
             .map_err(|e| format!("Invalid manifest.json: {e}"))?;
@@ -169,13 +188,15 @@ impl ExtensionsStore {
             description,
             enabled: true,
             permissions,
-            icon: None,
+            icon: read_icon(path, &raw),
             // Not measured yet: CEF gives no per-extension cost, so no number is invented.
             memory_mb: 0.0,
             cpu_pct: 0.0,
             path: Some(path.to_string_lossy().to_string()),
             chrome_id: chrome_extension_id(&path.to_string_lossy()),
             popup: manifest_popup.filter(|p| valid_popup_path(p)),
+            options: options_page(&raw),
+            live: false,
         };
 
         self.extensions.insert(id, info.clone());
@@ -306,6 +327,64 @@ pub fn unpack_crx(crx: &Path, dest_root: &Path) -> Result<std::path::PathBuf, St
         return Err("That file has no manifest.json.".into());
     }
     Ok(dir)
+}
+
+/// The extension's settings page, if the manifest names a valid one.
+fn options_page(raw: &serde_json::Value) -> Option<String> {
+    raw.get("options_page")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            raw.get("options_ui")
+                .and_then(|o| o.get("page"))
+                .and_then(|v| v.as_str())
+        })
+        .filter(|p| valid_popup_path(p))
+        .map(str::to_string)
+}
+
+/// The biggest icon (up to 128 px) from `icons` or `action.default_icon`, as a data URL.
+fn read_icon(dir: &Path, raw: &serde_json::Value) -> Option<String> {
+    use base64::Engine as _;
+    let pick = |v: &serde_json::Value| -> Option<String> {
+        if let Some(s) = v.as_str() {
+            return Some(s.to_string());
+        }
+        let obj = v.as_object()?;
+        obj.iter()
+            .filter_map(|(k, v)| Some((k.parse::<u32>().ok()?, v.as_str()?.to_string())))
+            .filter(|(n, _)| *n <= 128)
+            .max_by_key(|(n, _)| *n)
+            .map(|(_, p)| p)
+    };
+    let rel = raw.get("icons").and_then(pick).or_else(|| {
+        raw.get("action")
+            .and_then(|a| a.get("default_icon"))
+            .and_then(pick)
+    })?;
+    if !valid_popup_path(&rel) {
+        return None;
+    }
+    let mime = match Path::new(&rel)
+        .extension()?
+        .to_string_lossy()
+        .to_lowercase()
+        .as_str()
+    {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    };
+    let bytes = std::fs::read(dir.join(rel)).ok()?;
+    if bytes.len() > 300 * 1024 {
+        return None;
+    }
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 /// `__MSG_key__` names come from `_locales/<default_locale>/messages.json` (or `en`).

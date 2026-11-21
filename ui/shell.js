@@ -39,12 +39,23 @@ function notch(count, onToggleShields, onOpenExtensions, showExtensions = true, 
     b.title = ext.name;
     b.dataset.extId = ext.id;
     b.style.cssText = 'padding:0 6px;height:34px;background:transparent;border:none;color:var(--text-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;';
-    const chip = el('span', null, (ext.name || '?').trim().charAt(0).toUpperCase());
-    chip.style.cssText = 'width:20px;height:20px;border-radius:6px;background:var(--w-field);color:var(--accent);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;';
-    b.append(chip);
-    // The button opens the extension's own popup when it has one, else the Extensions page.
+    if (ext.icon) {
+      // Its own icon, as in other browsers
+      const img = el('img');
+      img.src = ext.icon;
+      img.alt = '';
+      img.style.cssText = 'width:20px;height:20px;object-fit:contain;border-radius:4px;';
+      b.append(img);
+    } else {
+      const chip = el('span', null, (ext.name || '?').trim().charAt(0).toUpperCase());
+      chip.style.cssText = 'width:20px;height:20px;border-radius:6px;background:var(--w-field);color:var(--accent);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;';
+      b.append(chip);
+    }
+    // The button opens the extension's own popup when it has one, else its settings page, else
+    // the Extensions page.
     b.addEventListener('click', () => {
       if (ext.popup) window.odysseyBridge?.(JSON.stringify({ type: 'open-extension-popup', id: ext.id }));
+      else if (ext.options && ext.chrome_id) window.odysseyBridge?.(JSON.stringify({ type: 'open', url: `chrome-extension://${ext.chrome_id}/${ext.options}` }));
       else if (typeof onOpenExtensions === 'function') onOpenExtensions();
     });
     n.append(b);
@@ -945,7 +956,7 @@ export function renderShell(root, state) {
   add(region('notch', {
     count: state.live ? (state.page === 'web' ? state.shields ?? 0 : 0) : state.shields ?? 0,
     open: !!state.shieldsOpen,
-    pinned: pinnedExts.map((e) => [e.id, e.name]),
+    pinned: pinnedExts.map((e) => [e.id, e.name, !!e.icon]),
   }, () =>
     notch(
       // Live: only a web page has a count (AUDIT-25).
