@@ -580,7 +580,7 @@ export function renderChatPage(container, state, actions) {
   ta.rows = 1;
   ta.placeholder = 'Message your assistant';
   ta.setAttribute('aria-label', 'Message');
-  ta.style.cssText = 'border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;font-size:15px;line-height:1.5;padding:4px 0;max-height:160px;caret-color:var(--accent);width:100%;';
+  ta.style.cssText = 'border:0;outline:0;resize:none;background:transparent;color:var(--text);font:inherit;font-size:15px;line-height:1.5;padding:4px 0;min-height:32px;max-height:160px;box-sizing:border-box;overflow-y:auto;caret-color:var(--accent);width:100%;';
   const tools = el('div');
   tools.style.cssText = 'display:flex;align-items:center;gap:4px;';
   const file = el('input');
@@ -713,7 +713,7 @@ export function renderChatPage(container, state, actions) {
     if (files.length) { e.preventDefault(); addFiles(files); }
   });
 
-  const grow = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(160, ta.scrollHeight)}px`; };
+  const grow = () => { ta.style.height = 'auto'; ta.style.height = `${Math.max(32, Math.min(160, ta.scrollHeight))}px`; };
   const busyNow = () => !!(state.chatStream && !state.chatStream.done);
   const submit = () => {
     const text = ta.value.trim();
