@@ -1,5 +1,5 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { renderShell, requestRender, revealHelm, toggleAsk } from './shell.js';
+import { renderShell, requestRender, revealHelm, toggleAsk, edgeHover } from './shell.js';
 import { onMessage } from './bridge.js';
 import { focusHelm } from './pagebasics.js';
 import { helmSuggestions } from './helm.js';
@@ -208,6 +208,8 @@ export async function startLive() {
     } else if (msg.type === 'toggle-ask') {
       revealHelm();
       toggleAsk(app, state);
+    } else if (msg.type === 'edge-hover') {
+      edgeHover(msg.zone);
     } else if (msg.type === 'suggestions') {
       helmSuggestions(msg.query, msg.items);
     } else if (msg.type === 'helm-focus') {

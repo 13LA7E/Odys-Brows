@@ -233,7 +233,11 @@ function makeButton(text, isAccent, onClick) {
 }
 
 /** Render the settings page view inside the page panel. */
+let savedScroll = 0; // where the page was scrolled (the page may be rebuilt from scratch)
+
 export function renderSettings(container, state, onUpdate) {
+  // Turning a switch redraws the page: stay where you were (a new section starts at the top).
+  const prevScroll = container.querySelector('.settings-content')?.scrollTop ?? savedScroll;
   container.replaceChildren();
 
   const settings = state.settings || DEFAULT_SETTINGS;
@@ -256,6 +260,7 @@ export function renderSettings(container, state, onUpdate) {
 
     item.addEventListener('click', () => {
       state.settingsSection = sec;
+      savedScroll = 0;
       renderSettings(container, state, onUpdate);
     });
     nav.append(item);
@@ -264,10 +269,11 @@ export function renderSettings(container, state, onUpdate) {
 
   // Content area: left 300, top 64, width 560
   const content = el('div', 'settings-content');
+  const sameSection = lastSection === currentSection;
   if (lastSection !== null && lastSection !== currentSection) content.classList.add('section-in');
   lastSection = currentSection;
   // Its own scroll area, so a long page (Passwords) scrolls while the left menu stays put.
-  content.style.cssText = 'position:absolute;left:300px;top:0;bottom:0;width:590px;padding:64px 30px 120px 0;box-sizing:border-box;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;';
+  content.style.cssText = 'position:absolute;left:300px;top:0;bottom:0;width:590px;padding:64px 30px 120px 0;box-sizing:border-box;overflow-y:auto;scrollbar-width:none;';
 
   if (currentSection === 'General') {
     const title = el('h1', null, 'General');
@@ -426,7 +432,7 @@ export function renderSettings(container, state, onUpdate) {
       rows.append(makeRow('Interface size', 'Makes everything bigger or smaller.', makeSegmented(['90%', '100%', '110%', '125%'], settings.uiScale || '100%', set('uiScale'))));
       rows.append(makeRow('Back and forward buttons', 'Show them in the Helm.', makeSwitch(settings.showNavButtons !== false, set('showNavButtons'))));
       rows.append(makeRow('Reload button', 'Show it in the Helm.', makeSwitch(settings.showReload !== false, set('showReload'))));
-      rows.append(makeRow('Guide bar', 'The small bar at the edge that brings back the hidden address bar and the shield pill. Off keeps them hiding, with only a tiny tab to reach them.', makeSwitch(settings.showGuideBar !== false, set('showGuideBar'))));
+      rows.append(makeRow('Guide bar', 'A thin line at the edge while the address bar and shield pill are hidden. Off keeps them hiding; touch the bottom edge or the top-right corner to bring them back.', makeSwitch(settings.showGuideBar !== false, set('showGuideBar'))));
       rows.append(group('Answers'));
       rows.append(makeRow('Answer font', 'The typeface of answers from the Helm.', makeSegmented(['Sans', 'Serif', 'Mono'], settings.answerFont || 'Sans', set('answerFont'))));
       rows.append(makeRow('Answer text size', '', makeSegmented(['Small', 'Default', 'Large'], settings.answerSize || 'Default', set('answerSize'))));
@@ -1157,4 +1163,10 @@ export function renderSettings(container, state, onUpdate) {
   }
 
   container.append(content);
+  content.addEventListener('scroll', () => { savedScroll = content.scrollTop; });
+  if (sameSection && prevScroll) {
+    // The page may not be in the document yet: set it now and once it has been laid out
+    content.scrollTop = prevScroll;
+    requestAnimationFrame(() => { content.scrollTop = prevScroll; });
+  }
 }

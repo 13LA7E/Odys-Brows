@@ -183,6 +183,10 @@ pub enum FromUi {
     },
     /// Query history day groups (P4-02).
     QueryHistory,
+    /// The UI hides the notch and Helm over pages: watch the pointer at the window edge (EdgeHover).
+    EdgeWatch {
+        on: bool,
+    },
     /// Address bar suggestions from history for what is being typed.
     Suggest {
         query: String,
@@ -452,6 +456,10 @@ pub enum ToUi {
         view: ViewId,
     },
     HelmFocus,
+    /// The pointer is at the top-right corner ("top"), the bottom edge ("bottom") or neither ("").
+    EdgeHover {
+        zone: String,
+    },
     /// History matches for what is typed in the address bar.
     Suggestions {
         query: String,

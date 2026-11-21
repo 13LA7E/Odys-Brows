@@ -39,6 +39,31 @@ const RAIL_WIDTH: i32 = 56;
 
 /// Where the profile lives: `%LOCALAPPDATA%\<name>` on Windows, `$XDG_DATA_HOME/<name>` or
 /// `~/.local/share/<name>` on Linux, the temp folder as a last resort.
+static EDGE_WATCH: AtomicBool = AtomicBool::new(false);
+static EDGE_LOOP: AtomicBool = AtomicBool::new(false);
+
+/// Looks at the pointer ~20 times a second while the notch/Helm hide over a page. The hidden bars
+/// have no strip over the page any more: touching the window's top-right corner or bottom edge
+/// brings them back, found here by position.
+fn edge_poll(last: &'static str) {
+    if !EDGE_WATCH.load(Ordering::Relaxed) {
+        EDGE_LOOP.store(false, Ordering::Relaxed);
+        if !last.is_empty() {
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::EdgeHover { zone: String::new() }));
+        }
+        return;
+    }
+    let zone = match CefEngine.cursor_in_main() {
+        Some((x, y, w, _)) if y <= 8.0 && x >= w - 260.0 => "top",
+        Some((x, y, w, h)) if y >= h - 8.0 && x >= w * 0.25 && x <= w * 0.75 => "bottom",
+        _ => "",
+    };
+    if zone != last {
+        CefEngine.send_to_ui(&bridge::to_json(&ToUi::EdgeHover { zone: zone.into() }));
+    }
+    CefEngine.after(50, move || edge_poll(zone));
+}
+
 static PROFILE_OVERRIDE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 thread_local! {
@@ -1901,6 +1926,12 @@ impl Shell {
                     .and_then(|h| h.query_day_groups().ok())
                     .unwrap_or_default();
                 engine.send_to_ui(&bridge::to_json(&ToUi::HistoryLoaded { groups }));
+            }
+            FromUi::EdgeWatch { on } => {
+                EDGE_WATCH.store(on, Ordering::Relaxed);
+                if on && !EDGE_LOOP.swap(true, Ordering::Relaxed) {
+                    edge_poll("");
+                }
             }
             FromUi::Suggest { query } => {
                 // Pages you visited that match, best first: address starts with it, then the rest;

@@ -922,7 +922,7 @@ export function renderShell(root, state) {
     }), { enter: true, exit: true }));
   }
 
-  if (autoHideOn && state.live) {
+  if (autoHideOn && state.live && state.settings?.showGuideBar !== false) {
     add(region('notch-grip', 1, () => {
       const grip = el('div', 'notch-grip');
       grip.append(el('span'));
@@ -987,8 +987,8 @@ export function renderShell(root, state) {
 // moves, the hole it has in the page window follows it frame by frame, so the page shows through
 // as it goes: the slide is visible instead of a black box vanishing.
 const HIDERS = {
-  notch: { hidden: false, timer: 0, hover: false, showMs: 2500, hideAfterMs: 700, sel: '.notch, .notch-grip' },
-  helm: { hidden: false, timer: 0, hover: false, showMs: 4500, hideAfterMs: 1200, sel: '.helm, .helm-grip' },
+  notch: { hidden: false, timer: 0, hover: false, edge: false, showMs: 2500, hideAfterMs: 700, sel: '.notch, .notch-grip' },
+  helm: { hidden: false, timer: 0, hover: false, edge: false, showMs: 4500, hideAfterMs: 1200, sel: '.helm, .helm-grip' },
 };
 let autoHideOn = false;
 let helmBusy = false;
@@ -1006,8 +1006,28 @@ function scheduleHide(name, ms) {
   const h = HIDERS[name];
   clearTimeout(h.timer);
   h.timer = setTimeout(() => {
-    if (autoHideOn && !h.hover && !h.typing && !(name === 'helm' && helmBusy)) setHidden(name, true);
+    if (autoHideOn && !h.hover && !h.edge && !h.typing && !(name === 'helm' && helmBusy)) setHidden(name, true);
   }, ms);
+}
+
+/** The pointer is at the top-right corner ("top"), the bottom edge ("bottom") or neither (""): from Rust. */
+export function edgeHover(zone) {
+  if (!shellRoot) return;
+  const want = { notch: zone === 'top', helm: zone === 'bottom' };
+  for (const name of Object.keys(HIDERS)) {
+    const h = HIDERS[name];
+    if (want[name] === h.edge) continue;
+    h.edge = want[name];
+    if (!autoHideOn) continue;
+    if (h.edge) { clearTimeout(h.timer); setHidden(name, false); } else scheduleHide(name, h.hideAfterMs);
+  }
+}
+
+let edgeWatching = false;
+function watchEdges(on) {
+  if (on === edgeWatching) return;
+  edgeWatching = on;
+  if (typeof window.odysseyBridge === 'function') window.odysseyBridge(JSON.stringify({ type: 'edge-watch', on }));
 }
 
 /** Bring the Helm back (Ctrl+L, typing, a new address) and let it hide again later. */
@@ -1062,12 +1082,14 @@ function syncNotch(root, state) {
   }
   if (want && !autoHideOn) {
     autoHideOn = true;
+    watchEdges(true);
     for (const name of Object.keys(HIDERS)) {
       setHidden(name, false);
       scheduleHide(name, HIDERS[name].showMs); // visible for a moment when the page appears
     }
   } else if (!want && autoHideOn) {
     autoHideOn = false;
+    watchEdges(false);
     for (const name of Object.keys(HIDERS)) {
       clearTimeout(HIDERS[name].timer);
       setHidden(name, false);
@@ -1091,7 +1113,7 @@ function syncNotch(root, state) {
 // Page windows cover our UI, so each open popover or card tells Rust where it is and a hole is
 // cut there. A DOM observer keeps it current for things drawn outside renderShell (find bar,
 // hover previews).
-const OVERLAY_SELECTOR = '.helm-suggest, .downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card, .helm, .helm-grip';
+const OVERLAY_SELECTOR = '.helm-suggest, .notch-grip, .downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card, .helm, .helm-grip';
 let overlayObserver = null;
 let lastOverlayJson = '[]';
 let lastNotchHeight = 34;
@@ -1108,10 +1130,10 @@ function reportOverlays() {
   // How much of the notch is showing (it slides away): the page window's notch hole follows.
   const notch = document.querySelector('.notch');
   if (notch) {
-    const gripH = document.getElementById('app')?.dataset.guide === 'off' ? 10 : 14;
-    const h = Math.max(gripH, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
-    // Slid away: only the small tab at the corner stays reachable, not the notch's full width.
-    const w = h <= 14 ? 72 : Math.round(notch.getBoundingClientRect().width);
+    const bottom = notch.getBoundingClientRect().bottom;
+    // Slid away: no hole at all (0.01 tells Rust). The line you can hover is its own tiny hole.
+    const h = bottom <= 1 ? 0.01 : Math.max(1, Math.min(34, Math.round(bottom)));
+    const w = Math.round(notch.getBoundingClientRect().width);
     document.documentElement.style.setProperty('--notch-w', `${w}px`);
     if (h !== lastNotchHeight || w !== lastNotchWidth) {
       lastNotchHeight = h;

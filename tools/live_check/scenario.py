@@ -79,3 +79,29 @@ def kill(p):
     p.kill(); subprocess.run(['taskkill', '/F', '/IM', 'constellations.exe'], capture_output=True); time.sleep(2)
 
 STATE = "(()=>{const t=[...document.querySelectorAll('*')];return 0})()"
+
+
+# ---- real pointer at a point of the main window (client DIP), for edge-hover tests (Windows)
+def real_cursor(x_dip, y_dip):
+    import ctypes, ctypes.wintypes as wt
+    u32 = ctypes.windll.user32; u32.SetProcessDPIAware()
+    pids = set(int(l.split(',')[1].strip('"')) for l in subprocess.run(['tasklist', '/FI', 'IMAGENAME eq constellations.exe', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout.splitlines() if l.strip())
+    best = []
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def cb(h, l):
+        pid = wt.DWORD(); u32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        if pid.value in pids and u32.IsWindowVisible(h):
+            r = wt.RECT(); u32.GetWindowRect(h, ctypes.byref(r))
+            best.append(((r.right - r.left) * (r.bottom - r.top), h))
+        return True
+    u32.EnumWindows(cb, 0)
+    hw = max(best)[1]
+    u32.ShowWindow(hw, 9) if u32.IsIconic(hw) else None
+    u32.SetForegroundWindow(hw)
+    dpi = ui('window.devicePixelRatio')
+    pt = wt.POINT(0, 0); u32.ClientToScreen(hw, ctypes.byref(pt))
+    cr = wt.RECT(); u32.GetClientRect(hw, ctypes.byref(cr))
+    x = pt.x + (cr.right + x_dip * dpi if x_dip < 0 else x_dip * dpi)
+    y = pt.y + (cr.bottom + y_dip * dpi if y_dip < 0 else y_dip * dpi)
+    u32.SetCursorPos(int(x), int(y)); time.sleep(0.05); u32.SetCursorPos(int(x) + 1, int(y)); time.sleep(0.6)

@@ -184,6 +184,29 @@ mod win32 {
         pub fn GetWindowLongPtrW(h: isize, index: i32) -> isize;
         pub fn SetWindowLongPtrW(h: isize, index: i32, value: isize) -> isize;
         pub fn SetLayeredWindowAttributes(h: isize, key: u32, alpha: u8, flags: u32) -> i32;
+        pub fn GetCursorPos(p: *mut Point) -> i32;
+        pub fn ClientToScreen(h: isize, p: *mut Point) -> i32;
+        pub fn GetClientRect(h: isize, r: *mut Rect) -> i32;
+        pub fn WindowFromPoint(p: Point) -> isize;
+        pub fn GetWindowThreadProcessId(h: isize, pid: *mut u32) -> u32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        pub fn GetCurrentProcessId() -> u32;
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    pub struct Point {
+        pub x: i32,
+        pub y: i32,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    pub struct Rect {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
     }
     #[link(name = "gdi32")]
     unsafe extern "system" {
@@ -237,7 +260,7 @@ fn update_page_window_region(
         // The notch hole is as tall as the notch currently is (34 when fully shown, 4 for the hover
         // strip when slid away, in between while it moves).
         let shown = if notch_height > 0.0 {
-            notch_height.clamp(10.0, 34.0)
+            notch_height.clamp(0.0, 34.0)
         } else {
             34.0
         };
@@ -249,16 +272,20 @@ fn update_page_window_region(
         // hole starts that much further right.
         const NOTCH_SHIFT: f32 = 0.0;
         let shift = (NOTCH_SHIFT * dpi).round() as i32;
-        let notch_rgn = win32::CreateRoundRectRgn(
-            (w - notch_w + shift).max(0),
-            -r2,
-            w + r2,
-            notch_h + 1,
-            r2,
-            r2,
-        );
-        win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
-        win32::DeleteObject(notch_rgn);
+        // Fully slid away: no hole at all (the page is whole; the corner is reached by the pointer
+        // position, see cursor_in_main).
+        if shown > 0.05 {
+            let notch_rgn = win32::CreateRoundRectRgn(
+                (w - notch_w + shift).max(0),
+                -r2,
+                w + r2,
+                notch_h + 1,
+                r2,
+                r2,
+            );
+            win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
+            win32::DeleteObject(notch_rgn);
+        }
 
         // The Helm's hole comes from the UI like every other overlay (its rectangle is reported
         // as it slides), so there is no fixed Helm hole here.
@@ -1687,6 +1714,51 @@ impl CefEngine {
             .replace('\u{2029}', "\\u2029");
         let script = format!("window.odysseyReceive && window.odysseyReceive({json});");
         CefEngine.run_ui_script(&script);
+    }
+
+    /// Where the pointer is inside our main window (client DIP: x, y, width, height), or None when
+    /// it is elsewhere (another program's window on top, outside, no window yet). Used to bring the
+    /// hidden notch and Helm back from the window edge without a visible strip over the page.
+    pub fn cursor_in_main(&self) -> Option<(f32, f32, f32, f32)> {
+        #[cfg(windows)]
+        {
+            let win = STATE.with(|s| s.borrow().main.clone())?;
+            let h = win.window_handle().0 as isize;
+            if h == 0 {
+                return None;
+            }
+            unsafe {
+                let mut p = win32::Point::default();
+                if win32::GetCursorPos(&mut p) == 0 {
+                    return None;
+                }
+                // Something of ours must be under the pointer (the page windows are ours too).
+                let under = win32::WindowFromPoint(p);
+                let mut pid = 0u32;
+                if under == 0 {
+                    return None;
+                }
+                win32::GetWindowThreadProcessId(under, &mut pid);
+                if pid != win32::GetCurrentProcessId() {
+                    return None;
+                }
+                let mut origin = win32::Point::default();
+                let mut r = win32::Rect::default();
+                win32::ClientToScreen(h, &mut origin);
+                win32::GetClientRect(h, &mut r);
+                let dpi = win32::GetDpiForWindow(h).max(96) as f32 / 96.0;
+                Some((
+                    (p.x - origin.x) as f32 / dpi,
+                    (p.y - origin.y) as f32 / dpi,
+                    r.right as f32 / dpi,
+                    r.bottom as f32 / dpi,
+                ))
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
     }
 
     /// The main window's client area size in DIP (0×0 before it exists).
