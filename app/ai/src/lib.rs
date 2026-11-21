@@ -28,6 +28,9 @@ pub struct AiConfig {
     pub provider: ProviderKind,
     pub endpoint: String,
     pub model: String,
+    /// A model that can look at pictures (for screenshots). Empty = use `model`.
+    #[serde(default)]
+    pub vision_model: String,
     #[serde(default, skip_serializing)]
     pub api_key: Option<String>,
 }
@@ -38,6 +41,7 @@ impl Default for AiConfig {
             provider: ProviderKind::None,
             endpoint: String::new(),
             model: String::new(),
+            vision_model: String::new(),
             api_key: None,
         }
     }
@@ -49,6 +53,7 @@ pub struct AiSettingsUi {
     pub provider: ProviderKind,
     pub endpoint: String,
     pub model: String,
+    pub vision_model: String,
     pub has_key: bool,
 }
 
@@ -58,6 +63,7 @@ impl From<&AiConfig> for AiSettingsUi {
             provider: c.provider,
             endpoint: c.endpoint.clone(),
             model: c.model.clone(),
+            vision_model: c.vision_model.clone(),
             has_key: c.api_key.as_ref().map(|k| !k.is_empty()).unwrap_or(false),
         }
     }
@@ -663,6 +669,7 @@ mod tests {
     #[test]
     fn settings_serialization_never_includes_keys() {
         let config = AiConfig {
+            vision_model: String::new(),
             provider: ProviderKind::Cloud,
             endpoint: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
@@ -698,6 +705,7 @@ mod tests {
 
         let client = AiClient::new();
         let config = AiConfig {
+            vision_model: String::new(),
             provider: ProviderKind::Local,
             endpoint: format!("http://127.0.0.1:{port}"),
             model: "test-model".into(),

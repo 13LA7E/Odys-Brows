@@ -644,6 +644,7 @@ export function renderSettings(container, state, onUpdate) {
         provider: state.aiConfig?.provider || 'none',
         endpoint: state.aiConfig?.endpoint || '',
         model: state.aiConfig?.model || '',
+        vision_model: state.aiConfig?.vision_model || '',
         api_key: '',
       };
     }
@@ -680,6 +681,13 @@ export function renderSettings(container, state, onUpdate) {
         makeTextInput(edit.model, 'Model name', false, (v) => { edit.model = v; })
       ));
 
+      // Vision model: looks at screenshots of the page (the assistant's "screenshot" tool).
+      rows.append(makeRow(
+        'Vision model (optional)',
+        'A model that can see pictures, such as qwen3-vl:4b with Ollama. When the assistant needs to look at the page it sends a screenshot to this model. Leave empty to use the model above.',
+        makeTextInput(edit.vision_model || '', 'e.g. qwen3-vl:4b', false, (v) => { edit.vision_model = v; })
+      ));
+
       // API Key / Token
       if (edit.provider === 'cloud' || edit.provider === 'odysseus') {
         const keyWrap = el('div');
@@ -714,6 +722,7 @@ export function renderSettings(container, state, onUpdate) {
               provider: edit.provider,
               endpoint: edit.endpoint,
               model: edit.model,
+              vision_model: edit.vision_model || '',
               api_key: edit.api_key || undefined,
             },
           }));
@@ -729,6 +738,7 @@ export function renderSettings(container, state, onUpdate) {
               provider: edit.provider,
               endpoint: edit.endpoint,
               model: edit.model,
+              vision_model: edit.vision_model || '',
               api_key: edit.api_key || undefined,
             },
           }));

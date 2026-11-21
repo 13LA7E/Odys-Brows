@@ -18,6 +18,7 @@ open(os.path.join(site, 'shop.html'), 'w').write('''<!doctype html><title>Star S
 <p id=res>nothing yet</p><div style="height:3000px"></div>''')
 
 requests_seen = []
+vision_seen = []
 script = {'name': None}
 
 
@@ -36,8 +37,21 @@ class M(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get('Content-Length', 0)); body = json.loads(self.rfile.read(n) or b'{}')
         requests_seen.append(body)
         msgs = body['messages']
-        first_user = next(m['content'] for m in msgs if m['role'] == 'user')
-        results = [m['content'] for m in msgs if m['role'] == 'user' and m['content'].startswith('Tool result')]
+        # a picture for the vision model: check it is a real JPEG, then describe it
+        lastc = msgs[-1]['content']
+        if isinstance(lastc, list):
+            import base64
+            url = next(p['image_url']['url'] for p in lastc if p.get('type') == 'image_url')
+            raw = base64.b64decode(url.split(',', 1)[1])
+            vision_seen.append({'model': body.get('model'), 'bytes': len(raw), 'jpeg': raw[:2] == bytes([0xff, 0xd8]), 'question': lastc[0]['text']})
+            self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.end_headers()
+            chunk = json.dumps({'choices': [{'delta': {'content': 'I see a Star Shop page with a Place order button.'}}]})
+            self.wfile.write(('data: ' + chunk + chr(10) + chr(10)).encode()); self.wfile.write(('data: [DONE]' + chr(10) + chr(10)).encode())
+            return
+        users = [m['content'] for m in msgs if m['role'] == 'user' and isinstance(m['content'], str)]
+        asked_at = max(i for i, c in enumerate(users) if not c.startswith('Tool result'))
+        first_user = users[asked_at]
+        results = users[asked_at + 1:]
         step = len(results)
         last = results[-1] if results else ''
         r = refs(last)
@@ -54,6 +68,8 @@ class M(http.server.BaseHTTPRequestHandler):
                 lambda: j(tool='click', ref=r['Place order']),
                 lambda: 'All done.',
             ]
+        elif 'look run' in first_user:
+            plan = [lambda: j(tool='screenshot', question='the buttons'), lambda: 'It shows an order button.']
         elif 'tab run' in first_user:
             plan = [lambda: j(tool='list_tabs'), lambda: j(tool='new_tab', url='https://example.com/x'), lambda: 'Tabs handled.']
         else:
@@ -138,7 +154,20 @@ try:
     check('list_tabs shows your tabs with ids', bool(tl), tl[:1])
     urls = V("window.__uiState.tabs.map(t=>t.url)")
     check('new_tab opened the page', any('example.com/x' in (u or '') for u in urls) and V('window.__uiState.tabs.length') == n0 + 1, urls)
-    PS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'capture_seq.ps1')
+    # screenshot + vision model
+    bridge({'type': 'show', 'view': 1}); time.sleep(1.5)
+    bridge({'type': 'ai-save-config', 'config': {'provider': 'local', 'endpoint': 'http://127.0.0.1:8773', 'model': 'mock', 'vision_model': 'mock-vision'}}); time.sleep(1)
+    bridge({'type': 'ai-get-config'}); time.sleep(0.5)
+    if V('window.__uiState.helm.kind') == 'asking':
+        bridge({'type': 'run-command', 'id': 'ask'}); time.sleep(0.5)
+    bridge({'type': 'run-command', 'id': 'ask'}); time.sleep(0.8)
+    ask('look run')
+    wait(lambda: V("!!document.querySelector('.ans-footer')"), 40)
+    print('DBG', S('[window.__uiState.helm.kind, window.__uiState.answer, window.__uiState.page]'), [m['content'] for m in requests_seen[-1]['messages'] if m['role']=='user' and isinstance(m['content'], str)][-1][:200])
+    check('the screenshot reached the vision model as a real JPEG of the page', bool(vision_seen) and vision_seen[-1]['jpeg'] and vision_seen[-1]['bytes'] > 3000 and vision_seen[-1]['model'] == 'mock-vision', vision_seen[-1:] )
+    check('the vision model was asked about what the assistant wanted to see', bool(vision_seen) and 'the buttons' in vision_seen[-1]['question'])
+    check('the assistant answered from the description', 'order button' in V("document.querySelector('.answer-card .md').textContent"))
+    check('the step says it looked at the page', any('Looking at the page' in x for x in V('window.__uiState.answer.steps')))
 finally:
     kill(p)
 

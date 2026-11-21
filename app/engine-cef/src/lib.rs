@@ -1609,8 +1609,13 @@ impl CefEngine {
                     s.borrow_mut().shot_regs.insert(message_id, reg);
                 });
             }
-            let Some(params) = dictionary_value_create() else { return };
-            params.set_string(Some(&CefString::from("format")), Some(&CefString::from("jpeg")));
+            let Some(params) = dictionary_value_create() else {
+                return;
+            };
+            params.set_string(
+                Some(&CefString::from("format")),
+                Some(&CefString::from("jpeg")),
+            );
             params.set_int(Some(&CefString::from("quality")), 60);
             let mut params = params;
             host.execute_dev_tools_method(

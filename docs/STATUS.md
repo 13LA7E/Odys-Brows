@@ -128,6 +128,10 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: screenshots for vision models
+
+- `screenshot` tool + Vision model setting (details in PHASES). Also fixed `1dbd613`, which did not compile (duplicate definitions from a patch that ran twice). Verified live: `ai_control.py` 21/21, `ai_chat` 31/31, `private_ai` 9/9, real qwen3-vl:4b run. Not verified: Linux capture, cloud vision, very tall pages.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: full assistant page control
 
 - Click, type, select, press, scroll, navigate, tabs, with a confirmation card for risky clicks and hard refusals for password and card fields (details in PHASES). New: `app/shell/src/agent_js.rs`, `HostRequest` / `Host` in `app/ai/src/agent.rs`, `Engine::run_page_script` (inherent method on `CefEngine`), setting `aiControl`. Verified live: `ai_control.py` 17/17, `ai_chat` 31/31, `private_ai` 9/9, and a real qwen run that completed a search form. Not verified: sites that need trusted (real) input events, iframes, Linux, cloud models.

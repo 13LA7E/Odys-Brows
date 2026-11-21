@@ -667,6 +667,17 @@ impl Shell {
                     self.shown.unwrap_or(0)
                 ));
             }
+            R::Screenshot => {
+                let Some(view) = self.shown.filter(|v| self.is_web_tab(*v)) else {
+                    let _ = tx.send("Not done: no web page is open in this tab.".into());
+                    return;
+                };
+                // A small counter is the DevTools message id (the answer does not come through the page).
+                self.agent_next += 1;
+                let id = self.agent_next & 0x7FFF_FFFF;
+                self.agent_pending.insert(id, (view, tx));
+                engine.capture_screenshot(view, id as i32);
+            }
             R::Confirm(text) => {
                 let id = self.next_agent_id();
                 self.agent_confirms.insert(id, tx);
@@ -1920,6 +1931,7 @@ impl Shell {
                         history.extend(c.messages.iter().map(|m| ai::ChatMessage {
                             role: m.role.clone(),
                             content: m.text.clone(),
+                            images: Vec::new(),
                         }));
                     }
                     let saved = chats::append(
@@ -2271,8 +2283,17 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
             engine_api::Event::AgentResult { view, id, json } => {
                 if let Some((v, tx)) = s.agent_pending.remove(id) {
                     if v == *view {
-                        let text =
-                            serde_json::from_str::<String>(json).unwrap_or_else(|_| json.clone());
+                        // A screenshot answers {"data": base64} (or {"error": ..}); a script answers a string.
+                        let text = match serde_json::from_str::<serde_json::Value>(json) {
+                            Ok(serde_json::Value::String(t)) => t,
+                            Ok(v) if v.get("data").and_then(|d| d.as_str()).is_some() => {
+                                v["data"].as_str().unwrap_or_default().to_string()
+                            }
+                            Ok(v) if v.get("error").and_then(|d| d.as_str()).is_some() => {
+                                format!("Not done: {}", v["error"].as_str().unwrap_or_default())
+                            }
+                            _ => json.clone(),
+                        };
                         let _ = tx.send(text);
                     } else {
                         s.agent_pending.insert(*id, (v, tx));
