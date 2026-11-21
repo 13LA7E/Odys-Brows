@@ -278,7 +278,22 @@ pub enum FromUi {
         prompt: String,
         #[serde(default)]
         context: Option<String>,
+        /// The conversation this belongs to (none = start a new one).
+        #[serde(default)]
+        chat: Option<String>,
     },
+    /// The list of saved assistant conversations.
+    ChatList,
+    /// Open one saved conversation.
+    ChatOpen {
+        id: String,
+    },
+    /// Delete one saved conversation.
+    ChatDelete {
+        id: String,
+    },
+    /// Delete every saved conversation.
+    ChatClearAll,
     /// Cancel active AI request (P7-01, P7-03).
     AiCancel,
     /// Test an AI provider connection from Settings (P7-01, P7-02).
@@ -345,6 +360,8 @@ pub enum ToUi {
         view: ViewId,
     },
     HelmFocus,
+    /// Switch the Helm between the address bar and asking the assistant (Ctrl+J).
+    ToggleAsk,
     FindInPagePrompt {
         view: ViewId,
     },
@@ -450,6 +467,22 @@ pub enum ToUi {
     Wallpaper {
         data: Option<String>,
         error: Option<String>,
+    },
+    /// Saved conversations, newest first.
+    ChatList {
+        chats: Vec<crate::chats::Summary>,
+    },
+    /// One saved conversation (none when it does not exist).
+    ChatData {
+        chat: Option<crate::chats::Chat>,
+    },
+    /// A question started (or continued) this conversation.
+    ChatStarted {
+        id: String,
+    },
+    /// The assistant's reply was saved.
+    ChatSaved {
+        id: String,
     },
     /// The answer to `set-shortcut` / `reset-shortcuts`; `shortcuts` is what is now saved.
     ShortcutResult {

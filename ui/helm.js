@@ -2,6 +2,7 @@
 // Handles address display, input classification, navigation, back/forward/reload, and keyboard flow.
 
 import { STAR_PATH } from './rail.js';
+import { renderMarkdown } from './markdown.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -44,6 +45,8 @@ const SEARCH_URLS = {
 let searchEngine = 'DuckDuckGo';
 let customSearch = null; // URL template with %s or {query}, only when Custom is chosen and valid
 /** Takes the whole settings object (engine name and custom engine). */
+let lastHelmKind = null;
+
 export function setSearchEngine(settings) {
   const name = settings && settings.searchEngine;
   customSearch = null;
@@ -133,6 +136,13 @@ export function renderHelm(state, handlers = {}) {
   } = handlers;
 
   const h = el('div', 'helm');
+  // Switching between the address bar and asking the assistant animates (not in the design boards).
+  const live = !document.documentElement.classList.contains('fixture');
+  if (live && lastHelmKind !== null && lastHelmKind !== state.kind) {
+    if (state.kind === 'asking') h.classList.add('mode-in');
+    else if (lastHelmKind === 'asking') h.classList.add('mode-back');
+  }
+  lastHelmKind = state.kind;
   h.setAttribute('role', 'toolbar');
   h.setAttribute('aria-label', 'Helm');
 
@@ -145,7 +155,13 @@ export function renderHelm(state, handlers = {}) {
       width: 16, height: 16, viewBox: '0 0 24 24', 'aria-hidden': 'true',
     });
     starIcon.append(svg('path', { d: STAR_PATH, fill: 'var(--accent)' }));
+    starIcon.classList.add('mode-star');
     h.append(starIcon);
+    if (live) {
+      const chip = el('span', 'mode-chip', 'Ask');
+      chip.style.cssText = 'font-size:12px;font-weight:500;color:var(--accent);background:var(--w-field);padding:3px 9px;border-radius:var(--r-chip);';
+      h.append(chip);
+    }
 
     const questionBox = el('div');
     questionBox.style.cssText = 'flex:1;font-size:15px;color:var(--text);display:flex;align-items:center;white-space:nowrap;overflow:hidden;';
@@ -177,14 +193,14 @@ export function renderHelm(state, handlers = {}) {
 
     qInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        if (qInput.value.trim() && handlers.onAsk) handlers.onAsk(qInput.value.trim());
+        if (qInput.value.trim() && handlers.onAsk) { const q = qInput.value.trim(); qInput.value = ''; handlers.onAsk(q); }
       } else if (e.key === 'Escape') {
         handlers.onToggleAsk?.();
       }
     });
 
     askBtn.addEventListener('click', () => {
-      if (qInput.value.trim() && handlers.onAsk) handlers.onAsk(qInput.value.trim());
+      if (qInput.value.trim() && handlers.onAsk) { const q = qInput.value.trim(); qInput.value = ''; handlers.onAsk(q); }
     });
 
     return h;
@@ -425,8 +441,92 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
   return pop;
 }
 
+/** The live answer card: your question, what the assistant is doing, the answer, then the footer. */
+function renderLiveAnswer(answer, onOpenSource, onContinue) {
+  const card = el('div', 'answer-card answer-live');
+  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--answer-w, var(--helm-w))) / 2);bottom:90px;width:var(--answer-w, 560px);box-sizing:border-box;border-radius:var(--r-answer);font-family:var(--answer-font, inherit);background:var(--surface);box-shadow:var(--shadow-popover);padding:18px 24px 16px;max-height:calc(100% - 190px);overflow-y:auto;scrollbar-width:thin;';
+
+  if (answer.question) {
+    const q = el('div', 'ans-q', answer.question);
+    q.style.cssText = 'font-size:13px;color:var(--text-muted);margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    card.append(q);
+  }
+
+  const steps = answer.steps || [];
+  if (steps.length) {
+    const box = el('div', 'ans-steps');
+    box.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:12px;';
+    steps.forEach((text, i) => {
+      const active = !answer.done && i === steps.length - 1 && !answer.text;
+      const row = el('div', `ans-step${active ? ' active' : ''}`);
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-soft);';
+      const dot = el('span', 'ans-step-dot');
+      dot.style.cssText = 'width:6px;height:6px;border-radius:3px;background:var(--accent);flex:none;' + (active ? '' : 'opacity:.45;');
+      row.append(dot, el('span', null, text));
+      box.append(row);
+    });
+    card.append(box);
+  }
+
+  const waiting = !answer.text && !answer.done;
+  if (waiting) card.append(thinkingStars());
+
+  if (answer.text) {
+    const body = el('div', 'md ans-text');
+    body.style.cssText = 'font-size:var(--answer-size, 15.5px);line-height:1.6;color:var(--text);';
+    renderMarkdown(body, answer.text, onOpenSource);
+    card.append(body);
+  }
+
+  if (answer.sources && answer.sources.length) {
+    const row = el('div', 'ans-sources');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;';
+    answer.sources.slice(0, 6).forEach((src) => {
+      const chip = el(src.url ? 'button' : 'span', null, src.title || src.url);
+      chip.style.cssText = 'height:26px;max-width:220px;padding:0 10px;border-radius:var(--r-chip);background:var(--w-field);display:inline-flex;align-items:center;font-size:12.5px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (src.url ? 'border:0;font:inherit;font-size:12.5px;cursor:pointer;' : '');
+      if (src.url && onOpenSource) chip.addEventListener('click', () => onOpenSource(src.url));
+      row.append(chip);
+    });
+    card.append(row);
+  }
+
+  // The footer only appears once the answer is complete, so it never sits before the answer.
+  if (answer.done) {
+    const footer = el('div', 'ans-footer');
+    footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:16px;font-size:12.5px;';
+    const author = el('span', null, answer.footer);
+    author.style.color = 'var(--text-muted)';
+    footer.append(author);
+    if (onContinue) {
+      const btn = el('button', null, 'Continue in chat');
+      btn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:4px 0;margin:0;cursor:pointer;color:var(--accent);font-size:13px;';
+      btn.addEventListener('click', onContinue);
+      footer.append(btn);
+    }
+    card.append(footer);
+  }
+  return card;
+}
+
+/** Three stars that link up and pulse while the assistant is working. */
+export function thinkingStars() {
+  const wrap = el('div', 'thinking');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:12px;color:var(--text-muted);font-size:13px;padding:2px 0 4px;';
+  const s = svg('svg', { width: 76, height: 30, viewBox: '0 0 76 30', 'aria-hidden': 'true' });
+  s.append(
+    svg('line', { class: 'think-line l1', x1: 8, y1: 21, x2: 36, y2: 8, stroke: 'var(--white)', 'stroke-opacity': '.3' }),
+    svg('line', { class: 'think-line l2', x1: 36, y1: 8, x2: 66, y2: 20, stroke: 'var(--white)', 'stroke-opacity': '.3' }),
+    svg('circle', { class: 'think-star s1', cx: 8, cy: 21, r: 3, fill: 'var(--white)' }),
+    svg('circle', { class: 'think-star s2', cx: 36, cy: 8, r: 3.4, fill: 'var(--accent)' }),
+    svg('circle', { class: 'think-star s3', cx: 66, cy: 20, r: 2.6, fill: 'var(--white)' }),
+  );
+  wrap.append(s, el('span', 'think-label', 'Thinking'));
+  return wrap;
+}
+
 /** Render asking answer card (HelmAnswer board, DESIGN.md §7). */
-export function renderAnswerCard(answer, onOpenSource) {
+export function renderAnswerCard(answer, onOpenSource, onContinue) {
+  if (answer.live) return renderLiveAnswer(answer, onOpenSource, onContinue);
   const card = el('div', 'answer-card');
   card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--answer-w, var(--helm-w))) / 2);bottom:90px;width:var(--answer-w, 560px);box-sizing:border-box;border-radius:var(--r-answer);font-family:var(--answer-font, inherit);background:var(--surface);box-shadow:var(--shadow-popover);padding:22px 24px 16px;';
 

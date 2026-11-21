@@ -22,6 +22,11 @@ pub struct Command {
 
 pub const COMMANDS: &[Command] = &[
     Command {
+        id: "ask",
+        label: "Ask the assistant",
+        defaults: &["Ctrl+J"],
+    },
+    Command {
         id: "newTab",
         label: "New tab",
         defaults: &["Ctrl+T"],

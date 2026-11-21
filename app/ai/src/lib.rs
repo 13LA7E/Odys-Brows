@@ -3,6 +3,9 @@
 //! Providers: None (default), Local (Ollama/LM Studio/OpenAI-compatible),
 //! Cloud (OpenAI-compatible & Anthropic), and Odysseus (ported from Odyssey).
 
+mod agent;
+pub use agent::*;
+
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -64,7 +67,17 @@ impl From<&AiConfig> for AiSettingsUi {
 #[serde(tag = "type", content = "data", rename_all = "kebab-case")]
 pub enum AiEvent {
     Delta(String),
-    Source { title: String, url: String },
+    Source {
+        title: String,
+        url: String,
+    },
+    /// What the assistant is doing right now ("Searching the web for ...").
+    Step(String),
+    /// Something for the browser to do for the assistant (open a tab).
+    Action {
+        kind: String,
+        url: String,
+    },
     Done,
     Error(String),
 }

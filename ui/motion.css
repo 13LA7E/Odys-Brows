@@ -86,3 +86,40 @@ button:active:not(:disabled) { box-shadow: inset 0 0 0 100vmax var(--press-wash)
 :root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after {
   transition: none !important; animation: none !important;
 }
+
+/* Assistant (owner request): thinking, messages arriving, switching between address bar and asking. */
+@keyframes ody-think-pulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.25); } }
+@keyframes ody-think-line { 0%, 100% { opacity: .12; } 50% { opacity: .7; } }
+@keyframes ody-think-label { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes ody-mode-star { from { opacity: 0; transform: rotate(-90deg) scale(.4); } to { opacity: 1; transform: none; } }
+@keyframes ody-mode-chip { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+.think-star { transform-box: fill-box; transform-origin: center; animation: ody-think-pulse 1.4s var(--ease-in-out) infinite; }
+.think-star.s2 { animation-delay: .25s; }
+.think-star.s3 { animation-delay: .5s; }
+.think-line { animation: ody-think-line 1.4s var(--ease-in-out) infinite; }
+.think-line.l2 { animation-delay: .25s; }
+.think-label { animation: ody-think-label 1.4s var(--ease-in-out) infinite; }
+.thinking.calm .think-star { animation-duration: 3.2s; }
+.thinking.calm .think-line { animation-duration: 3.2s; }
+.ans-step.active .ans-step-dot { animation: ody-think-pulse 1s var(--ease-in-out) infinite; }
+.msg-in { animation: ody-rise-small var(--dur-base) var(--ease-out) both; }
+.helm.mode-in .mode-star { animation: ody-mode-star var(--dur-slow) var(--ease-out) both; }
+.helm.mode-in .mode-chip { animation: ody-mode-chip var(--dur-base) var(--ease-out) 60ms both; }
+.helm.mode-back .helm-address { animation: ody-fade var(--dur-base) var(--ease-out) both; }
+.chat-send { transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); }
+.chat-send:hover { transform: scale(1.06); }
+.chat-send:active { transform: scale(.94); }
+.chat-item { transition: background var(--dur-fast) var(--ease-out); }
+.chat-item:hover { background: var(--w-hover-row); }
+.chat-suggestion { transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.chat-suggestion:hover { background: var(--w-active-row); color: var(--text); }
+:root[data-reduce='on'] .think-star, :root[data-reduce='on'] .think-line, :root[data-reduce='on'] .think-label,
+:root[data-reduce='on'] .ans-step.active .ans-step-dot, :root[data-reduce='on'] .msg-in,
+:root[data-reduce='on'] .helm.mode-in .mode-star, :root[data-reduce='on'] .helm.mode-in .mode-chip,
+:root[data-reduce='on'] .helm.mode-back .helm-address { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-reduce='off']) .think-star, :root:not([data-reduce='off']) .think-line,
+  :root:not([data-reduce='off']) .think-label, :root:not([data-reduce='off']) .ans-step.active .ans-step-dot,
+  :root:not([data-reduce='off']) .msg-in, :root:not([data-reduce='off']) .helm.mode-in .mode-star,
+  :root:not([data-reduce='off']) .helm.mode-in .mode-chip, :root:not([data-reduce='off']) .helm.mode-back .helm-address { animation: none; }
+}

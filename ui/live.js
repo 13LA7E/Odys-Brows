@@ -1,10 +1,11 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { renderShell, requestRender, revealHelm } from './shell.js';
+import { renderShell, requestRender, revealHelm, toggleAsk } from './shell.js';
 import { onMessage } from './bridge.js';
 import { focusHelm } from './pagebasics.js';
 import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
 import { setWallpaper, wallpaperVersion } from './newtab.js';
+import { chatUpdate, chatFocusInput, chatAdopt } from './chat.js';
 
 export async function startLive() {
   const app = document.getElementById('app');
@@ -42,6 +43,12 @@ export async function startLive() {
         window.odysseyBridge?.(JSON.stringify({ type: 'query-history' }));
       } else if (name === 'extensions') {
         window.odysseyBridge?.(JSON.stringify({ type: 'get-extensions' }));
+      } else if (name === 'chat' || name === 'ai') {
+        window.odysseyBridge?.(JSON.stringify({ type: 'chat-list' }));
+        if (state.chatOpenId) {
+          window.odysseyBridge?.(JSON.stringify({ type: 'chat-open', id: state.chatOpenId }));
+          state.chatOpenId = null;
+        }
       }
     }
     requestRender(app, state);
@@ -88,6 +95,47 @@ export async function startLive() {
     }
     if (state.downloads.length > 20) state.downloads.length = 20;
     if (state.downloads.some((x) => x.active)) state.downloadsOpen = state.downloadsOpen ?? true;
+  };
+
+  // What the assistant sends while it works: steps, answer text, sources, browser actions.
+  const onAiEvent = (ev) => {
+    const origin = state.aiOrigin === 'chat' ? 'chat' : 'helm';
+    // A question sent straight over the bridge (no card of ours yet) still gets a card.
+    if (origin === 'helm' && !state.answer && state.aiOrigin == null) {
+      const provider = state.aiConfig?.provider;
+      state.answer = {
+        live: true, question: '', text: '', steps: [], sources: [], done: false,
+        footer: provider === 'odysseus' ? 'Answered by your Odysseus server' : (provider === 'cloud' ? 'Answered by Cloud AI' : (provider === 'local' ? 'Answered by local AI' : 'AI not configured')),
+      };
+    }
+    const target = origin === 'chat' ? state.chatStream : state.answer;
+    if (!target) return;
+    if (ev.type === 'delta') {
+      target.text += ev.data;
+    } else if (ev.type === 'step') {
+      target.steps = [...(target.steps || []), ev.data];
+    } else if (ev.type === 'source') {
+      const title = ev.data?.title || ev.data?.url;
+      if (title && !(target.sources || []).some((x) => x.url === ev.data?.url)) {
+        target.sources = [...(target.sources || []), { title, url: ev.data?.url || '' }];
+      }
+    } else if (ev.type === 'action') {
+      // The assistant opens a page in a new tab through the same path as you would.
+      if (ev.data?.kind === 'open' && ev.data.url) window.odysseyBridge?.(JSON.stringify({ type: 'open', url: ev.data.url }));
+    } else if (ev.type === 'error') {
+      target.error = String(ev.data);
+      if (!target.text) target.text = `Error: ${ev.data}`;
+    } else if (ev.type === 'done') {
+      target.done = true;
+      if (origin === 'chat' && state.chat) {
+        const m = { role: 'assistant', text: target.text || '(No answer)', steps: target.steps, sources: target.sources };
+        state.chat.messages = [...state.chat.messages, m];
+        state.chatStream = null;
+      } else if (!target.text) {
+        target.text = '(No answer)';
+      }
+    }
+    if (origin === 'chat') chatUpdate(state); else renderShellLive();
   };
 
   onMessage((msg) => {
@@ -150,6 +198,9 @@ export async function startLive() {
         state.helm = { kind: 'empty' };
       }
       renderShellLive();
+    } else if (msg.type === 'toggle-ask') {
+      revealHelm();
+      toggleAsk(app, state);
     } else if (msg.type === 'helm-focus') {
       revealHelm();
       focusHelm();
@@ -321,36 +372,23 @@ export async function startLive() {
       state.aiTestResult = msg;
       renderShellLive();
     } else if (msg.type === 'ai-event') {
-      if (msg.event) {
-        if (!state.answer) {
-          state.answer = {
-            text: '',
-            sources: [],
-            footer: state.aiConfig?.provider === 'odysseus'
-              ? 'Answered by your Odysseus server'
-              : (state.aiConfig?.provider === 'cloud'
-                ? 'Answered by Cloud AI'
-                : (state.aiConfig?.provider === 'local' ? 'Answered by local AI' : 'AI')),
-            action: state.aiConfig?.provider === 'odysseus' ? 'Continue in Odysseus' : '',
-          };
-        }
-        if (state.answer.text === 'Thinking...') {
-          state.answer.text = '';
-        }
-        if (msg.event.type === 'delta') {
-          state.answer.text += msg.event.data;
-          renderShellLive();
-        } else if (msg.event.type === 'source') {
-          const s = msg.event.data?.title || msg.event.data?.url;
-          if (s && !state.answer.sources.some((x) => (x.title || x) === s)) {
-            state.answer.sources.push({ title: s, url: msg.event.data?.url || '' });
-            renderShellLive();
-          }
-        } else if (msg.event.type === 'error') {
-          state.answer.text = `Error: ${msg.event.data}`;
-          renderShellLive();
-        }
+      if (msg.event) onAiEvent(msg.event);
+    } else if (msg.type === 'chat-list') {
+      state.chatList = msg.chats || [];
+      chatUpdate(state);
+    } else if (msg.type === 'chat-data') {
+      state.chat = msg.chat ? { id: msg.chat.id, messages: msg.chat.messages || [] } : null;
+      chatUpdate(state);
+      chatFocusInput();
+    } else if (msg.type === 'chat-started') {
+      if (state.aiOrigin === 'chat' && state.chat) {
+        state.chat.id = msg.id;
+        chatAdopt(msg.id);
+      } else {
+        state.helmChat = msg.id;
       }
+    } else if (msg.type === 'chat-saved') {
+      window.odysseyBridge?.(JSON.stringify({ type: 'chat-list' }));
     } else if (msg.type === 'vault-loaded') {
       state.vaultEntries = msg.entries;
       state.vaultNever = msg.never || [];

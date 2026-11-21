@@ -82,3 +82,16 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .history-actions { display: none; }
 .history-row:hover .history-actions, .history-row.is-hovered .history-actions { display: flex; }
 .history-row:hover { background: var(--w-hover-row); }
+
+/* Rendered assistant text (markdown.js builds these elements; nothing from the model is markup). */
+.md p { margin: 0 0 10px; }
+.md p:last-child, .md ul:last-child, .md ol:last-child, .md pre:last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md .md-h { font-weight: 600; color: var(--text-strong); }
+.md strong { font-weight: 600; color: var(--text-strong); }
+.md code { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: .9em; background: var(--w-field); padding: 1px 6px; border-radius: 5px; }
+.md pre { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--r-row); background: var(--w-field); overflow-x: auto; }
+.md pre code { background: none; padding: 0; }
+.md a { color: var(--accent); text-decoration: none; cursor: pointer; }
+.md a:hover { text-decoration: underline; }

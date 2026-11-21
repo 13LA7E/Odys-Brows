@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS = {
   wallpaperBlur: 'Off',
   reduceMotion: 'Auto',
   pinnedExtensions: [],
+  aiTools: true,
   radius: 'Default',
   uiScale: '100%',
   showNavButtons: true,
@@ -749,6 +750,20 @@ export function renderSettings(container, state, onUpdate) {
       const actionsWrap = el('div');
       actionsWrap.append(actionBox, statusDesc);
       rows.append(makeRow('Verify & apply', 'Test the connection before saving.', actionsWrap));
+    }
+
+    // What the assistant may do for you (local and cloud models; Odysseus has its own tools).
+    if (edit.provider === 'local' || edit.provider === 'cloud') {
+      rows.append(makeRow(
+        'Search and open pages',
+        'Let the assistant search the web, read pages and open tabs when you ask. Each step is shown in the answer. It never fills in forms or uses your passwords.',
+        makeSwitch(settings.aiTools !== false, (val) => {
+          settings.aiTools = val;
+          saveSettings(settings);
+          if (onUpdate) onUpdate('aiTools', val);
+          renderSettings(container, state, onUpdate);
+        })
+      ));
     }
 
     content.append(rows);

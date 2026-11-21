@@ -11,6 +11,7 @@
 mod auth;
 mod brand;
 mod bridge;
+mod chats;
 mod extensions;
 mod privacy;
 mod selftest;
@@ -472,6 +473,7 @@ impl Shell {
                 engine.focus_ui();
                 engine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
             }
+            "ask" => engine.send_to_ui(&bridge::to_json(&ToUi::ToggleAsk)),
             "find" => {
                 if let Some(v) = v {
                     engine.send_to_ui(&bridge::to_json(&ToUi::FindInPagePrompt { view: v }));
@@ -1726,12 +1728,58 @@ impl Shell {
             FromUi::AiCancel => {
                 self.ai_cancel.store(true, Ordering::Relaxed);
             }
-            FromUi::AiAsk { prompt, context } => {
+            FromUi::AiAsk {
+                prompt,
+                context,
+                chat,
+            } => {
                 self.ai_cancel.store(true, Ordering::Relaxed);
                 let cancel = Arc::new(AtomicBool::new(false));
                 self.ai_cancel = cancel.clone();
                 let client = self.ai_client.clone();
                 let config = self.ai_config.clone();
+                let dir = profile_dir();
+                let save = !self.is_private;
+                let tools = save && load_settings_or_default(&dir)["aiTools"] != false;
+
+                // History: what was said before in this conversation, then the new question.
+                let mut history: Vec<ai::ChatMessage> = Vec::new();
+                let mut chat_id = chat.clone();
+                if save {
+                    if let Some(c) = chat.as_deref().and_then(|id| chats::get(&dir, id)) {
+                        history.extend(c.messages.iter().map(|m| ai::ChatMessage {
+                            role: m.role.clone(),
+                            content: m.text.clone(),
+                        }));
+                    }
+                    let saved = chats::append(
+                        &dir,
+                        chat_id.as_deref(),
+                        chats::Message {
+                            role: "user".into(),
+                            text: prompt.clone(),
+                            steps: vec![],
+                            sources: vec![],
+                        },
+                    );
+                    if let Ok(id) = saved {
+                        chat_id = Some(id);
+                    }
+                    if let Some(id) = &chat_id {
+                        engine.send_to_ui(&bridge::to_json(&ToUi::ChatStarted { id: id.clone() }));
+                    }
+                }
+                history.push(ai::ChatMessage::user(prompt.clone()));
+
+                // The reply is collected as it streams so it can be saved when it is done.
+                let reply = Arc::new(std::sync::Mutex::new((
+                    String::new(),
+                    Vec::<String>::new(),
+                    Vec::<chats::Source>::new(),
+                )));
+                let reply_sink = reply.clone();
+                let cancel_sink = cancel.clone();
+                let chat_for_save = chat_id.clone();
 
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
@@ -1740,15 +1788,100 @@ impl Shell {
                         .unwrap();
                     rt.block_on(async {
                         client
-                            .ask(&config, &prompt, context.as_deref(), cancel, move |ev| {
-                                CefEngine.post_ui(move || {
-                                    CefEngine
-                                        .send_to_ui(&bridge::to_json(&ToUi::AiEvent { event: ev }));
-                                });
-                            })
+                            .run_chat(
+                                &config,
+                                history,
+                                context.as_deref(),
+                                tools,
+                                cancel,
+                                move |ev| {
+                                    match &ev {
+                                        ai::AiEvent::Delta(t) => {
+                                            reply_sink.lock().unwrap().0.push_str(t)
+                                        }
+                                        ai::AiEvent::Step(s) => {
+                                            reply_sink.lock().unwrap().1.push(s.clone())
+                                        }
+                                        ai::AiEvent::Source { title, url } => {
+                                            reply_sink.lock().unwrap().2.push(chats::Source {
+                                                title: title.clone(),
+                                                url: url.clone(),
+                                            })
+                                        }
+                                        _ => {}
+                                    }
+                                    let done = matches!(ev, ai::AiEvent::Done);
+                                    let saved =
+                                        if done && save && !cancel_sink.load(Ordering::Relaxed) {
+                                            let (text, steps, sources) =
+                                                reply_sink.lock().unwrap().clone();
+                                            if text.trim().is_empty() {
+                                                None
+                                            } else {
+                                                chats::append(
+                                                    &profile_dir(),
+                                                    chat_for_save.as_deref(),
+                                                    chats::Message {
+                                                        role: "assistant".into(),
+                                                        text,
+                                                        steps,
+                                                        sources,
+                                                    },
+                                                )
+                                                .ok()
+                                            }
+                                        } else {
+                                            None
+                                        };
+                                    CefEngine.post_ui(move || {
+                                        CefEngine.send_to_ui(&bridge::to_json(&ToUi::AiEvent {
+                                            event: ev,
+                                        }));
+                                        if let Some(id) = saved {
+                                            CefEngine.send_to_ui(&bridge::to_json(
+                                                &ToUi::ChatSaved { id },
+                                            ));
+                                        }
+                                    });
+                                },
+                            )
                             .await;
                     });
                 });
+            }
+            FromUi::ChatList => {
+                let chats = if self.is_private {
+                    Vec::new()
+                } else {
+                    chats::list(&profile_dir())
+                };
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatList { chats }));
+            }
+            FromUi::ChatOpen { id } => {
+                let chat = if self.is_private {
+                    None
+                } else {
+                    chats::get(&profile_dir(), &id)
+                };
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatData { chat }));
+            }
+            FromUi::ChatDelete { id } => {
+                if !self.is_private {
+                    let _ = chats::delete(&profile_dir(), &id);
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatList {
+                    chats: if self.is_private {
+                        Vec::new()
+                    } else {
+                        chats::list(&profile_dir())
+                    },
+                }));
+            }
+            FromUi::ChatClearAll => {
+                if !self.is_private {
+                    chats::clear(&profile_dir());
+                }
+                engine.send_to_ui(&bridge::to_json(&ToUi::ChatList { chats: Vec::new() }));
             }
             FromUi::VaultList => {
                 let entries = self.vault.list();
@@ -2336,6 +2469,9 @@ fn sleep_timeout_secs(is_private: bool) -> Option<i64> {
 /// Tab title for an `odyssey://<name>` page.
 fn internal_page_title(name: &str) -> String {
     let name = name.trim_matches('/');
+    if name == "chat" || name == "ai" {
+        return "Assistant".to_string();
+    }
     let mut chars = name.chars();
     match chars.next() {
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),

@@ -11,6 +11,7 @@ import { applySavedTheme, resolveTheme, starColour } from './themes.js';
 import { applyInterface, interfaceScale } from './interface.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab, wallpaperVersion } from './newtab.js';
+import { renderChatPage, chatUpdate } from './chat.js';
 import { renderErrorPage, renderPromptCard } from './pagebasics.js';
 import { renderExtensionsPage } from './extensions.js';
 
@@ -251,9 +252,64 @@ const PANEL_EXCLUDE = new Set([
   'sky', 'tabs', 'activeTab', 'closed', 'helm', 'savedHelm', 'answer', 'dimPage', 'downloads',
   'downloadsOpen', 'shields', 'shieldsOpen', 'shieldsEnabled', 'prompts', 'isLoading',
   'canGoBack', 'canGoForward', 'activeSpace', 'minute', 'tabCount',
+  'chat', 'chatList', 'chatStream', 'aiOrigin', 'helmChat', 'chatOpenId',
 ]);
+/** Switches the Helm between your address bar and asking the assistant (Ctrl+J, or the star button). */
+export function toggleAsk(root, state) {
+  if (state.helm?.kind === 'asking') {
+    state.helm = state.savedHelm || { kind: 'empty' };
+    state.answer = null;
+    state.helmChat = null;
+    state.dimPage = false;
+    if (typeof window.odysseyBridge === 'function') {
+      window.odysseyBridge(JSON.stringify({ type: 'ai-cancel' }));
+    }
+  } else {
+    state.savedHelm = state.helm;
+    state.helm = { kind: 'asking', question: '' };
+    state.dimPage = true;
+  }
+  renderShell(root, state);
+}
+
+function isChatPage(state) {
+  return state.page === 'internal' && (state.pageName === 'chat' || state.pageName === 'ai');
+}
+
+/** What the assistant page can do (it talks to Rust through the bridge). */
+function chatActions(root, state) {
+  const send = (m) => window.odysseyBridge?.(JSON.stringify(m));
+  return {
+    send: (text) => {
+      state.chat = state.chat || { id: null, messages: [] };
+      state.chat.messages = [...state.chat.messages, { role: 'user', text }];
+      state.chatStream = { text: '', steps: [], sources: [], done: false };
+      state.aiOrigin = 'chat';
+      send({ type: 'ai-ask', prompt: text, chat: state.chat.id });
+      chatUpdate(state);
+    },
+    stop: () => {
+      send({ type: 'ai-cancel' });
+      const s = state.chatStream;
+      if (s && s.text) state.chat.messages = [...state.chat.messages, { role: 'assistant', text: s.text, steps: s.steps, sources: s.sources }];
+      state.chatStream = null;
+      chatUpdate(state);
+    },
+    openChat: (id) => { state.chatStream = null; send({ type: 'chat-open', id }); },
+    newChat: () => { state.chat = null; state.chatStream = null; chatUpdate(state); },
+    deleteChat: (id) => {
+      if (state.chat?.id === id) { state.chat = null; state.chatStream = null; }
+      send({ type: 'chat-delete', id });
+    },
+    clearAll: () => { state.chat = null; state.chatStream = null; send({ type: 'chat-clear-all' }); },
+    openLink: (url) => openLink(state, url),
+  };
+}
+
 /** What the page panel draws: everything except the data only other regions use. */
 function panelSig(state) {
+  // The assistant page updates itself in place (so typing and scrolling survive); it is built once.
+  if (isChatPage(state)) return { page: 'chat' };
   const o = {};
   for (const k of Object.keys(state)) if (!PANEL_EXCLUDE.has(k)) o[k] = state[k];
   return o;
@@ -629,6 +685,8 @@ export function renderShell(root, state) {
             }
           },
         });
+      } else if (pageName === 'chat' || pageName === 'ai') {
+        renderChatPage(panel, state, chatActions(root, state));
       } else if (pageName === 'settings' || (byData && state.settings)) {
         renderSettings(panel, state, (field, val) => {
           if (field === 'stars') {
@@ -710,7 +768,15 @@ export function renderShell(root, state) {
 
   // Answer card (HelmAnswer board, DESIGN.md §7)
   if (state.answer) {
-    add(region('answer', state.answer, () => renderAnswerCard(state.answer, (url) => openLink(state, url)), { enter: true, exit: true }));
+    add(region('answer', state.answer, () => renderAnswerCard(state.answer, (url) => openLink(state, url), state.answer.live ? () => {
+      state.chatOpenId = state.helmChat || null;
+      state.helm = state.savedHelm || { kind: 'empty' };
+      state.answer = null;
+      state.dimPage = false;
+      state.helmChat = null;
+      window.odysseyBridge?.(JSON.stringify({ type: 'open', url: 'odyssey://chat' }));
+      renderShell(root, state);
+    } : null), { enter: true, exit: true }));
   }
 
   // Permission and certificate questions for the tab being shown (AUDIT-21).
@@ -770,36 +836,29 @@ export function renderShell(root, state) {
       state.downloadsOpen = !state.downloadsOpen;
       renderShell(root, state);
     },
-    onToggleAsk: () => {
-      if (state.helm?.kind === 'asking') {
-        state.helm = state.savedHelm || { kind: 'empty' };
-        state.answer = null;
-        state.dimPage = false;
-        if (typeof window.odysseyBridge === 'function') {
-          window.odysseyBridge(JSON.stringify({ type: 'ai-cancel' }));
-        }
-      } else {
-        state.savedHelm = state.helm;
-        state.helm = { kind: 'asking', question: '' };
-        state.dimPage = true;
-      }
-      renderShell(root, state);
-    },
+    onToggleAsk: () => toggleAsk(root, state),
     onAsk: (question) => {
       state.dimPage = true;
+      state.aiOrigin = 'helm';
+      // Your question stays above the answer; the footer comes only when the answer is complete.
       state.answer = {
-        text: 'Thinking...',
+        live: true,
+        question,
+        text: '',
+        steps: [],
         sources: [],
+        done: false,
         footer: state.aiConfig?.provider === 'odysseus'
           ? 'Answered by your Odysseus server'
           : (state.aiConfig?.provider === 'cloud'
             ? 'Answered by Cloud AI'
             : (state.aiConfig?.provider === 'local' ? 'Answered by local AI' : 'AI not configured')),
-        action: state.aiConfig?.provider === 'odysseus' ? 'Continue in Odysseus' : '',
       };
+      // The box empties so you can follow up.
+      state.helm = { kind: 'asking', question: '' };
       renderShell(root, state);
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({ type: 'ai-ask', prompt: question }));
+        window.odysseyBridge(JSON.stringify({ type: 'ai-ask', prompt: question, chat: state.helmChat || null }));
       }
     },
   })));

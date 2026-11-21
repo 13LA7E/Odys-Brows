@@ -52,4 +52,17 @@ try:
     check('every tab kept its space after a restart', sp == [0, 1, 1, 2], sp)
 finally:
     kill(p)
+# the new-tab clock stays clear of an expanded rail
+prof2 = tempfile.mkdtemp(prefix='cons-prof-')
+p = launch([], prof2)
+try:
+    wait(lambda: ui_ws() and ui('typeof window.__uiState') == 'object', 30); time.sleep(3)
+    ui("window.__uiState.rail='expanded'; 1"); bridge({'type': 'load-settings'}); time.sleep(1.2)
+    left = V("document.querySelector('.newtab-header').getBoundingClientRect().left")
+    rail_right = V("document.querySelector('.rail').getBoundingClientRect().right")
+    check('expanded rail: the new-tab clock starts right of the rail', left >= rail_right + 20, (left, rail_right))
+    ui("window.__uiState.rail='collapsed'; 1"); bridge({'type': 'load-settings'}); time.sleep(1.2)
+    check('collapsed rail: the clock is where the design puts it (120 px)', abs(V("document.querySelector('.newtab-header').getBoundingClientRect().left") - 120) < 1)
+finally:
+    kill(p)
 print('\nSUMMARY', sum(1 for r in results if r[1]), '/', len(results))

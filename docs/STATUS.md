@@ -128,6 +128,10 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: assistant polish (thinking, history, chat page, search, open tabs)
+
+- Built the assistant list from the owner's message (details in PHASES). New: `app/ai/src/agent.rs`, `app/shell/src/chats.rs`, `ui/chat.js`, `ui/markdown.js`. Verified live: `ai_chat.py` 31/31 (fake model), a real Ollama + web search run, `private_ai` 9/9, `spaces` 13/13. Not verified: DNS-rebinding on the address check; cloud providers (OpenAI, Anthropic) through the new chat path (same code shape, no key to test with); Odysseus through the chat page (it keeps its own history, last question only); Linux.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: spaces, rail overlap, extension pins
 
 - Fixed spaces, the new-tab/rail overlap, added the Chrome Web Store button and notch pinning (details in PHASES). Verified live: `spaces.py` 11/11, `ext_pin.py` 10/10. Not verified: Linux; extension popups from the notch (not built).
