@@ -292,3 +292,18 @@ All fixed and verified live unless noted.
 - [x] **Search engine setting:** the Helm always searched DuckDuckGo; Settings > General now decides (DuckDuckGo, Google, Bing). Verified live. Other General controls are not wired to anything: On startup (the app always restores tabs), Downloads location (display only), and the show-clock / trail-hint / Do-Not-Track settings.
 - [x] **Settings pages scroll:** the settings content is its own scroll area; History and other internal pages scroll too (`settings_fixes.py`, 11 checks).
 - [x] **Helm auto-hides and the notch and Helm animate (owner request, 21 Nov):** over a web page the address bar shows for 4.5 s, then slides down out of the way; a 4 px strip at the bottom (and Ctrl+L, typing, asking, an open download or a new address) brings it back. Both bars now slide over `--dur-slow` (320 ms, one token). The notch's slide was invisible before (black over black, then the hole snapped shut): the hole in the page window now follows each bar frame by frame, so the page shows through as it moves (notch hole 33 -> 4 px in 22 steps; Helm passes 14 positions). The Helm's hole now comes from the UI like the other overlays (the fixed Helm hole in `engine-cef` is gone). Live: `helm_autohide.py` (15), `notch_autohide.py` (9), `screen_helm.py` (real screen, strips hovered first); frames `docs/evidence/2026-11-21/autohide*.{gif,png}` (slowed to 1.5 s).
+
+### Stage F: customisation parity with Odyssey (owner request, 21 Nov; see docs/AUDIT-2026-11-20.md, Stage F)
+
+Order: settings storage first, then 38, 40, 41, 35, 36, 37, 39, 42. Each option is checked against Odyssey's code (`C:\Projects\Odyssey\ui\app.js`, `ui\fx.js`) before it is ported, with a screenshot of each new Settings section to the owner first.
+
+- [ ] **STORE Shared settings storage.** One schema with defaults and validation, saved in the shell's `settings.json` with atomic writes, every option applying live and updating in place; unit tests for default, save, reload and invalid value. Reuses what exists (search engine, motion, cursor stars, sleep time, password switches).
+- [ ] **AUDIT-38** General options (search engines + custom engine, restore tabs, link target, download connections).
+- [ ] **AUDIT-40** Privacy options (clear history, questions, downloads, site data on exit; site icons).
+- [ ] **AUDIT-41** Changeable keyboard shortcuts.
+- [ ] **AUDIT-35** Themes and a theme editor (dark presets first; light themes only with owner approval).
+- [ ] **AUDIT-36** Sky options (extra sky types, sliders, low power).
+- [ ] **AUDIT-37** New-tab page options.
+- [ ] **AUDIT-39** Interface options (density, radius, scale, rail side, Helm buttons, answer card).
+- [ ] **AUDIT-42** Motion options (Reduce motion control; speed multiplier only if wanted).
+

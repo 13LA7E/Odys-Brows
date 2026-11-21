@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
-| Current task | Rebuild `dist`, then live-check the Phase R items marked `[~]` in PHASES on `tools/audit/test.html`, starting with AUDIT-01 (blank Helm and notch over web pages). |
+| Current task | **Stage F, step 1: the shared settings storage (STORE)**, after the owner answers the four open questions in the audit doc (light themes, rail on the right, which Odyssey new-tab options are used, window blur and opacity left out). Then AUDIT-38, 40, 41, 35, 36, 37, 39, 42. |
 | State | Phase R is done except AUDIT-23 (blocked on D-013), AUDIT-31 (Linux) and the items listed as not done in PHASES. AUDIT-01, 03, 32, 33 and 34 are done and verified live (this session). Everything is verified on Windows only. **Uncommitted on purpose:** the D-024 rule edits (see below). |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
@@ -110,6 +110,13 @@ Facts the next agent must know (all in DECISIONS/STATUS log too):
 Copy this template for each session:
 
 ```
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Stage F housekeeping
+
+- Deleted `docs/stageF-customisation.tmp.md` (all 56 lines were already in the audit doc). Committed Stage F in the audit doc and the AGENTS.md D-024 edit ("docs: add Stage F (customisation) to the audit"). The DESIGN.md and DECISIONS.md D-024 edits had already gone into an earlier commit (00fe79f).
+- Added STORE and AUDIT-35 to 42 to PHASES, unticked. Next: the owner's answers to the four open questions, then the settings storage.
+- **Settings that already exist (reuse, do not duplicate):** `stars`, `shootingStars`, `accent`, `trail`, `connections`, `searchEngine` (3 engines), `startup` (saved but not used), `sleepMinutes`, `starsFollowCursor`, `offerSavePasswords`, `autofillPasswords`. Motion tokens are in `ui/tokens.css` (no user setting; reduced motion follows the OS). Settings file: `load_settings_or_default` and `save_settings_atomic` in `app/shell/src/main.rs`; UI side `ui/settings.js` (`DEFAULT_SETTINGS`, `saveSettings`).
+- **Stage F items already partly done:** AUDIT-36 (Off/Still/Drifting, shooting stars, cursor stars); AUDIT-38 (search engine with 3 engines; the download connections control exists and is sent to `segdl::set_connections`; restore-tabs is shown but not wired); AUDIT-40 (vault text is OS-specific); AUDIT-42 (reduced motion follows the OS).
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Helm auto-hide, animated notch and Helm
 
