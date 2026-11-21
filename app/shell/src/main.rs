@@ -189,8 +189,43 @@ struct Shell {
     active_downloads: HashMap<u32, Option<ViewId>>,
     /// The URL last written to history per tab, so one navigation isn't recorded twice.
     last_recorded: HashMap<ViewId, String>,
+    /// "Save password?" questions waiting for an answer. The password stays here, in Rust.
+    pending_logins: HashMap<u64, PendingLogin>,
+    /// "Which login?" questions: request -> (tab, site key).
+    pending_fills: HashMap<u64, (ViewId, String)>,
+    next_request: u64,
     last_persist: std::cell::Cell<Option<std::time::Instant>>,
     persist_dirty: std::cell::Cell<bool>,
+}
+
+/// A login the page reported, waiting for the user to say Save, Never or Not now.
+#[derive(Debug)]
+struct PendingLogin {
+    view: ViewId,
+    host: String,
+    username: String,
+    password: String,
+    /// Set when the site and username are saved already with a different password.
+    update_id: Option<String>,
+}
+
+/// Autofill only on https, or on this machine (a plain http site could be read by others).
+fn autofill_allowed(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    let host = vault::host_key(url);
+    url.starts_with("http://")
+        && (host.starts_with("localhost")
+            || host.starts_with("127.0.0.1")
+            || host.starts_with("[::1]"))
+}
+
+fn setting_on(name: &str) -> bool {
+    load_settings_or_default(&profile_dir())
+        .get(name)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
 }
 
 /// Chrome's zoom steps (percent / 100).
@@ -225,6 +260,9 @@ impl Default for Shell {
             download_paths: HashMap::new(),
             active_downloads: HashMap::new(),
             last_recorded: HashMap::new(),
+            pending_logins: HashMap::new(),
+            pending_fills: HashMap::new(),
+            next_request: 0,
             last_persist: std::cell::Cell::new(None),
             persist_dirty: std::cell::Cell::new(false),
         }
@@ -250,6 +288,150 @@ impl Shell {
             .filter(|t| t.space == self.active_space)
             .map(|t| t.view)
             .collect()
+    }
+
+    fn vault_path() -> PathBuf {
+        profile_dir().join("vault.json")
+    }
+
+    fn send_vault(&self) {
+        CefEngine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
+            entries: self.vault.list(),
+            notice: self.vault.load_notice.clone(),
+            never: self.vault.never.clone(),
+        }));
+    }
+
+    /// The page reported a submitted login. Offer to save or update it (Brave/Chrome style).
+    fn on_login_submitted(&mut self, view: ViewId, username: &str, password: &str) {
+        if self.is_private
+            || password.is_empty()
+            || password.len() > 1024
+            || username.len() > 512
+            || !setting_on("offerSavePasswords")
+        {
+            return;
+        }
+        // The site comes from our own record of the tab, never from the page.
+        let Some(url) = self.tab_urls.get(&view).cloned() else {
+            return;
+        };
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return;
+        }
+        let host = vault::host_key(&url);
+        if host.is_empty() || self.vault.is_never(&host) {
+            return;
+        }
+        let update_id = match self.vault.find_login(&host, username) {
+            Some(c) if c.password == password => return,
+            Some(c) => Some(c.id),
+            None => None,
+        };
+        self.pending_logins.retain(|_, p| p.view != view);
+        self.next_request += 1;
+        let request = self.next_request;
+        self.pending_logins.insert(
+            request,
+            PendingLogin {
+                view,
+                host: host.clone(),
+                username: username.to_string(),
+                password: password.to_string(),
+                update_id: update_id.clone(),
+            },
+        );
+        CefEngine.send_to_ui(&bridge::to_json(&ToUi::SaveLoginPrompt {
+            view,
+            request,
+            host,
+            username: username.to_string(),
+            update: update_id.is_some(),
+        }));
+    }
+
+    fn answer_save_login(&mut self, request: u64, action: &str) {
+        let Some(p) = self.pending_logins.remove(&request) else {
+            return;
+        };
+        match action {
+            "save" => {
+                let result = match &p.update_id {
+                    Some(id) => self.vault.update(id, None, None, Some(p.password.clone())),
+                    None => self
+                        .vault
+                        .add(&p.host, &p.username, &p.password)
+                        .map(|_| ()),
+                };
+                if let Err(e) = result {
+                    eprintln!("Couldn't save the login: {e}");
+                    return;
+                }
+            }
+            "never" => self.vault.add_never(&p.host),
+            _ => return,
+        }
+        if let Err(e) = self.vault.save(&Self::vault_path()) {
+            eprintln!("Couldn't write saved logins: {e}");
+        }
+        self.send_vault();
+    }
+
+    /// The user clicked a login field: fill the saved login, or ask which one.
+    fn on_fill_requested(&mut self, view: ViewId) {
+        if !setting_on("autofillPasswords") {
+            return;
+        }
+        let Some(url) = self.tab_urls.get(&view).cloned() else {
+            return;
+        };
+        if !autofill_allowed(&url) {
+            return;
+        }
+        let host = vault::host_key(&url);
+        let creds = self.vault.credentials_for_host(&host).unwrap_or_default();
+        match creds.len() {
+            0 => {}
+            1 => CefEngine.fill_login(view, &creds[0].username, &creds[0].password),
+            _ => {
+                self.next_request += 1;
+                let request = self.next_request;
+                self.pending_fills.retain(|_, (v, _)| *v != view);
+                self.pending_fills.insert(request, (view, host.clone()));
+                CefEngine.send_to_ui(&bridge::to_json(&ToUi::FillChoices {
+                    view,
+                    request,
+                    host,
+                    logins: creds
+                        .iter()
+                        .map(|c| bridge::FillChoice {
+                            id: c.id.clone(),
+                            username: c.username.clone(),
+                        })
+                        .collect(),
+                }));
+            }
+        }
+    }
+
+    fn answer_fill(&mut self, request: u64, id: Option<&str>) {
+        let Some((view, host)) = self.pending_fills.remove(&request) else {
+            return;
+        };
+        let Some(id) = id else { return };
+        // The tab must still be on the same site as when the question was asked.
+        let still = self
+            .tab_urls
+            .get(&view)
+            .is_some_and(|u| vault::host_key(u) == host && autofill_allowed(u));
+        if !still {
+            return;
+        }
+        if let Ok(creds) = self.vault.credentials_for_host(&host)
+            && let Some(c) = creds.iter().find(|c| c.id == id)
+        {
+            CefEngine.fill_login(view, &c.username, &c.password);
+        }
     }
 
     fn is_restore_pending(&self, view: ViewId) -> bool {
@@ -872,6 +1054,56 @@ impl Shell {
             }
             FromUi::OpenPrivateWindow => open_private_window(),
             FromUi::FocusWindow => engine.focus_ui(),
+            FromUi::AnswerSaveLogin { request, action } => self.answer_save_login(request, &action),
+            FromUi::AnswerFill { request, id } => self.answer_fill(request, id.as_deref()),
+            FromUi::VaultRemoveNever { host } => {
+                self.vault.remove_never(&host);
+                let _ = self.vault.save(&Self::vault_path());
+                self.send_vault();
+            }
+            FromUi::VaultExport => {
+                let result = self.vault.export_csv().and_then(|csv| {
+                    let dir = segdl::default_download_dir();
+                    let name = format!("constellations-passwords-{}.csv", unix_now());
+                    let path = segdl::unique_path(&dir, &name);
+                    std::fs::write(&path, csv).map_err(|e| e.to_string())?;
+                    Ok(path)
+                });
+                let msg = match result {
+                    Ok(path) => ToUi::VaultExported {
+                        ok: true,
+                        message: String::new(),
+                        path: path.to_string_lossy().to_string(),
+                    },
+                    Err(e) => ToUi::VaultExported {
+                        ok: false,
+                        message: e,
+                        path: String::new(),
+                    },
+                };
+                engine.send_to_ui(&bridge::to_json(&msg));
+            }
+            FromUi::VaultImport { csv } => {
+                let msg = match self.vault.import_csv(&csv) {
+                    Ok(summary) => {
+                        if let Err(e) = self.vault.save(&Self::vault_path()) {
+                            eprintln!("Couldn't write saved logins: {e}");
+                        }
+                        ToUi::VaultImported {
+                            added: summary.added,
+                            skipped: summary.skipped,
+                            error: None,
+                        }
+                    }
+                    Err(e) => ToUi::VaultImported {
+                        added: 0,
+                        skipped: 0,
+                        error: Some(e),
+                    },
+                };
+                engine.send_to_ui(&bridge::to_json(&msg));
+                self.send_vault();
+            }
             FromUi::SetNotchHidden { hidden } => engine.set_notch_hidden(hidden),
             FromUi::SetOverlayRects { rects } => {
                 let rects = rects
@@ -1241,6 +1473,7 @@ impl Shell {
                 engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
                     entries,
                     notice: self.vault.load_notice.clone(),
+                    never: self.vault.never.clone(),
                 }));
             }
             FromUi::VaultListForOrigin { origin } => {
@@ -1248,6 +1481,7 @@ impl Shell {
                 engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
                     entries,
                     notice: self.vault.load_notice.clone(),
+                    never: self.vault.never.clone(),
                 }));
             }
             FromUi::VaultAdd {
@@ -1261,6 +1495,7 @@ impl Shell {
                     engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
                         entries,
                         notice: self.vault.load_notice.clone(),
+                        never: self.vault.never.clone(),
                     }));
                 }
             }
@@ -1276,6 +1511,7 @@ impl Shell {
                     engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
                         entries,
                         notice: self.vault.load_notice.clone(),
+                        never: self.vault.never.clone(),
                     }));
                 }
             }
@@ -1286,6 +1522,7 @@ impl Shell {
                     engine.send_to_ui(&bridge::to_json(&ToUi::VaultLoaded {
                         entries,
                         notice: self.vault.load_notice.clone(),
+                        never: self.vault.never.clone(),
                     }));
                 }
             }
@@ -1405,6 +1642,12 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                     s.active_downloads.insert(info.id, info.view);
                 }
             }
+            engine_api::Event::LoginSubmitted {
+                view,
+                username,
+                password,
+            } => s.on_login_submitted(*view, username, password),
+            engine_api::Event::LoginFieldClicked { view } => s.on_fill_requested(*view),
             engine_api::Event::FormInputChanged { view, has_input } => {
                 if let Some(t) = s.tabs.iter_mut().find(|t| t.view == *view) {
                     t.has_form_input = *has_input;
@@ -1516,6 +1759,8 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::AudioChanged { .. }
                 | engine_api::Event::Download(_)
                 | engine_api::Event::FormInputChanged { .. }
+                | engine_api::Event::LoginSubmitted { .. }
+                | engine_api::Event::LoginFieldClicked { .. }
                 | engine_api::Event::ShortcutNewTab
                 | engine_api::Event::ShortcutNewPrivateWindow
                 | engine_api::Event::ShortcutQuit
@@ -1694,7 +1939,9 @@ pub fn default_settings() -> serde_json::Value {
         "shootingStars": false,
         "accent": "Sea",
         "trail": "Narrow",
-        "connections": 8
+        "connections": 8,
+        "offerSavePasswords": true,
+        "autofillPasswords": true
     })
 }
 

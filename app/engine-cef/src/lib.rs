@@ -840,6 +840,23 @@ wrap_display_handler! {
                 emit(Event::FormInputChanged { view: self.id, has_input: v == "1" });
                 return 1;
             }
+            if let Some(v) = text.strip_prefix("__ody_login__:") {
+                if v.len() < 4096
+                    && let Ok(j) = serde_json::from_str::<serde_json::Value>(v)
+                    && let (Some(u), Some(p)) = (j["u"].as_str(), j["p"].as_str())
+                {
+                    emit(Event::LoginSubmitted {
+                        view: self.id,
+                        username: u.to_string(),
+                        password: p.to_string(),
+                    });
+                }
+                return 1;
+            }
+            if text == "__ody_fill__:1" {
+                emit(Event::LoginFieldClicked { view: self.id });
+                return 1;
+            }
             if let Some(v) = text.strip_prefix("__ody_scroll__:") {
                 let y = v.parse::<f64>().unwrap_or(0.0).max(0.0);
                 STATE.with(|s| {
@@ -856,6 +873,38 @@ wrap_display_handler! {
             0
         }
     }
+}
+
+/// Login forms (AUDIT: passwords). Reports a submitted login through the console, and a real
+/// (trusted) click on a login field so the browser can autofill. Pages have no bridge; what the
+/// page could see here it already has (the password it was just given).
+const LOGIN_WATCH_JS: &str = r#"(function(){try{
+function vis(e){var r=e.getBoundingClientRect();return r.width>8&&r.height>8&&getComputedStyle(e).visibility!=='hidden';}
+function pwIn(scope){var l=(scope||document).querySelectorAll('input[type=password]');for(var i=0;i<l.length;i++){if(vis(l[i]))return l[i];}return null;}
+function userFor(p){var scope=p.form||document;var l=scope.querySelectorAll('input');var u=null;for(var i=0;i<l.length;i++){var e=l[i];if(e===p)break;var t=(e.type||'text').toLowerCase();if((t==='text'||t==='email'||t==='tel')&&vis(e))u=e;}return u;}
+function report(p){var v=p.value;if(!v)return;var u=userFor(p);console.debug('__ody_login__:'+JSON.stringify({u:u?u.value:'',p:v}));}
+document.addEventListener('submit',function(e){var p=e.target&&e.target.querySelector?pwIn(e.target):null;if(p)report(p);},true);
+document.addEventListener('click',function(e){var t=e.target;var b=t&&t.closest?t.closest('button,input[type=submit],input[type=button]'):null;if(b&&(b.type==='submit'||!b.form)){var f=b.form||b.closest('form');var p=pwIn(f||document);if(p&&p.value)report(p);}
+if(!e.isTrusted||!t||t.tagName!=='INPUT')return;var ty=(t.type||'text').toLowerCase();if(ty==='password'||((ty==='text'||ty==='email'||ty==='tel')&&pwIn(t.form||document))){console.debug('__ody_fill__:1');}},true);
+document.addEventListener('keydown',function(e){var t=e.target;if(e.key==='Enter'&&t&&t.type==='password'&&t.value)report(t);},true);
+}catch(e){}})();"#;
+
+/// Fills the login form the user just clicked. Runs once with the credentials baked in; nothing
+/// stays in the page afterwards.
+fn fill_login_script(username: &str, password: &str) -> String {
+    let u = serde_json::to_string(username).unwrap_or_else(|_| String::from("\"\""));
+    let p = serde_json::to_string(password).unwrap_or_else(|_| String::from("\"\""));
+    format!(
+        r#"(function(u,p){{try{{
+function vis(e){{var r=e.getBoundingClientRect();return r.width>8&&r.height>8&&getComputedStyle(e).visibility!=='hidden';}}
+var a=document.activeElement;var scope=(a&&a.tagName==='INPUT'&&a.form)?a.form:document;
+var pw=null;var l=scope.querySelectorAll('input[type=password]');for(var i=0;i<l.length;i++){{if(vis(l[i])){{pw=l[i];break;}}}}
+if(!pw)return;
+var user=null;var all=(pw.form||document).querySelectorAll('input');for(var j=0;j<all.length;j++){{var e=all[j];if(e===pw)break;var t=(e.type||'text').toLowerCase();if((t==='text'||t==='email'||t==='tel')&&vis(e))user=e;}}
+function set(e,v){{if(!e)return;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,v);e.dispatchEvent(new Event('input',{{bubbles:true}}));e.dispatchEvent(new Event('change',{{bubbles:true}}));}}
+set(user,u);set(pw,p);
+}}catch(x){{}}}})({u},{p});"#
+    )
 }
 
 /// Reports two booleans through the console: unsubmitted text in a form field, and audio playing
@@ -900,6 +949,7 @@ wrap_load_handler! {
                 f.execute_java_script(Some(&CefString::from(js.as_str())), None, 0);
             }
             f.execute_java_script(Some(&CefString::from(FORM_WATCH_JS)), None, 0);
+            f.execute_java_script(Some(&CefString::from(LOGIN_WATCH_JS)), None, 0);
             let shields = STATE.with(|s| s.borrow().shields.clone());
             if let Some(sh) = shields {
                 let css = sh.cosmetic_css(&url_str);
@@ -1555,6 +1605,17 @@ impl CefEngine {
         }
         #[cfg(not(windows))]
         let _ = changed;
+    }
+
+    /// Fill the login form the user clicked in this page (autofill). The site was already checked
+    /// by the caller against the browser's own record of the tab's URL.
+    pub fn fill_login(&self, view: ViewId, username: &str, password: &str) {
+        let script = fill_login_script(username, password);
+        with_browser(view, |b| {
+            if let Some(f) = b.main_frame() {
+                f.execute_java_script(Some(&CefString::from(script.as_str())), None, 0);
+            }
+        });
     }
 
     /// Slide the notch away (or back): while hidden only a thin hover strip is cut out of the

@@ -83,6 +83,8 @@ export function applyAccent(accentName) {
 }
 
 let lastSection = null;
+let pwAddOpen = false;
+let pwExportConfirm = false;
 
 function makeRow(label, desc, controlEl) {
   const r = el('div');
@@ -91,9 +93,12 @@ function makeRow(label, desc, controlEl) {
   info.style.cssText = 'flex:1;';
   const lbl = el('div', null, label);
   lbl.style.cssText = 'font-size:15px;font-weight:500;color:var(--text);';
-  const d = el('div', null, desc);
-  d.style.cssText = 'font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.45;';
-  info.append(lbl, d);
+  info.append(lbl);
+  if (desc) {
+    const d = el('div', null, desc);
+    d.style.cssText = 'font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.45;';
+    info.append(d);
+  }
   r.append(info, controlEl);
   return r;
 }
@@ -545,48 +550,95 @@ export function renderSettings(container, state, onUpdate) {
 
     content.append(rows);
   } else if (currentSection === 'Passwords') {
-    // P8-02 Passwords Vault
+    // Brave-style: switches, Add / Import / Export, the list, and the sites "Never" was chosen for.
     const title = el('h1', null, 'Passwords');
     title.style.cssText = 'margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px;color:var(--text-strong);';
-    const sub = el('div', null, (/Windows/i.test(navigator.userAgent) ? 'Saved logins encrypted with Windows DPAPI (tied to your Windows login).' : 'Saved logins are kept in your system keyring (Secret Service).'));
-    sub.style.cssText = 'margin-top:8px;font-size:15px;color:var(--text-muted);';
-    content.append(title, sub);
+    content.append(title);
 
     const rows = el('div');
-    rows.style.cssText = 'margin-top:28px;';
+    rows.style.cssText = 'margin-top:20px;';
+    const send = (m) => { if (typeof window.odysseyBridge === 'function') window.odysseyBridge(JSON.stringify(m)); };
+    const rerender = () => renderSettings(container, state, onUpdate);
 
-    // Add new login form
-    const addBox = el('div');
-    addBox.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:12px;background:var(--w-field);margin-bottom:24px;';
-    const addHeading = el('div', null, 'Add login');
-    addHeading.style.cssText = 'font-size:14.5px;font-weight:600;color:var(--text-strong);';
+    rows.append(makeRow('Offer to save passwords', '', makeSwitch(settings.offerSavePasswords !== false, (val) => {
+      settings.offerSavePasswords = val;
+      saveSettings(settings);
+      rerender();
+    })));
+    rows.append(makeRow('Autofill passwords', '', makeSwitch(settings.autofillPasswords !== false, (val) => {
+      settings.autofillPasswords = val;
+      saveSettings(settings);
+      rerender();
+    })));
 
-    const inputsRow = el('div');
-    inputsRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;';
-    const originInp = makeTextInput('', 'Site (e.g. github.com)', false, () => {});
-    const userInp = makeTextInput('', 'Username / Email', false, () => {});
-    const passInp = makeTextInput('', 'Password', true, () => {});
-    inputsRow.append(originInp, userInp, passInp);
+    // Add / Import / Export
+    const bar = el('div');
+    bar.style.cssText = 'display:flex;gap:10px;align-items:center;margin:12px 0 18px 0;flex-wrap:wrap;';
+    bar.append(makeButton('Add', false, () => { pwAddOpen = !pwAddOpen; rerender(); }));
 
-    const saveLoginBtn = makeButton('Save login', true, () => {
-      const o = originInp.value.trim();
-      const u = userInp.value.trim();
-      const p = passInp.value;
-      if (!o || !p) return;
-      if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify({
-          type: 'vault-add',
-          origin: o,
-          username: u,
-          password: p,
-        }));
+    const fileInput = el('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.csv,text/csv';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      const text = await f.text();
+      if (text.length > 240000) {
+        state.vaultImport = { added: 0, skipped: 0, error: 'That file is too large to import.' };
+        rerender();
+        return;
       }
-      originInp.value = '';
-      userInp.value = '';
-      passInp.value = '';
+      send({ type: 'vault-import', csv: text });
     });
-    addBox.append(addHeading, inputsRow, saveLoginBtn);
-    rows.append(addBox);
+    bar.append(makeButton('Import', false, () => fileInput.click()), fileInput);
+    bar.append(makeButton('Export', false, () => { pwExportConfirm = !pwExportConfirm; rerender(); }));
+    rows.append(bar);
+
+    if (pwExportConfirm) {
+      const box = el('div');
+      box.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:12px;background:var(--w-field);margin-bottom:16px;';
+      const msg = el('div', null, 'The file will show every password as plain text.');
+      msg.style.cssText = 'flex:1;min-width:220px;font-size:13.5px;color:var(--text-soft);';
+      box.append(msg,
+        makeButton('Cancel', false, () => { pwExportConfirm = false; rerender(); }),
+        makeButton('Export', true, () => { pwExportConfirm = false; state.vaultExport = null; send({ type: 'vault-export' }); rerender(); }));
+      rows.append(box);
+    }
+    if (state.vaultExport) {
+      const st = el('div');
+      st.style.cssText = 'display:flex;align-items:center;gap:12px;font-size:13.5px;color:var(--text-soft);margin-bottom:16px;flex-wrap:wrap;';
+      st.append(el('span', null, state.vaultExport.ok ? `Saved ${state.vaultExport.path}` : state.vaultExport.message));
+      if (state.vaultExport.ok) st.append(makeButton('Show in folder', false, () => send({ type: 'show-in-folder', path: state.vaultExport.path })));
+      rows.append(st);
+    }
+    if (state.vaultImport) {
+      const st = el('div', null, state.vaultImport.error
+        ? state.vaultImport.error
+        : `Imported ${state.vaultImport.added}${state.vaultImport.skipped ? `, skipped ${state.vaultImport.skipped}` : ''}`);
+      st.style.cssText = 'font-size:13.5px;color:var(--text-soft);margin-bottom:16px;';
+      rows.append(st);
+    }
+
+    if (pwAddOpen) {
+      const addBox = el('div');
+      addBox.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:12px;background:var(--w-field);margin-bottom:20px;';
+      const inputsRow = el('div');
+      inputsRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;';
+      const originInp = makeTextInput('', 'Site (e.g. github.com)', false, () => {});
+      const userInp = makeTextInput('', 'Username / Email', false, () => {});
+      const passInp = makeTextInput('', 'Password', true, () => {});
+      inputsRow.append(originInp, userInp, passInp);
+      addBox.append(inputsRow, makeButton('Save', true, () => {
+        const o = originInp.value.trim();
+        const u = userInp.value.trim();
+        const pw = passInp.value;
+        if (!o || !pw) return;
+        send({ type: 'vault-add', origin: o, username: u, password: pw });
+        pwAddOpen = false;
+      }));
+      rows.append(addBox);
+    }
 
     if (state.vaultNotice) {
       const warn = el('div', null, state.vaultNotice);
@@ -594,50 +646,41 @@ export function renderSettings(container, state, onUpdate) {
       rows.append(warn);
     }
 
-    // List of logins
-    const entries = state.vaultEntries || [];
-    if (entries.length === 0) {
-      const emptyNote = el('div', null, 'No passwords saved yet.');
-      emptyNote.style.cssText = 'font-size:13.5px;color:var(--text-muted);padding:20px 0;';
-      rows.append(emptyNote);
-    } else {
-      entries.forEach((e) => {
-        const itemRow = el('div');
-        itemRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:10px;background:var(--w-field);margin-bottom:8px;';
-        const info = el('div');
-        const orig = el('div', null, e.origin);
-        orig.style.cssText = 'font-size:14.5px;font-weight:500;color:var(--text);';
-        const user = el('div', null, e.username);
-        user.style.cssText = 'font-size:13px;color:var(--text-muted);margin-top:2px;';
-        info.append(orig, user);
+    (state.vaultEntries || []).forEach((e) => {
+      const itemRow = el('div');
+      itemRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:10px;background:var(--w-field);margin-bottom:8px;';
+      const info = el('div');
+      const orig = el('div', null, e.origin);
+      orig.style.cssText = 'font-size:14.5px;font-weight:500;color:var(--text);';
+      const user = el('div', null, e.username);
+      user.style.cssText = 'font-size:13px;color:var(--text-muted);margin-top:2px;';
+      info.append(orig, user);
+      const actions = el('div');
+      actions.style.cssText = 'display:flex;gap:8px;align-items:center;';
+      actions.append(
+        makeButton('Reveal', false, () => send({ type: 'vault-reveal', id: e.id })),
+        makeButton('Delete', false, () => send({ type: 'vault-delete', id: e.id })),
+      );
+      itemRow.append(info, actions);
+      if (state.revealedPassword && state.revealedPassword.id === e.id) {
+        const passRow = el('div', null, state.revealedPassword.password);
+        passRow.style.cssText = 'font-size:13.5px;color:var(--accent);font-family:monospace;margin-top:8px;padding-top:8px;border-top:1px solid var(--w-field);';
+        itemRow.style.flexDirection = 'column';
+        itemRow.style.alignItems = 'stretch';
+        itemRow.append(passRow);
+      }
+      rows.append(itemRow);
+    });
 
-        const actions = el('div');
-        actions.style.cssText = 'display:flex;gap:8px;align-items:center;';
-
-        const revealBtn = makeButton('Reveal', false, () => {
-          if (typeof window.odysseyBridge === 'function') {
-            window.odysseyBridge(JSON.stringify({ type: 'vault-reveal', id: e.id }));
-          }
-        });
-
-        const deleteBtn = makeButton('Delete', false, () => {
-          if (typeof window.odysseyBridge === 'function') {
-            window.odysseyBridge(JSON.stringify({ type: 'vault-delete', id: e.id }));
-          }
-        });
-
-        actions.append(revealBtn, deleteBtn);
-        itemRow.append(info, actions);
-
-        if (state.revealedPassword && state.revealedPassword.id === e.id) {
-          const passRow = el('div', null, `Password: ${state.revealedPassword.password}`);
-          passRow.style.cssText = 'font-size:13.5px;color:var(--accent);font-family:monospace;margin-top:8px;padding-top:8px;border-top:1px solid var(--w-field);';
-          itemRow.style.flexDirection = 'column';
-          itemRow.style.alignItems = 'stretch';
-          itemRow.append(passRow);
-        }
-
-        rows.append(itemRow);
+    if ((state.vaultNever || []).length) {
+      const h = el('div', null, 'Never saved');
+      h.style.cssText = 'font-size:14.5px;font-weight:600;color:var(--text-strong);margin:24px 0 10px 0;';
+      rows.append(h);
+      state.vaultNever.forEach((host) => {
+        const r = el('div');
+        r.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-radius:10px;background:var(--w-field);margin-bottom:8px;font-size:14px;color:var(--text);';
+        r.append(el('span', null, host), makeButton('Remove', false, () => send({ type: 'vault-remove-never', host })));
+        rows.append(r);
       });
     }
 

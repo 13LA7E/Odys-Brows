@@ -111,6 +111,12 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: passwords like Brave (owner request)
+
+- Added save prompts, autofill, a "Never" list, import/export (CSV) and a clean Passwords page. Details and limits in PHASES ("Passwords like Brave"). New message types: `answer-save-login`, `answer-fill`, `vault-export`, `vault-import`, `vault-remove-never`; events `LoginSubmitted` and `LoginFieldClicked`.
+- **Security:** the site is never taken from the page; autofill needs a trusted click and https or localhost; the UI never receives the password (live-checked). **The AGENTS.md "never pass passwords to the UI or web pages" rule needs an exception line for autofill and Reveal; I did not edit it.**
+- Verified live: `tools/live_check/passwords.py` (18) and `passwords_page.py` (4); earlier suites still pass.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: notch covers page controls (owner choice: auto-hide)
 
 - The notch hid pages' top-right controls (YouTube's Sign in). Owner chose **auto-hide** and **shift back to 0**. Over a web page the notch shows for 2.5 s, slides away and comes back while the pointer is in a 4 px strip at the top-right (hides 0.7 s after leaving); on the new-tab and internal pages it stays. The page window's notch hole shrinks to that strip while hidden. Live check `tools/live_check/notch_autohide.py` (9 checks, including Win32 region tests); picture `out/live/notch-autohide.png`.

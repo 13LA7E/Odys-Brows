@@ -154,6 +154,7 @@ export async function startLive() {
         toggleFindBar(app, msg.view || state.activeTab);
       });
     } else if (msg.type === 'closed') {
+      if (state.prompts) state.prompts = state.prompts.filter((p) => p.view !== msg.view);
       if (state.tabs) {
         state.tabs = state.tabs.filter((t) => t.id !== msg.view);
         if (state.activeTab === msg.view) {
@@ -198,7 +199,7 @@ export async function startLive() {
       if (tab.url !== msg.url && state.activeTab === msg.view) state.shields = 0;
       // A permission question belongs to the page that asked; a new page makes it stale.
       if (tab.url !== msg.url && state.prompts) {
-        state.prompts = state.prompts.filter((p) => !(p.view === msg.view && p.kind === 'permission'));
+        state.prompts = state.prompts.filter((p) => !(p.view === msg.view && (p.kind === 'permission' || p.kind === 'fill-choice')));
       }
       tab.url = msg.url;
       if (state.activeTab === msg.view || state.activeTab == null) {
@@ -253,6 +254,21 @@ export async function startLive() {
     } else if (msg.type === 'history-loaded') {
       state.history = msg.groups;
       renderShellLive();
+    } else if (msg.type === 'save-login-prompt') {
+      // Only the site and username arrive here; the password stays in Rust.
+      state.prompts = (state.prompts || []).filter((p) => !(p.kind === 'save-login' && p.view === msg.view));
+      state.prompts.push({ kind: 'save-login', view: msg.view, request: msg.request, host: msg.host, username: msg.username, update: msg.update });
+      renderShellLive();
+    } else if (msg.type === 'fill-choices') {
+      state.prompts = (state.prompts || []).filter((p) => !(p.kind === 'fill-choice' && p.view === msg.view));
+      state.prompts.push({ kind: 'fill-choice', view: msg.view, request: msg.request, host: msg.host, logins: msg.logins });
+      renderShellLive();
+    } else if (msg.type === 'vault-exported') {
+      state.vaultExport = { ok: msg.ok, path: msg.path, message: msg.message };
+      renderShell(app, state);
+    } else if (msg.type === 'vault-imported') {
+      state.vaultImport = { added: msg.added, skipped: msg.skipped, error: msg.error };
+      renderShell(app, state);
     } else if (msg.type === 'permission-request') {
       state.prompts = (state.prompts || []).filter((p) => p.request !== msg.request);
       state.prompts.push({ kind: 'permission', view: msg.view, request: msg.request, origin: msg.origin, what: msg.kind });
@@ -321,6 +337,7 @@ export async function startLive() {
       }
     } else if (msg.type === 'vault-loaded') {
       state.vaultEntries = msg.entries;
+      state.vaultNever = msg.never || [];
       state.vaultNotice = msg.notice || '';
       renderShellLive();
     } else if (msg.type === 'vault-credentials') {

@@ -49,11 +49,92 @@ impl From<&VaultEntry> for VaultEntrySummary {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct VaultStore {
     pub entries: Vec<VaultEntry>,
+    /// Sites the user chose "Never" for when asked to save a password (host keys).
+    #[serde(default)]
+    pub never: Vec<String>,
     /// Set when the file on disk was damaged; show it to the user.
     #[serde(skip)]
     pub load_notice: Option<String>,
     #[serde(skip)]
     read_only: bool,
+}
+
+/// What a saved login is matched against: the site's host (with the port when there is one),
+/// lowercase, without `www.`. `https://www.Example.com/login?x=1` and `example.com` match.
+pub fn host_key(origin: &str) -> String {
+    let t = origin.trim().to_lowercase();
+    let t = t
+        .strip_prefix("https://")
+        .or_else(|| t.strip_prefix("http://"))
+        .unwrap_or(&t);
+    let t = t.split(['/', '?', '#']).next().unwrap_or("");
+    let t = t.rsplit('@').next().unwrap_or(t);
+    t.strip_prefix("www.").unwrap_or(t).to_string()
+}
+
+/// A saved login with its password decrypted. Never leaves Rust except into the page that the
+/// user clicked a login field on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Credential {
+    pub id: String,
+    pub username: String,
+    pub password: String,
+}
+
+/// Result of an import.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct ImportSummary {
+    pub added: usize,
+    pub skipped: usize,
+}
+
+/// Parses CSV (quotes, doubled quotes, newlines inside quotes, CRLF, BOM) into rows.
+fn parse_csv(text: &str) -> Vec<Vec<String>> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut rows = Vec::new();
+    let mut row = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if quoted {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    field.push('"');
+                    chars.next();
+                } else {
+                    quoted = false;
+                }
+            } else {
+                field.push(c);
+            }
+        } else {
+            match c {
+                '"' if field.is_empty() => quoted = true,
+                ',' => row.push(std::mem::take(&mut field)),
+                '\r' => {}
+                '\n' => {
+                    row.push(std::mem::take(&mut field));
+                    rows.push(std::mem::take(&mut row));
+                }
+                _ => field.push(c),
+            }
+        }
+    }
+    if !field.is_empty() || !row.is_empty() {
+        row.push(field);
+        rows.push(row);
+    }
+    rows.retain(|r| !(r.len() == 1 && r[0].is_empty()));
+    rows
+}
+
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 fn now_ms() -> String {
@@ -244,6 +325,124 @@ impl VaultStore {
         })
     }
 
+    /// Saved logins for the page at `host` (a host key or any URL), passwords decrypted.
+    pub fn credentials_for_host(&self, host: &str) -> Result<Vec<Credential>, String> {
+        let key = host_key(host);
+        let mut out = Vec::new();
+        for e in self.entries.iter().filter(|e| host_key(&e.origin) == key) {
+            let encrypted = B64.decode(&e.secret).map_err(|e| e.to_string())?;
+            let plain = unprotect(&e.id, &encrypted)?;
+            out.push(Credential {
+                id: e.id.clone(),
+                username: e.username.clone(),
+                password: String::from_utf8(plain)
+                    .map_err(|_| "Decrypted password is not valid text.".to_string())?,
+            });
+        }
+        out.sort_by_key(|c| c.username.to_lowercase());
+        Ok(out)
+    }
+
+    /// The saved login for this site and username, if there is one.
+    pub fn find_login(&self, host: &str, username: &str) -> Option<Credential> {
+        self.credentials_for_host(host)
+            .ok()?
+            .into_iter()
+            .find(|c| c.username == username)
+    }
+
+    pub fn is_never(&self, host: &str) -> bool {
+        let key = host_key(host);
+        self.never.contains(&key)
+    }
+
+    pub fn add_never(&mut self, host: &str) {
+        let key = host_key(host);
+        if !key.is_empty() && !self.never.contains(&key) {
+            self.never.push(key);
+            self.never.sort();
+        }
+    }
+
+    pub fn remove_never(&mut self, host: &str) {
+        let key = host_key(host);
+        self.never.retain(|n| *n != key);
+    }
+
+    /// All logins as CSV in the layout Chrome and Brave use: name,url,username,password,note.
+    /// The file holds passwords in plain text.
+    pub fn export_csv(&self) -> Result<String, String> {
+        let mut out = String::from("name,url,username,password,note\r\n");
+        let mut entries: Vec<&VaultEntry> = self.entries.iter().collect();
+        entries.sort_by_key(|e| host_key(&e.origin));
+        for e in entries {
+            let encrypted = B64.decode(&e.secret).map_err(|e| e.to_string())?;
+            let plain = String::from_utf8(unprotect(&e.id, &encrypted)?)
+                .map_err(|_| "A saved password is not valid text.".to_string())?;
+            let url = if e.origin.contains("://") {
+                e.origin.clone()
+            } else {
+                format!("https://{}", e.origin)
+            };
+            out.push_str(&format!(
+                "{},{},{},{},\r\n",
+                csv_field(&host_key(&e.origin)),
+                csv_field(&url),
+                csv_field(&e.username),
+                csv_field(&plain)
+            ));
+        }
+        Ok(out)
+    }
+
+    /// Adds logins from CSV (Chrome, Brave, Edge and Firefox exports all work: columns are found
+    /// by name). Rows without a site or password, and logins that already exist for the same site
+    /// and username, are skipped.
+    pub fn import_csv(&mut self, csv: &str) -> Result<ImportSummary, String> {
+        let rows = parse_csv(csv);
+        let Some(header) = rows.first() else {
+            return Err("The file is empty.".to_string());
+        };
+        let find = |names: &[&str]| {
+            header
+                .iter()
+                .position(|h| names.contains(&h.trim().to_lowercase().as_str()))
+        };
+        let (Some(url_i), Some(pass_i)) = (
+            find(&["url", "origin", "website", "site", "hostname", "name"]),
+            find(&["password"]),
+        ) else {
+            return Err(
+                "This doesn't look like a passwords file (no url and password columns)."
+                    .to_string(),
+            );
+        };
+        let user_i = find(&["username", "login", "email", "user", "login_username"]);
+        if rows.len() > 5001 {
+            return Err("Too many rows (limit 5000).".to_string());
+        }
+        let mut summary = ImportSummary::default();
+        for r in rows.iter().skip(1) {
+            let site = r.get(url_i).map(|s| s.trim()).unwrap_or("");
+            let password = r.get(pass_i).map(String::as_str).unwrap_or("");
+            let username = user_i
+                .and_then(|i| r.get(i))
+                .map(String::as_str)
+                .unwrap_or("");
+            if site.is_empty() || password.is_empty() || host_key(site).is_empty() {
+                summary.skipped += 1;
+                continue;
+            }
+            if self.find_login(site, username).is_some() {
+                summary.skipped += 1;
+                continue;
+            }
+            self.add(site, username, password)?;
+            summary.added += 1;
+        }
+        Ok(summary)
+    }
+
     pub fn list(&self) -> Vec<VaultEntrySummary> {
         let mut out: Vec<VaultEntrySummary> =
             self.entries.iter().map(VaultEntrySummary::from).collect();
@@ -360,6 +559,90 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vault-test-{name}-{}", new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("vault.json")
+    }
+
+    #[test]
+    fn host_keys_ignore_scheme_path_www_and_case() {
+        assert_eq!(host_key("https://www.Example.com/login?x=1"), "example.com");
+        assert_eq!(host_key("example.com"), "example.com");
+        assert_eq!(host_key("http://127.0.0.1:8765/a.html"), "127.0.0.1:8765");
+        assert_eq!(host_key("user@git.example.com:22"), "git.example.com:22");
+    }
+
+    #[test]
+    fn credentials_match_by_site_and_never_list_works() {
+        let mut s = VaultStore::default();
+        s.add("https://www.github.com/login", "octocat", "pw1")
+            .unwrap();
+        s.add("github.com", "hubot", "pw2").unwrap();
+        s.add("example.org", "x", "y").unwrap();
+        let c = s.credentials_for_host("https://github.com/").unwrap();
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].username, "hubot");
+        assert_eq!(
+            s.find_login("github.com", "octocat").unwrap().password,
+            "pw1"
+        );
+        assert!(s.find_login("github.com", "nobody").is_none());
+        assert!(!s.is_never("github.com"));
+        s.add_never("https://www.github.com/");
+        assert!(s.is_never("github.com"));
+        s.remove_never("github.com");
+        assert!(!s.is_never("github.com"));
+    }
+
+    #[test]
+    fn csv_round_trip_with_awkward_characters() {
+        let mut a = VaultStore::default();
+        a.add("example.com", "me@example.com", "pa\"ss,word\nline2")
+            .unwrap();
+        a.add("other.net", "user", "plain").unwrap();
+        let csv = a.export_csv().unwrap();
+        assert!(csv.starts_with("name,url,username,password,note"));
+        let mut b = VaultStore::default();
+        let r = b.import_csv(&csv).unwrap();
+        assert_eq!(
+            r,
+            ImportSummary {
+                added: 2,
+                skipped: 0
+            }
+        );
+        assert_eq!(
+            b.find_login("example.com", "me@example.com")
+                .unwrap()
+                .password,
+            "pa\"ss,word\nline2"
+        );
+        // importing again adds nothing
+        assert_eq!(
+            b.import_csv(&csv).unwrap(),
+            ImportSummary {
+                added: 0,
+                skipped: 2
+            }
+        );
+    }
+
+    #[test]
+    fn import_reads_chrome_and_firefox_layouts_and_rejects_other_files() {
+        let mut s = VaultStore::default();
+        let chrome =
+            "\u{feff}name,url,username,password,note\r\nsite,https://a.example/,u1,p1,\r\n";
+        assert_eq!(s.import_csv(chrome).unwrap().added, 1);
+        let firefox =
+            "\"url\",\"username\",\"password\"\r\n\"https://b.example\",\"u2\",\"p2\"\r\n";
+        assert_eq!(s.import_csv(firefox).unwrap().added, 1);
+        assert!(s.import_csv("a,b\n1,2\n").is_err());
+        assert!(s.import_csv("").is_err());
+        let blank = "url,username,password\nhttps://c.example,u3,\n,u4,p4\n";
+        assert_eq!(
+            s.import_csv(blank).unwrap(),
+            ImportSummary {
+                added: 0,
+                skipped: 2
+            }
+        );
     }
 
     #[test]

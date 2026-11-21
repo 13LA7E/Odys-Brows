@@ -101,6 +101,17 @@ pub enum Event {
         view: ViewId,
         playing: bool,
     },
+    /// A login form was submitted (the page's own script reported what was typed). The site is
+    /// NOT part of the event: the browser uses its own record of the tab's URL.
+    LoginSubmitted {
+        view: ViewId,
+        username: String,
+        password: String,
+    },
+    /// The user clicked (a real, trusted click) a login field: time to offer or do autofill.
+    LoginFieldClicked {
+        view: ViewId,
+    },
     /// A page has text typed into a form field that hasn't been submitted (blocks tab sleeping).
     FormInputChanged {
         view: ViewId,

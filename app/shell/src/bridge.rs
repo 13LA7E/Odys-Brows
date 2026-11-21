@@ -26,6 +26,13 @@ where
     }
 }
 
+/// One saved login offered for autofill (no password).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct FillChoice {
+    pub id: String,
+    pub username: String,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct OverlayRect {
@@ -84,6 +91,27 @@ pub enum FromUi {
     MaximizeWindow,
     /// Open a private window (a second process with `--private`, AUDIT-26).
     OpenPrivateWindow,
+    /// Export every saved login to a CSV file in the Downloads folder.
+    VaultExport,
+    /// Import logins from the text of a CSV file (Chrome, Brave, Edge, Firefox layouts).
+    VaultImport {
+        csv: String,
+    },
+    /// Offer to save passwords for this site again.
+    VaultRemoveNever {
+        host: String,
+    },
+    /// The user's answer to "Save password?": `save`, `never` or `dismiss`.
+    AnswerSaveLogin {
+        request: u64,
+        action: String,
+    },
+    /// The user's choice among several saved logins to fill (`None` = none of them).
+    AnswerFill {
+        request: u64,
+        #[serde(default)]
+        id: Option<String>,
+    },
     /// Bring our window forward and give it keyboard focus (a click while another app is on top).
     FocusWindow,
     /// The notch slid away (true) or came back (false); see `Engine::set_notch_hidden`.
@@ -387,8 +415,33 @@ pub enum ToUi {
         message: String,
     },
     /// Vault entries loaded (P8-02).
+    SaveLoginPrompt {
+        view: ViewId,
+        request: u64,
+        host: String,
+        username: String,
+        update: bool,
+    },
+    FillChoices {
+        view: ViewId,
+        request: u64,
+        host: String,
+        logins: Vec<FillChoice>,
+    },
+    VaultExported {
+        ok: bool,
+        message: String,
+        path: String,
+    },
+    VaultImported {
+        added: usize,
+        skipped: usize,
+        error: Option<String>,
+    },
     VaultLoaded {
         entries: Vec<vault::VaultEntrySummary>,
+        /// Sites the user chose "Never" for.
+        never: Vec<String>,
         /// Set when the saved-logins file on disk was damaged (it was kept aside).
         #[serde(skip_serializing_if = "Option::is_none")]
         notice: Option<String>,

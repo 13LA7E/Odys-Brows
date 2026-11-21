@@ -210,9 +210,13 @@ export function renderPromptCard(prompt, onAnswer) {
     clipboard: 'see what is on your clipboard',
     other: 'use a browser feature',
   };
-  const title = el('div', null, prompt.kind === 'permission'
-    ? `${host} wants to ${verbs[prompt.what] || verbs.other}`
-    : "This connection isn't private");
+  const heading = {
+    permission: () => `${host} wants to ${verbs[prompt.what] || verbs.other}`,
+    certificate: () => "This connection isn't private",
+    'save-login': () => `${prompt.update ? 'Update' : 'Save'} password for ${prompt.host}?`,
+    'fill-choice': () => `Fill a saved login for ${prompt.host}?`,
+  };
+  const title = el('div', null, heading[prompt.kind]());
   title.style.cssText = 'font-size:15.5px;line-height:1.5;color:var(--text);';
   card.append(title);
 
@@ -221,9 +225,14 @@ export function renderPromptCard(prompt, onAnswer) {
     body.style.cssText = 'font-size:13.5px;line-height:1.55;color:var(--text-muted);margin-top:8px;';
     card.append(body);
   }
+  if (prompt.kind === 'save-login' && prompt.username) {
+    const body = el('div', null, prompt.username);
+    body.style.cssText = 'font-size:13.5px;line-height:1.55;color:var(--text-muted);margin-top:6px;';
+    card.append(body);
+  }
 
   const row = el('div');
-  row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:18px;';
+  row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:18px;flex-wrap:wrap;';
   const btn = (label, accent, answer) => {
     const b = el('button', null, label);
     b.style.cssText = `border:0;background:${accent ? 'var(--w-field)' : 'none'};font:inherit;font-size:13.5px;font-weight:500;padding:8px 16px;border-radius:8px;cursor:pointer;color:${accent ? 'var(--accent)' : 'var(--text-soft)'};`;
@@ -232,8 +241,13 @@ export function renderPromptCard(prompt, onAnswer) {
   };
   if (prompt.kind === 'permission') {
     row.append(btn('Block', false, false), btn('Allow', true, true));
-  } else {
+  } else if (prompt.kind === 'certificate') {
     row.append(btn('Go back', false, false), btn('Continue anyway', true, true));
+  } else if (prompt.kind === 'save-login') {
+    row.append(btn('Never', false, 'never'), btn('Not now', false, 'dismiss'), btn(prompt.update ? 'Update' : 'Save', true, 'save'));
+  } else {
+    row.append(btn('Not now', false, null));
+    for (const l of prompt.logins) row.append(btn(l.username || '(no username)', true, l.id));
   }
   card.append(row);
   return card;

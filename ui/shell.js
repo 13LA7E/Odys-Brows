@@ -661,9 +661,13 @@ export function renderShell(root, state) {
     add(region('prompt', prompt, () => renderPromptCard(prompt, (answer) => {
       state.prompts = state.prompts.filter((p) => p !== prompt);
       if (typeof window.odysseyBridge === 'function') {
-        window.odysseyBridge(JSON.stringify(prompt.kind === 'permission'
-          ? { type: 'answer-permission', request: prompt.request, allow: answer }
-          : { type: 'answer-certificate', request: prompt.request, proceed: answer }));
+        const msgs = {
+          permission: { type: 'answer-permission', request: prompt.request, allow: answer },
+          certificate: { type: 'answer-certificate', request: prompt.request, proceed: answer },
+          'save-login': { type: 'answer-save-login', request: prompt.request, action: answer },
+          'fill-choice': { type: 'answer-fill', request: prompt.request, id: answer },
+        };
+        window.odysseyBridge(JSON.stringify(msgs[prompt.kind]));
       }
       renderShell(root, state);
     }), { enter: true, exit: true }));
