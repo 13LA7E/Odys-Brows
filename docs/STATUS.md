@@ -128,6 +128,10 @@ Copy this template for each session:
 
 - Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
+### 2026-11-21: Claude Code / Sonnet 5.5: auto-updater (AUDIT-23) and extension popups
+
+- Signed updates end to end and popups for pinned extensions (details in PHASES and `docs/UPDATES.md`). Verified live: `update_flow.py` 15/15 (with a test key and with the real key), `ext_popup.py` 12/12; all earlier live scripts still pass. **Owner: back up the signing key at `C:\Users\13la7\.constellations\update-signing-key.pem`.** Not verified: a real GitHub release, Linux.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: files, versions, voice, whole-page for background pages
 
 - Built everything left over from the chat page (details in PHASES). Verified live: `chat_more.py` 26/26, `chat_page` 45/45, `ai_chat` 31/31, `ai_control` 22/22, `private_ai` 9/9, `privacy_clear` 17/17; unit tests and clippy clean. Not verified: a real microphone, Linux. New dependencies: `pdf-extract`, `zip`.
