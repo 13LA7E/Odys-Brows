@@ -794,7 +794,7 @@ impl Shell {
         let Some(path) = info.path.clone() else {
             return;
         };
-        if self.live_ext.contains(&key) {
+        if self.is_private || self.live_ext.contains(&key) {
             return;
         }
         CefEngine.devtools_call(
@@ -3081,12 +3081,6 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         rail_width: saved_session.rail_width,
         active_space: saved_session.active_space,
         extensions: extensions::ExtensionsStore::load_or_default(&profile_dir()),
-        live_ext: extensions::ExtensionsStore::load_or_default(&profile_dir())
-            .list()
-            .into_iter()
-            .filter(|e| e.enabled && e.path.is_some())
-            .map(|e| e.id)
-            .collect(),
         ..Shell::default()
     }));
 
@@ -3146,6 +3140,20 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
         Rc::new(RefCell::new(VecDeque::new()));
     let pending_events_sink = pending_events.clone();
     SHELL_REF.with(|r| *r.borrow_mut() = Some(shell.clone()));
+    // Start the enabled extensions (same way as adding one, so they can be removed while running).
+    if !any_selftest && !is_private {
+        let keys: Vec<String> = shell
+            .borrow()
+            .extensions
+            .list()
+            .into_iter()
+            .filter(|e| e.enabled && e.path.is_some())
+            .map(|e| e.id)
+            .collect();
+        for k in keys {
+            shell.borrow_mut().activate_extension(k, None);
+        }
+    }
     // A quiet look for a newer version a little after start (not while testing the app itself).
     if !any_selftest && !is_private {
         CefEngine.after(20_000, || {
@@ -3463,11 +3471,9 @@ fn main() {
             } else {
                 String::new()
             },
-            extension_paths: if is_private || any_selftest {
-                Vec::new()
-            } else {
-                extensions::ExtensionsStore::load_or_default(&profile_dir()).enabled_paths()
-            },
+            // Not passed as `--load-extension`: Chromium cannot remove those while running.
+            // They are started through the private DevTools pipe right after launch instead.
+            extension_paths: Vec::new(),
             title: if is_private {
                 format!("{} (Private)", brand::NAME)
             } else {

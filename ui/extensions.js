@@ -95,7 +95,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
         'padding:20px 24px;background:var(--surface);border:1px solid var(--w-border);border-radius:14px;display:flex;justify-content:space-between;align-items:flex-start;';
 
       const left = el('div');
-      left.style.cssText = 'display:flex;gap:18px;align-items:flex-start;';
+      left.style.cssText = 'display:flex;gap:18px;align-items:flex-start;min-width:0;flex:1;';
 
       // Extension puzzle icon
       const iconWrap = el('div');
@@ -167,13 +167,13 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
 
       // Controls (toggle switch, remove)
       const controls = el('div');
-      controls.style.cssText = 'display:flex;align-items:center;gap:16px;';
+      controls.style.cssText = 'display:flex;align-items:center;gap:12px;flex:none;margin-left:16px;white-space:nowrap;';
 
       // Toggle switch
       const toggle = el('button', 'toggle-switch');
       toggle.setAttribute('role', 'switch');
       toggle.setAttribute('aria-checked', String(ext.enabled));
-      toggle.style.cssText = `width:38px;height:22px;border-radius:11px;background:${ext.enabled ? 'var(--accent)' : 'var(--w-track)'};position:relative;cursor:pointer;border:none;`;
+      toggle.style.cssText = `width:38px;height:22px;border-radius:11px;background:${ext.enabled ? 'var(--accent)' : 'var(--w-track)'};position:relative;cursor:pointer;border:none;flex:none;outline:none;`;
       const knob = el('span');
       knob.style.cssText = `position:absolute;top:2px;left:${ext.enabled ? '18px' : '2px'};width:18px;height:18px;border-radius:9px;background:var(--white);transition:left 0.15s ease;`;
       toggle.append(knob);
@@ -185,7 +185,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       // Remove button
       const removeBtn = el('button', null, 'Remove');
       removeBtn.style.cssText =
-        'font-size:13px;color:var(--text-muted);background:transparent;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;';
+        'font-size:13px;color:var(--text-muted);background:transparent;border:none;outline:none;cursor:pointer;padding:4px 8px;border-radius:6px;white-space:nowrap;';
       // Two clicks, so a slip does not remove it (the browser's confirm() box is not shown in our window).
       let armed = 0;
       removeBtn.addEventListener('click', () => {
@@ -194,7 +194,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
           if (actions.onRemove) actions.onRemove(ext.id);
           return;
         }
-        removeBtn.textContent = 'Click again to remove';
+        removeBtn.textContent = 'Click again to confirm';
         removeBtn.style.color = 'var(--accent)';
         armed = setTimeout(() => { armed = 0; removeBtn.textContent = 'Remove'; removeBtn.style.color = 'var(--text-muted)'; }, 3500);
       });
@@ -214,7 +214,7 @@ export function renderExtensionsPage(container, extensions = [], actions = {}) {
       pinBtn.setAttribute('aria-pressed', String(isPinned));
       pinBtn.title = isPinned ? 'Remove from the top bar' : 'Show in the top bar';
       pinBtn.disabled = !ext.enabled;
-      pinBtn.style.cssText = `font-size:13px;color:${isPinned ? 'var(--accent)' : 'var(--text-muted)'};background:transparent;border:none;cursor:${ext.enabled ? 'pointer' : 'default'};padding:4px 8px;border-radius:6px;${ext.enabled ? '' : 'opacity:.4;'}`;
+      pinBtn.style.cssText = `font-size:13px;color:${isPinned ? 'var(--accent)' : 'var(--text-muted)'};background:transparent;border:none;cursor:${ext.enabled ? 'pointer' : 'default'};padding:4px 8px;border-radius:6px;white-space:nowrap;outline:none;${ext.enabled ? '' : 'opacity:.4;'}`;
       pinBtn.addEventListener('click', () => { if (actions.onPin) actions.onPin(ext.id, !isPinned); });
 
       if (optionsBtn) controls.append(optionsBtn);

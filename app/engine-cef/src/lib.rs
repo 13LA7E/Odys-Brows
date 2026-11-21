@@ -187,6 +187,9 @@ mod win32 {
         pub fn SetWindowLongPtrW(h: isize, index: i32, value: isize) -> isize;
         pub fn SetLayeredWindowAttributes(h: isize, key: u32, alpha: u8, flags: u32) -> i32;
         pub fn GetCursorPos(p: *mut Point) -> i32;
+        pub fn GetAncestor(h: isize, flags: u32) -> isize;
+        pub fn ShowWindow(h: isize, cmd: i32) -> i32;
+        pub fn SetWindowPos(h: isize, after: isize, x: i32, y: i32, w: i32, hh: i32, flags: u32) -> i32;
         pub fn ClientToScreen(h: isize, p: *mut Point) -> i32;
         pub fn GetClientRect(h: isize, r: *mut Rect) -> i32;
         pub fn WindowFromPoint(p: Point) -> isize;
@@ -1702,10 +1705,44 @@ wrap_display_handler! {
     }
 }
 
+wrap_life_span_handler! {
+    struct StrayLife {}
+
+    impl LifeSpanHandler {
+        // Hide the window the moment it exists (invisible, not in the taskbar) so it never shows,
+        // not even for a frame, before the address is taken over and it is closed.
+        fn on_after_created(&self, browser: Option<&mut Browser>) {
+            #[cfg(windows)]
+            if let Some(h) = browser.and_then(|b| b.host()).map(|h| h.window_handle().0 as isize)
+                && h != 0
+            {
+                unsafe {
+                    let root = win32::GetAncestor(h, 2).max(h);
+                    let style = win32::GetWindowLongPtrW(root, win32::GWL_EXSTYLE);
+                    win32::SetWindowLongPtrW(
+                        root,
+                        win32::GWL_EXSTYLE,
+                        style | win32::WS_EX_LAYERED | win32::WS_EX_NOACTIVATE | 0x0000_0080,
+                    );
+                    win32::SetLayeredWindowAttributes(root, 0, 0, win32::LWA_ALPHA);
+                    // Far off screen as well: even if Chromium shows it again, nobody sees it.
+                    win32::SetWindowPos(root, 0, -32000, -32000, 0, 0, 0x0001 | 0x0004 | 0x0010);
+                    win32::ShowWindow(root, 0);
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = browser;
+        }
+    }
+}
+
 wrap_client! {
     struct StrayClient {}
 
     impl Client {
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> {
+            Some(StrayLife::new())
+        }
         fn display_handler(&self) -> Option<DisplayHandler> {
             Some(StrayDisplay::new())
         }

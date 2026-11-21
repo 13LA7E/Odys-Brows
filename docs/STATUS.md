@@ -111,6 +111,10 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-22: Claude Code / Sonnet 5.5: extension follow-ups (no flash, real removal, layout)
+
+- See PHASES "Extension follow-ups". Windows tested only.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: live extensions, no stray Chromium window, icons
 
 - See PHASES "Extensions that work like Chrome/Edge/Brave" and D-028 (Proposed, needs your OK). Needs testing on: Linux (the pipe code is Windows only).

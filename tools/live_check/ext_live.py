@@ -78,6 +78,8 @@ try:
     RM = "[...document.querySelectorAll('.extension-card')].find(c=>c.textContent.includes('Iconic')).querySelector('.extension-card > div:last-child > button:last-child').click(); 1"
     cnt = V('(window.__uiState.extensions||[]).length')
     ui(RM); time.sleep(0.4)
+    hgt = V("(()=>{const c=[...document.querySelectorAll('.extension-card')].find(c=>c.textContent.includes('Iconic')); const b=c.querySelector(':scope > div:last-child > button:last-child'); const r=b.getBoundingClientRect(); return [Math.round(r.height), Math.round(r.width), b.textContent, getComputedStyle(b).outlineStyle]})()")
+    check('the confirm button stays on one line and has no focus box', hgt[0] < 40 and hgt[3] == 'none', hgt)
     check('Remove asks for a second click first', V('(window.__uiState.extensions||[]).length') == cnt)
     ui(RM); time.sleep(1.5)
     check('...then removes it', V('(window.__uiState.extensions||[]).length') == cnt - 1 and not any(e['name'] == 'Iconic' for e in V('window.__uiState.extensions')))
