@@ -7,6 +7,7 @@ import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
+import { applySavedTheme, resolveTheme, starColour } from './themes.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab } from './newtab.js';
 import { renderErrorPage, renderPromptCard } from './pagebasics.js';
@@ -256,7 +257,7 @@ function mountSky(state, add) {
   const first = state.sky && state.sky[0];
   const so = skyOptions(state);
   const key = JSON.stringify([
-    so.mode, so.comets, so.cursor, !!state.private,
+    so.mode, so.comets, so.cursor, !!state.private, starColour(state.settings, !!state.private),
     window.innerWidth, window.innerHeight, state.sky ? state.sky.length : 0,
     first ? [first.x, first.y] : 0,
   ]);
@@ -267,6 +268,7 @@ function mountSky(state, add) {
       mode: so.mode,
       shootingStars: so.comets,
       cursor: so.cursor,
+      starColor: starColour(state.settings, !!state.private),
       private: state.private,
     });
     skyKey = key;
@@ -335,7 +337,9 @@ export function renderShell(root, state) {
   root.dataset.overPage = state.page === 'web' ? '1' : '0';
   syncNotch(root, state);
   setSearchEngine(state.settings);
-  if (state.settings?.accent) {
+  applySavedTheme(state.settings, !!state.private);
+  // A theme sets its own accent; without one the chosen accent swatch applies.
+  if (state.settings?.accent && !(resolveTheme(state.settings) && !state.private)) {
     applyAccent(state.settings.accent);
   }
   const railWidth = state.rail === 'expanded' ? 264 : 56;

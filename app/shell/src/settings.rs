@@ -69,6 +69,60 @@ fn clean_custom_engine(v: &Value) -> Option<Value> {
     Some(json!({ "name": name.trim(), "url": url }))
 }
 
+/// Colours of a theme, in the order the editor shows them.
+pub const THEME_COLOURS: &[&str] = &["bg", "surface", "panel", "text", "accent", "star"];
+
+fn is_hex6(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Your own themes: `{ id: { name, bg, surface, panel, text, accent, star } }` with `#rrggbb`
+/// colours. At most 12; an entry with a bad id, name or colour is dropped (never trust a pasted file).
+fn clean_custom_themes(v: &Value) -> Option<Value> {
+    let o = v.as_object()?;
+    let mut out = Map::new();
+    for (id, t) in o {
+        if out.len() >= 12 {
+            break;
+        }
+        let id_ok = !id.is_empty()
+            && id.len() <= 24
+            && id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        let Some(t) = t.as_object().filter(|_| id_ok) else {
+            continue;
+        };
+        let name: String = t
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(30)
+            .collect();
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let mut clean = Map::new();
+        clean.insert("name".into(), json!(name));
+        let mut ok = true;
+        for k in THEME_COLOURS {
+            match t.get(*k).and_then(Value::as_str) {
+                Some(c) if is_hex6(c) => {
+                    clean.insert((*k).into(), json!(c.to_ascii_lowercase()));
+                }
+                _ => ok = false,
+            }
+        }
+        if ok {
+            out.insert(id.clone(), Value::Object(clean));
+        }
+    }
+    Some(Value::Object(out))
+}
+
 fn fields() -> Vec<Field> {
     vec![
         // --- Sky (AUDIT-36 adds more)
@@ -97,6 +151,17 @@ fn fields() -> Vec<Field> {
             key: "trail",
             kind: Kind::Choice(&["Narrow", "Wide"]),
             default: || json!("Narrow"),
+        },
+        // --- Themes (AUDIT-35): the preset name or the id of one of your own themes
+        Field {
+            key: "theme",
+            kind: Kind::Text(40),
+            default: || json!("Default"),
+        },
+        Field {
+            key: "customThemes",
+            kind: Kind::Custom(clean_custom_themes),
+            default: || json!({}),
         },
         // --- General (AUDIT-38)
         Field {
@@ -251,7 +316,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "theme": "Void", "customThemes": { "mine": { "name": "Mine", "bg": "#000000", "surface": "#111111", "panel": "#0a0a0a", "text": "#eeeeee", "accent": "#ff8800", "star": "#ffffff" } }, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);
@@ -315,6 +380,37 @@ mod tests {
         assert_eq!(
             normalize(&json!({ "searchEngine": "Custom" }))["searchEngine"],
             "DuckDuckGo"
+        );
+    }
+
+    #[test]
+    fn custom_themes_are_checked() {
+        let good = json!({ "name": " Dusk ", "bg": "#000000", "surface": "#111111", "panel": "#0A0A0A",
+            "text": "#EEEEEE", "accent": "#ff8800", "star": "#ffffff" });
+        let mut bad_colour = good.clone();
+        bad_colour["accent"] = json!("red; background:url(x)");
+        let mut missing = good.clone();
+        missing.as_object_mut().unwrap().remove("star");
+        let mut no_name = good.clone();
+        no_name["name"] = json!("  ");
+        let n = normalize(&json!({ "customThemes": {
+            "dusk": good, "Bad Id!": good, "c1": bad_colour, "c2": missing, "c3": no_name, "c4": 5 } }));
+        let t = n["customThemes"].as_object().unwrap();
+        assert_eq!(t.len(), 1, "{t:?}");
+        assert_eq!(t["dusk"]["name"], "Dusk");
+        assert_eq!(t["dusk"]["panel"], "#0a0a0a", "colours are lower-cased");
+        let many: serde_json::Map<String, Value> =
+            (0..20).map(|i| (format!("t{i}"), good.clone())).collect();
+        assert_eq!(
+            normalize(&json!({ "customThemes": many }))["customThemes"]
+                .as_object()
+                .unwrap()
+                .len(),
+            12
+        );
+        assert_eq!(
+            normalize(&json!({ "customThemes": "x" }))["customThemes"],
+            json!({})
         );
     }
 

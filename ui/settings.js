@@ -2,6 +2,7 @@
 // Manages settings state, navigation, appearance, AI, passwords, privacy, shortcuts, and about.
 
 import { captureShortcut, cancelCapture } from './shortcuts.js';
+import { buildThemeRows } from './themes.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -23,6 +24,8 @@ export const DEFAULT_SETTINGS = {
   offerSavePasswords: true,
   autofillPasswords: true,
   shortcuts: {},
+  theme: 'Default',
+  customThemes: {},
 };
 // The schema (allowed values and defaults) lives in app/shell/src/settings.rs; a test checks that
 // this list matches it. Values here are only used before the shell has sent the real settings.
@@ -360,6 +363,14 @@ export function renderSettings(container, state, onUpdate) {
       })
     ));
 
+    // Themes (AUDIT-35)
+    // Not in the approved design, so fixture mode leaves it out.
+    if (!document.documentElement.classList.contains('fixture')) for (const node of buildThemeRows({
+      el, makeRow, makeButton, settings,
+      save: (st) => { saveSettings(st); if (onUpdate) onUpdate('theme', st.theme); },
+      rerender: () => renderSettings(container, state, onUpdate),
+    })) rows.append(node);
+
     // 3. Accent (Swatches)
     const swatchesBox = el('div');
     swatchesBox.style.cssText = 'display:flex;gap:12px;';
@@ -380,7 +391,7 @@ export function renderSettings(container, state, onUpdate) {
       });
       swatchesBox.append(swBtn);
     });
-    rows.append(makeRow('Accent', 'Used for the active tab, progress and focus.', swatchesBox));
+    rows.append(makeRow('Accent', settings.theme && settings.theme !== 'Default' ? 'Used for the active tab, progress and focus. A theme sets its own accent; pick Default to use these.' : 'Used for the active tab, progress and focus.', swatchesBox));
 
     // 4. Trail (Narrow / Wide)
     rows.append(makeRow(

@@ -120,7 +120,7 @@ export function createSky(container, options = {}) {
       ctx.globalAlpha = o;
       ctx.stroke();
     } else {
-      ctx.fillStyle = st.fill || (isPrivate ? '#cdd9ee' : '#ffffff');
+      ctx.fillStyle = (options.starColor && st.fill === '#ffffff') ? options.starColor : (st.fill || (isPrivate ? '#cdd9ee' : '#ffffff'));
       ctx.globalAlpha = o;
       ctx.fill();
     }
