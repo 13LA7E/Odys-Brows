@@ -191,14 +191,14 @@ export function renderHelm(state, handlers = {}) {
   }
 
   // Standard frame: Back, Forward, Address field, Reload, Download ring, Spacer, Assistant
-  const backBtn = el('button', 'helm-btn');
+  const backBtn = el('button', 'helm-btn helm-nav');
   backBtn.setAttribute('aria-label', 'Back');
   backBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);background:transparent;';
   backBtn.append(ico('M15 6l-6 6 6 6', 18));
   backBtn.addEventListener('click', () => onBack?.());
   h.append(backBtn);
 
-  const fwdBtn = el('button', 'helm-btn');
+  const fwdBtn = el('button', 'helm-btn helm-nav');
   fwdBtn.setAttribute('aria-label', 'Forward');
   fwdBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);background:transparent;';
   fwdBtn.append(ico('M9 6l6 6-6 6', 18));
@@ -296,7 +296,7 @@ export function renderHelm(state, handlers = {}) {
   h.append(addressBox);
 
   // Reload button
-  const reloadBtn = el('button', 'helm-btn');
+  const reloadBtn = el('button', 'helm-btn helm-reload');
   reloadBtn.setAttribute('aria-label', 'Reload');
   reloadBtn.style.cssText = 'border:0;background:none;color:inherit;font:inherit;padding:0;margin:0;cursor:pointer;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--text-soft);background:transparent;';
   reloadBtn.append(ico('M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5', 17));
@@ -365,7 +365,7 @@ export function renderHelm(state, handlers = {}) {
 export function renderDownloadsPopover(downloads = [], handlers = {}) {
   const { onControl, onOpen } = handlers;
   const pop = el('div', 'downloads-popover');
-  pop.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2 + var(--helm-w) - 300px);bottom:92px;width:300px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);padding:6px 0;';
+  pop.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2 + var(--helm-w) - 300px);bottom:92px;width:300px;border-radius:var(--r-popover);background:var(--surface);box-shadow:var(--shadow-popover);padding:6px 0;';
 
   downloads.forEach((item) => {
     const row = el('div');
@@ -428,10 +428,10 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
 /** Render asking answer card (HelmAnswer board, DESIGN.md §7). */
 export function renderAnswerCard(answer, onOpenSource) {
   const card = el('div', 'answer-card');
-  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2);bottom:90px;width:560px;box-sizing:border-box;border-radius:20px;background:var(--surface);box-shadow:var(--shadow-popover);padding:22px 24px 16px;';
+  card.style.cssText = 'position:absolute;left:calc(var(--rail) + (100% - var(--rail) - var(--answer-w, var(--helm-w))) / 2);bottom:90px;width:var(--answer-w, 560px);box-sizing:border-box;border-radius:var(--r-answer);font-family:var(--answer-font, inherit);background:var(--surface);box-shadow:var(--shadow-popover);padding:22px 24px 16px;';
 
   const textEl = el('div', null, answer.text);
-  textEl.style.cssText = 'font-size:15.5px;line-height:1.6;color:var(--text);';
+  textEl.style.cssText = 'font-size:var(--answer-size, 15.5px);line-height:1.6;color:var(--text);';
   card.append(textEl);
 
   // Sources row

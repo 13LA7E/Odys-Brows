@@ -221,6 +221,16 @@ Answers to the four open questions in docs/AUDIT-2026-11-20.md, Stage F.
 - **New-tab options: clock options and wallpapers only.** Show clock, 12 h / 24 h, greeting with a name; built-in wallpapers and a custom image with dim and blur sliders. Pinned sites, search box styles, suggestions and recent questions are **not** ported.
 - **Window blur and window opacity are left out** (resource goal D-012: they cost GPU and memory, and don't work well with page windows being separate windows). "Tab style" and "tab bar position" don't map to the trail and are skipped.
 
+## D-026 Stage F: what was built differently or left out. Proposed (needs the owner's OK)
+
+Written while finishing AUDIT-35 to 42. Each item can be reopened; none changes the approved design.
+
+- **No extra sky types** (aurora, northern lights, warp, nebula glow, twinkle, parallax strength; AUDIT-36). They are glows and gradients, which the design and D-024 do not allow. Built instead: star density, drift speed, comet rate and Low power.
+- **No built-in wallpapers** (AUDIT-37). D-025 mentions them; Odyssey's are nautical SVG pictures that do not fit this design, and flat colours add nothing over a theme. Only your own image (PNG, JPEG, WebP, 4 MB) with dim and blur is offered. Say which built-in pictures you want, or approve this.
+- **No density option, no Helm button reordering** (AUDIT-39). The rail, History and the new tab are laid out at fixed coordinates taken from the design, so a density switch would only change Settings rows. Helm buttons can be hidden (back and forward, reload) but not moved; the address field and the Odysseus button always stay.
+- **Left out for good (D-025):** light themes, rail on the right, tab style and tab bar position, window blur and window opacity.
+- **Interface size** (90 to 125%) scales the whole interface with CSS zoom; the page windows follow because the rail width and the holes are reported in screen pixels.
+
 ## Open questions for the owner
 
 | ID | Question | Needed by |

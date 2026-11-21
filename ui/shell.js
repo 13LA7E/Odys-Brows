@@ -8,6 +8,7 @@ import { renderCollapsedRail, renderExpandedRail } from './rail.js';
 import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
 import { applySavedTheme, resolveTheme, starColour } from './themes.js';
+import { applyInterface, interfaceScale } from './interface.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab, wallpaperVersion } from './newtab.js';
 import { renderErrorPage, renderPromptCard } from './pagebasics.js';
@@ -345,12 +346,15 @@ export function renderShell(root, state) {
   syncNotch(root, state);
   setSearchEngine(state.settings);
   applySavedTheme(state.settings, !!state.private);
+  applyInterface(state.settings, root);
   // A theme sets its own accent; without one the chosen accent swatch applies.
   if (state.settings?.accent && !(resolveTheme(state.settings) && !state.private)) {
     applyAccent(state.settings.accent);
   }
-  const railWidth = state.rail === 'expanded' ? 264 : 56;
-  root.style.setProperty('--rail', `${railWidth}px`);
+  const railCss = state.rail === 'expanded' ? 264 : 56;
+  root.style.setProperty('--rail', `${railCss}px`);
+  // The page windows sit right of the rail on the screen, so tell Rust the width as drawn (scaled).
+  const railWidth = Math.round(railCss * interfaceScale());
   if (typeof window.odysseyBridge === 'function' && railWidth !== lastRailWidth) {
     const grow = railWidth > (lastRailWidth ?? 0);
     lastRailWidth = railWidth;
@@ -1007,7 +1011,7 @@ function watchOverlays(root, state) {
 
 export function renderShieldsPanel(state, onClose) {
   const panel = el('div', 'shields-popover');
-  panel.style.cssText = 'position:absolute;top:42px;right:12px;width:280px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);padding:16px;z-index:200;display:flex;flex-direction:column;gap:12px;';
+  panel.style.cssText = 'position:absolute;top:42px;right:12px;width:280px;border-radius:var(--r-popover);background:var(--surface);box-shadow:var(--shadow-popover);padding:16px;z-index:200;display:flex;flex-direction:column;gap:12px;';
 
   const header = el('div');
   header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';

@@ -34,6 +34,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   transition: transform var(--dur-slow) var(--ease-in-out);
 }
 /* Over a web page the Helm slides down out of the way too; .helm-grip is the strip that brings it back. */
+/* Interface options (AUDIT-39): hide the Helm's back/forward and reload buttons. */
+#app[data-nav='off'] .helm-nav, #app[data-reload='off'] .helm-reload { display: none !important; }
 #app[data-helm='hidden'] .helm { transform: translateY(calc(var(--helm-h) + var(--helm-bottom) + 14px)); }
 .helm-grip {
   position: absolute; bottom: 0; width: var(--helm-w); height: 4px; z-index: 100;

@@ -551,7 +551,7 @@ export function renderExpandedRail(railEl, options = {}) {
       // Hovered preview card beside rail
       if (c.hovered) {
         const card = el('div', 'closed-preview-card');
-        card.style.cssText = `position:absolute;left:276px;top:${cy - 76}px;width:296px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover);overflow:hidden;z-index:10;`;
+        card.style.cssText = `position:absolute;left:276px;top:${cy - 76}px;width:296px;border-radius:var(--r-popover);background:var(--surface);box-shadow:var(--shadow-popover);overflow:hidden;z-index:10;`;
 
         // Thumbnail
         const thumb = el('div', 'closed-thumb');

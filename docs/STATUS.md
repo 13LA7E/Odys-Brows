@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Phase | **Phase R: repairs** (see docs/AUDIT-2026-11-20.md). Phases 0 to 9 are **not** finished. |
-| Current task | **Stage F, AUDIT-39 (interface options)**, then 42. Done: STORE, 38, 40, 41, 35, 36, 37. |
+| Current task | **Stage F, AUDIT-42 (motion options)**. Done: STORE, 38, 40, 41, 35, 36, 37, 39. |
 | State | Phase R is done except AUDIT-23 (blocked on D-013), AUDIT-31 (Linux) and the items listed as not done in PHASES. AUDIT-01, 03, 32, 33 and 34 are done and verified live (this session). Everything is verified on Windows only. **Uncommitted on purpose:** the D-024 rule edits (see below). |
 | Earlier claims | The earlier "Phases 0 to 9 finished, checks pass" was wrong (Gate 0 not met, Linux never built, several Owner OK items ticked without OK, Phases 5 to 9 partly placeholders). Reopened tasks are marked in PHASES. |
 | Branch | `Constellations` on `13LA7E/Odys-Brows`. Never `main`. |
@@ -123,6 +123,10 @@ Copy this template for each session:
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-37 new-tab options
 
 - Clock, greeting, name, hint and a wallpaper with dim and blur (details in PHASES). Verified live: `newtab_options.py` 27/27, plus `general_settings`, `themes`, `restore`. New dependency in the shell crate: `base64` (checks the wallpaper image). Not verified: Linux.
+
+### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-39 interface options
+
+- Corner roundness, interface size, Helm buttons, answer font, size and width (details in PHASES). New D-026 (Proposed) lists what was built differently or left out. Verified live: `interface_options.py` 18/18; visual check unchanged. Not verified: Windows display scaling above 100%, Linux.
 
 ### 2026-11-21: Claude Code / Sonnet 5.5: Stage F: AUDIT-41 shortcuts
 

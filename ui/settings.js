@@ -35,6 +35,13 @@ export const DEFAULT_SETTINGS = {
   showTrailHint: true,
   wallpaperDim: '40%',
   wallpaperBlur: 'Off',
+  radius: 'Default',
+  uiScale: '100%',
+  showNavButtons: true,
+  showReload: true,
+  answerFont: 'Sans',
+  answerSize: 'Default',
+  answerWidth: 'Default',
   theme: 'Default',
   customThemes: {},
 };
@@ -212,8 +219,8 @@ function makeTextInput(value, placeholder, isPassword, onInput) {
 function makeButton(text, isAccent, onClick) {
   const btn = el('button', null, text);
   btn.style.cssText = isAccent
-    ? 'border:0;background:var(--accent);color:var(--on-accent);font:inherit;font-size:13.5px;font-weight:500;padding:7px 16px;border-radius:8px;cursor:pointer;'
-    : 'border:1px solid var(--w-field);background:var(--w-field);color:var(--text);font:inherit;font-size:13.5px;padding:7px 16px;border-radius:8px;cursor:pointer;';
+    ? 'border:0;background:var(--accent);color:var(--on-accent);font:inherit;font-size:13.5px;font-weight:500;padding:7px 16px;border-radius:var(--r-row);cursor:pointer;'
+    : 'border:1px solid var(--w-field);background:var(--w-field);color:var(--text);font:inherit;font-size:13.5px;padding:7px 16px;border-radius:var(--r-row);cursor:pointer;';
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -391,6 +398,30 @@ export function renderSettings(container, state, onUpdate) {
         rows.append(makeRow('Shooting star rate', 'How often a comet crosses.', makeSegmented(['Rare', 'Normal', 'Often'], settings.cometRate || 'Normal', pick('cometRate'))));
       }
       rows.append(makeRow('Low power', 'A still sky: no drifting, comets or cursor lines. Saves battery.', makeSwitch(settings.lowPower === true, (val) => pick('lowPower')(val))));
+    }
+
+    // Interface options (AUDIT-39). Not in the approved design, so fixture mode leaves them out.
+    if (!document.documentElement.classList.contains('fixture')) {
+      const set = (key) => (v) => {
+        settings[key] = v;
+        saveSettings(settings);
+        if (onUpdate) onUpdate(key, v);
+        renderSettings(container, state, onUpdate);
+      };
+      const group = (text) => {
+        const g = el('div', null, text);
+        g.style.cssText = 'font-size:14.5px;font-weight:600;color:var(--text-strong);margin:22px 0 2px 0;';
+        return g;
+      };
+      rows.append(group('Interface'));
+      rows.append(makeRow('Corner roundness', 'How round cards, menus and buttons are.', makeSegmented(['Sharp', 'Default', 'Round'], settings.radius || 'Default', set('radius'))));
+      rows.append(makeRow('Interface size', 'Makes everything bigger or smaller.', makeSegmented(['90%', '100%', '110%', '125%'], settings.uiScale || '100%', set('uiScale'))));
+      rows.append(makeRow('Back and forward buttons', 'Show them in the Helm.', makeSwitch(settings.showNavButtons !== false, set('showNavButtons'))));
+      rows.append(makeRow('Reload button', 'Show it in the Helm.', makeSwitch(settings.showReload !== false, set('showReload'))));
+      rows.append(group('Answers'));
+      rows.append(makeRow('Answer font', 'The typeface of answers from the Helm.', makeSegmented(['Sans', 'Serif', 'Mono'], settings.answerFont || 'Sans', set('answerFont'))));
+      rows.append(makeRow('Answer text size', '', makeSegmented(['Small', 'Default', 'Large'], settings.answerSize || 'Default', set('answerSize'))));
+      rows.append(makeRow('Answer width', '', makeSegmented(['Narrow', 'Default', 'Wide'], settings.answerWidth || 'Default', set('answerWidth'))));
     }
 
     // Themes (AUDIT-35)
