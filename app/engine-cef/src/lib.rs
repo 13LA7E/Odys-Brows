@@ -237,7 +237,7 @@ fn update_page_window_region(
         // The notch hole is as tall as the notch currently is (34 when fully shown, 4 for the hover
         // strip when slid away, in between while it moves).
         let shown = if notch_height > 0.0 {
-            notch_height.clamp(14.0, 34.0)
+            notch_height.clamp(10.0, 34.0)
         } else {
             34.0
         };

@@ -111,6 +111,10 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: guide bar
+
+- Small tabs instead of black strips, setting to hide the line (see PHASES, "Guide bar"). Windows only.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: address bar: edge hover, new-tab focus, autocomplete
 
 - Details in PHASES ("Address bar polish"). Verified live: `helm_typing.py` 12/12 and the earlier autohide, spaces, shortcuts, chat scripts; visual check passes. Windows only; Linux untested (hole strips are Windows code).

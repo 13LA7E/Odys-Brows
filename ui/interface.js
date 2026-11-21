@@ -26,7 +26,7 @@ export function interfaceScale() { return scale; }
 /** Applies the saved interface options (cheap when nothing changed). `root` is the #app element. */
 export function applyInterface(settings, root) {
   const s = settings || {};
-  const key = JSON.stringify([s.reduceMotion, s.radius, s.uiScale, s.showNavButtons, s.showReload, s.answerFont, s.answerSize, s.answerWidth, window.innerWidth, window.innerHeight]);
+  const key = JSON.stringify([s.reduceMotion, s.radius, s.uiScale, s.showNavButtons, s.showReload, s.showGuideBar, s.answerFont, s.answerSize, s.answerWidth, window.innerWidth, window.innerHeight]);
   if (key === lastKey) return;
   lastKey = key;
   const docEl = document.documentElement;
@@ -48,6 +48,7 @@ export function applyInterface(settings, root) {
   if (root) {
     root.dataset.nav = s.showNavButtons === false ? 'off' : 'on';
     root.dataset.reload = s.showReload === false ? 'off' : 'on';
+    root.dataset.guide = s.showGuideBar === false ? 'off' : 'on';
     // Scale the whole interface: the app is laid out as if the window were smaller or bigger.
     const z = document.documentElement.classList.contains('fixture') ? 1 : (SCALES[s.uiScale] || 1);
     scale = z;

@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   uiScale: '100%',
   showNavButtons: true,
   showReload: true,
+  showGuideBar: true,
   answerFont: 'Sans',
   answerSize: 'Default',
   answerWidth: 'Default',
@@ -425,6 +426,7 @@ export function renderSettings(container, state, onUpdate) {
       rows.append(makeRow('Interface size', 'Makes everything bigger or smaller.', makeSegmented(['90%', '100%', '110%', '125%'], settings.uiScale || '100%', set('uiScale'))));
       rows.append(makeRow('Back and forward buttons', 'Show them in the Helm.', makeSwitch(settings.showNavButtons !== false, set('showNavButtons'))));
       rows.append(makeRow('Reload button', 'Show it in the Helm.', makeSwitch(settings.showReload !== false, set('showReload'))));
+      rows.append(makeRow('Guide bar', 'The small bar at the edge that brings back the hidden address bar and the shield pill. Off keeps them hiding, with only a tiny tab to reach them.', makeSwitch(settings.showGuideBar !== false, set('showGuideBar'))));
       rows.append(group('Answers'));
       rows.append(makeRow('Answer font', 'The typeface of answers from the Helm.', makeSegmented(['Sans', 'Serif', 'Mono'], settings.answerFont || 'Sans', set('answerFont'))));
       rows.append(makeRow('Answer text size', '', makeSegmented(['Small', 'Default', 'Large'], settings.answerSize || 'Default', set('answerSize'))));

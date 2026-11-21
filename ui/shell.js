@@ -1108,8 +1108,10 @@ function reportOverlays() {
   // How much of the notch is showing (it slides away): the page window's notch hole follows.
   const notch = document.querySelector('.notch');
   if (notch) {
-    const h = Math.max(14, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
-    const w = Math.round(notch.getBoundingClientRect().width);
+    const gripH = document.getElementById('app')?.dataset.guide === 'off' ? 10 : 14;
+    const h = Math.max(gripH, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
+    // Slid away: only the small tab at the corner stays reachable, not the notch's full width.
+    const w = h <= 14 ? 72 : Math.round(notch.getBoundingClientRect().width);
     document.documentElement.style.setProperty('--notch-w', `${w}px`);
     if (h !== lastNotchHeight || w !== lastNotchWidth) {
       lastNotchHeight = h;
