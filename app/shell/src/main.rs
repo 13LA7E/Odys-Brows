@@ -2,7 +2,6 @@
 
 // The settings round-trip test builds one big json! value.
 #![recursion_limit = "512"]
-
 // No console window in release builds on Windows.
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
@@ -1976,6 +1975,7 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::LoginSubmitted { .. }
                 | engine_api::Event::LoginFieldClicked { .. }
                 | engine_api::Event::ShortcutQuit
+                | engine_api::Event::AppClosing
                 | engine_api::Event::Command { .. }
                 | engine_api::Event::NewWindowRequested { .. }
         )
