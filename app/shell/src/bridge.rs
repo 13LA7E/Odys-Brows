@@ -114,9 +114,9 @@ pub enum FromUi {
     },
     /// Bring our window forward and give it keyboard focus (a click while another app is on top).
     FocusWindow,
-    /// The notch slid away (true) or came back (false); see `Engine::set_notch_hidden`.
-    SetNotchHidden {
-        hidden: bool,
+    /// How much of the notch is showing, in DIP from the top (it slides away over web pages).
+    SetNotchHeight {
+        height: f64,
     },
     /// Where the UI draws over the page area, so the page windows leave holes there (AUDIT-06).
     SetOverlayRects {

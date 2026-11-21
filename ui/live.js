@@ -1,5 +1,5 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
-import { renderShell, requestRender } from './shell.js';
+import { renderShell, requestRender, revealHelm } from './shell.js';
 import { onMessage } from './bridge.js';
 import { initPageBasicsShortcuts, focusHelm } from './pagebasics.js';
 import { generateSky } from './sky.js';
@@ -148,6 +148,7 @@ export async function startLive() {
       }
       renderShellLive();
     } else if (msg.type === 'helm-focus') {
+      revealHelm();
       focusHelm();
     } else if (msg.type === 'find-in-page-prompt') {
       import('./pagebasics.js').then(({ toggleFindBar }) => {

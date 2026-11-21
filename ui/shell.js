@@ -763,9 +763,14 @@ export function renderShell(root, state) {
     }), { enter: true, exit: true }));
   }
 
-  if (notchAutoHide && state.live) {
+  if (autoHideOn && state.live) {
     add(region('notch-grip', 1, () => {
       const grip = el('div', 'notch-grip');
+      grip.append(el('span'));
+      return grip;
+    }));
+    add(region('helm-grip', 1, () => {
+      const grip = el('div', 'helm-grip');
       grip.append(el('span'));
       return grip;
     }));
@@ -813,64 +818,104 @@ export function renderShell(root, state) {
   watchOverlays(root, state);
 }
 
-// --- Notch auto-hide (AUDIT-28) -------------------------------------------------------------
-// Over a web page the notch would cover the page's own top-right controls (a Sign in button,
-// an account menu). So it shows for a moment after the page appears, slides away, and comes back
-// while the pointer is in the top-right strip. Its hole in the page window shrinks to that strip
-// while hidden.
-let notchAutoHide = false;
-let notchHidden = false;
-let notchHideTimer = 0;
-let notchHover = false;
-let notchWired = false;
+// --- Auto-hide of the notch and the Helm over web pages (AUDIT-28) -----------------------------
+// Over a web page the notch would cover the page's own top-right controls and the Helm its bottom.
+// Each shows for a moment after the page appears, slides away, and comes back while the pointer is
+// on its thin strip (or, for the Helm, while you type, ask, or a download is open). While one
+// moves, the hole it has in the page window follows it frame by frame, so the page shows through
+// as it goes: the slide is visible instead of a black box vanishing.
+const HIDERS = {
+  notch: { hidden: false, timer: 0, hover: false, showMs: 2500, hideAfterMs: 700, sel: '.notch, .notch-grip' },
+  helm: { hidden: false, timer: 0, hover: false, showMs: 4500, hideAfterMs: 1200, sel: '.helm, .helm-grip' },
+};
+let autoHideOn = false;
+let helmBusy = false;
+let hiderWired = false;
+let lastHelmUrlKey = '';
+let shellRoot = null;
 
-function setNotchHidden(root, hidden) {
-  root.dataset.notch = hidden ? 'hidden' : 'shown';
-  if (hidden === notchHidden) return;
-  notchHidden = hidden;
-  if (hidden) {
-    // Let the slide-out finish inside the hole before the hole shrinks.
-    setTimeout(() => {
-      if (notchHidden) window.odysseyBridge?.(JSON.stringify({ type: 'set-notch-hidden', hidden: true }));
-    }, cssMs('--dur-base', 200) + 30);
-  } else {
-    window.odysseyBridge?.(JSON.stringify({ type: 'set-notch-hidden', hidden: false }));
-  }
+function setHidden(name, hidden) {
+  const h = HIDERS[name];
+  h.hidden = hidden;
+  shellRoot.dataset[name] = hidden ? 'hidden' : 'shown';
 }
 
-function scheduleNotchHide(root, ms) {
-  clearTimeout(notchHideTimer);
-  notchHideTimer = setTimeout(() => {
-    if (notchAutoHide && !notchHover) setNotchHidden(root, true);
+function scheduleHide(name, ms) {
+  const h = HIDERS[name];
+  clearTimeout(h.timer);
+  h.timer = setTimeout(() => {
+    if (autoHideOn && !h.hover && !(name === 'helm' && helmBusy)) setHidden(name, true);
   }, ms);
 }
 
+/** Bring the Helm back (Ctrl+L, typing, a new address) and let it hide again later. */
+export function revealHelm() {
+  if (!shellRoot || !autoHideOn) return;
+  setHidden('helm', false);
+  scheduleHide('helm', HIDERS.helm.showMs);
+}
+
 function syncNotch(root, state) {
+  shellRoot = root;
   const want = state.live === true && state.page === 'web' && !state.shieldsOpen
     && !(state.prompts || []).some((p) => p.view === state.activeTab);
-  if (!notchWired && state.live) {
-    notchWired = true;
-    const near = (n) => n && n.closest && n.closest('.notch, .notch-grip');
-    root.addEventListener('pointerover', (e) => {
-      if (!near(e.target)) return;
-      notchHover = true;
-      clearTimeout(notchHideTimer);
-      if (notchAutoHide) setNotchHidden(root, false);
+  helmBusy = state.helm?.kind === 'asking' || !!state.answer || !!state.downloadsOpen;
+  if (!hiderWired && state.live) {
+    hiderWired = true;
+    for (const name of Object.keys(HIDERS)) {
+      const h = HIDERS[name];
+      const near = (n) => n && n.closest && n.closest(h.sel);
+      root.addEventListener('pointerover', (e) => {
+        if (!near(e.target)) return;
+        h.hover = true;
+        clearTimeout(h.timer);
+        if (autoHideOn) setHidden(name, false);
+      });
+      root.addEventListener('pointerout', (e) => {
+        if (!near(e.target) || near(e.relatedTarget)) return;
+        h.hover = false;
+        if (autoHideOn) scheduleHide(name, h.hideAfterMs);
+      });
+    }
+    // Typing in the address bar keeps the Helm up.
+    root.addEventListener('focusin', (e) => {
+      if (e.target.closest && e.target.closest('.helm')) {
+        HIDERS.helm.hover = true;
+        clearTimeout(HIDERS.helm.timer);
+        if (autoHideOn) setHidden('helm', false);
+      }
     });
-    root.addEventListener('pointerout', (e) => {
-      if (!near(e.target) || near(e.relatedTarget)) return;
-      notchHover = false;
-      if (notchAutoHide) scheduleNotchHide(root, 700);
+    root.addEventListener('focusout', (e) => {
+      if (e.target.closest && e.target.closest('.helm')) {
+        HIDERS.helm.hover = false;
+        if (autoHideOn) scheduleHide('helm', HIDERS.helm.hideAfterMs);
+      }
     });
   }
-  if (want && !notchAutoHide) {
-    notchAutoHide = true;
-    setNotchHidden(root, false);
-    scheduleNotchHide(root, 2500); // visible for a moment when the page appears
-  } else if (!want && notchAutoHide) {
-    notchAutoHide = false;
-    clearTimeout(notchHideTimer);
-    setNotchHidden(root, false);
+  if (want && !autoHideOn) {
+    autoHideOn = true;
+    for (const name of Object.keys(HIDERS)) {
+      setHidden(name, false);
+      scheduleHide(name, HIDERS[name].showMs); // visible for a moment when the page appears
+    }
+  } else if (!want && autoHideOn) {
+    autoHideOn = false;
+    for (const name of Object.keys(HIDERS)) {
+      clearTimeout(HIDERS[name].timer);
+      setHidden(name, false);
+    }
+  }
+  if (autoHideOn) {
+    if (helmBusy) {
+      setHidden('helm', false);
+    }
+    // A new address or tab: show the Helm for a moment.
+    const a = state.helm?.address;
+    const key = `${state.activeTab}|${a ? `${a.host || ''}${a.path || ''}${a.name || ''}` : ''}`;
+    if (key !== lastHelmUrlKey) {
+      lastHelmUrlKey = key;
+      revealHelm();
+    }
   }
 }
 
@@ -878,9 +923,10 @@ function syncNotch(root, state) {
 // Page windows cover our UI, so each open popover or card tells Rust where it is and a hole is
 // cut there. A DOM observer keeps it current for things drawn outside renderShell (find bar,
 // hover previews).
-const OVERLAY_SELECTOR = '.downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card';
+const OVERLAY_SELECTOR = '.downloads-popover, .answer-card, .shields-popover, .find-bar, .closed-preview-card, .permission-card, .helm, .helm-grip';
 let overlayObserver = null;
 let lastOverlayJson = '[]';
+let lastNotchHeight = 34;
 let overlayTimer = 0;
 
 function reportOverlays() {
@@ -890,6 +936,16 @@ function reportOverlays() {
     const radius = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
     return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height), radius: Math.round(radius) };
   }).filter((r) => r.width > 0 && r.height > 0);
+  // How much of the notch is showing (it slides away): the page window's notch hole follows.
+  const notch = document.querySelector('.notch');
+  if (notch) {
+    const h = Math.max(4, Math.min(34, Math.round(notch.getBoundingClientRect().bottom)));
+    if (h !== lastNotchHeight) {
+      lastNotchHeight = h;
+      (window.__notchHeights = window.__notchHeights || []).push(h);
+      window.odysseyBridge(JSON.stringify({ type: 'set-notch-height', height: h }));
+    }
+  }
   const json = JSON.stringify(rects);
   if (json === lastOverlayJson) return;
   lastOverlayJson = json;
@@ -905,7 +961,8 @@ function trackOverlayAnimations() {
   const tick = () => {
     reportOverlays();
     frames += 1;
-    const animating = [...document.querySelectorAll(OVERLAY_SELECTOR)].some((e) => e.getAnimations().length > 0);
+    // The notch is tracked too: its hole height follows it while it slides.
+    const animating = [...document.querySelectorAll(`${OVERLAY_SELECTOR}, .notch`)].some((e) => e.getAnimations().length > 0);
     if (animating && frames < 120) {
       requestAnimationFrame(tick);
     } else {

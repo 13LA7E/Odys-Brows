@@ -203,6 +203,15 @@ In accordance with EDGE_CASES §7 ("Several private windows at once: decide whet
 
 ---
 
+## D-024 Motion and cursor-linked stars. Accepted (owner request, 20 Nov 2026)
+
+Amends the no-extra-animation rule in AGENTS.md and the Motion bullet in DESIGN.md section 10. Implemented by AUDIT-32, 33 and 34.
+
+- The owner approved this in the chat. The old wording stays in those files, marked as superseded.
+- Superseded wording: AGENTS.md "Don't restyle, improve, add gradients, glows, glitter or extra animation" and DESIGN.md §10 "one calm transition per user action; no staggered entrance animations; never animate children that get re-rendered". What still holds: no staggered entrance animations and never animate children that get re-rendered.
+- Motion is noticeable but tasteful. Every timing and amount lives in one place (the motion tokens in `ui/tokens.css`) so the owner can tune them.
+- Cursor-linked stars follow Odyssey's `ui/fx.js` (AUDIT-32), with a Settings > Appearance toggle and `prefers-reduced-motion` respected. The sky stops drawing when it isn't visible (AUDIT-34).
+
 ## Open questions for the owner
 
 | ID | Question | Needed by |

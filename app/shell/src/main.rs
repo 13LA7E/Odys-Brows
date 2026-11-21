@@ -1130,7 +1130,9 @@ impl Shell {
                 engine.send_to_ui(&bridge::to_json(&msg));
                 self.send_vault();
             }
-            FromUi::SetNotchHidden { hidden } => engine.set_notch_hidden(hidden),
+            FromUi::SetNotchHeight { height } => {
+                engine.set_notch_height(height.clamp(0.0, 200.0) as f32)
+            }
             FromUi::SetOverlayRects { rects } => {
                 let rects = rects
                     .iter()

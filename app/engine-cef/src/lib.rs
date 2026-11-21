@@ -101,10 +101,11 @@ struct State {
     /// windows cover the UI, so each of these is cut out of them (AUDIT-06).
     #[cfg_attr(not(windows), allow(dead_code))]
     overlay_holes: Vec<(ViewRect, i32)>,
-    /// While true the notch is slid away and only a thin strip of it is cut out of the page
-    /// windows (the hover strip that brings it back).
+    /// How much of the notch is showing, in DIP from the top (0 = not reported yet, so full).
+    /// The UI reports it every frame while the notch slides, so the hole in the page windows
+    /// follows the animation and the page shows through as the notch moves away.
     #[cfg_attr(not(windows), allow(dead_code))]
-    notch_hidden: bool,
+    notch_height: f32,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -175,7 +176,7 @@ fn update_page_window_region(
     height: i32,
     origin_x: i32,
     holes: &[(ViewRect, i32)],
-    notch_hidden: bool,
+    notch_height: f32,
 ) {
     unsafe {
         let h = win.window_handle().0 as isize;
@@ -196,12 +197,14 @@ fn update_page_window_region(
         // Cutting out the notch leaves the main window's notch controls (shields, minimize,
         // maximize, close) visible and interactive.
         let notch_w = (224.0 * dpi).round() as i32;
-        // Hidden: only a 4 DIP strip along the top stays cut out, so the pointer can reach it.
-        let notch_h = if notch_hidden {
-            (4.0 * dpi).round() as i32
+        // The notch hole is as tall as the notch currently is (34 when fully shown, 4 for the hover
+        // strip when slid away, in between while it moves).
+        let shown = if notch_height > 0.0 {
+            notch_height.clamp(4.0, 34.0)
         } else {
-            (34.0 * dpi).round() as i32
+            34.0
         };
+        let notch_h = (shown * dpi).round() as i32;
         // Only the bottom-left corner is rounded (--r-notch: 0 0 0 14px): the round rectangle is
         // made taller and wider than the window so the other corners fall outside it.
         let r2 = (28.0 * dpi).round() as i32;
@@ -220,24 +223,8 @@ fn update_page_window_region(
         win32::CombineRgn(base_rgn, base_rgn, notch_rgn, win32::RGN_DIFF);
         win32::DeleteObject(notch_rgn);
 
-        // Helm at bottom: 560 DIP wide, 52 DIP high, 28 DIP from bottom, centered in page area.
-        let helm_w = (560.0 * dpi).round() as i32;
-        let helm_h = (52.0 * dpi).round() as i32;
-        let helm_bottom = (28.0 * dpi).round() as i32;
-        let helm_x = ((w - helm_w) / 2).max(0);
-        let helm_y = h_px - helm_bottom - helm_h;
-        if helm_y > 0 && w >= helm_w {
-            let helm_rgn = win32::CreateRoundRectRgn(
-                helm_x,
-                helm_y,
-                helm_x + helm_w,
-                helm_y + helm_h,
-                helm_h,
-                helm_h,
-            );
-            win32::CombineRgn(base_rgn, base_rgn, helm_rgn, win32::RGN_DIFF);
-            win32::DeleteObject(helm_rgn);
-        }
+        // The Helm's hole comes from the UI like every other overlay (its rectangle is reported
+        // as it slides), so there is no fixed Helm hole here.
 
         // Our UI's open overlays (popovers, cards, find bar): cut them out too.
         for (r, radius) in holes {
@@ -277,7 +264,7 @@ fn refresh_holes() {
                 c.height.max(1),
                 b.x,
                 &s.overlay_holes,
-                s.notch_hidden,
+                s.notch_height,
             );
         }
     });
@@ -305,7 +292,7 @@ fn place(id: ViewId) {
         }));
         if page.visible {
             #[cfg(windows)]
-            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes, s.notch_hidden);
+            update_page_window_region(win, pw, ph, b.x, &s.overlay_holes, s.notch_height);
             win.show();
         } else {
             win.hide();
@@ -1618,13 +1605,15 @@ impl CefEngine {
         });
     }
 
-    /// Slide the notch away (or back): while hidden only a thin hover strip is cut out of the
-    /// page windows, so the whole page is usable underneath.
-    pub fn set_notch_hidden(&self, hidden: bool) {
+    /// Tell the engine how much of the notch is showing (DIP from the top). While it slides the UI
+    /// reports every frame, and the hole in the page windows follows.
+    pub fn set_notch_height(&self, height: f32) {
         let changed = STATE.with(|s| {
             let mut s = s.borrow_mut();
-            let changed = s.notch_hidden != hidden;
-            s.notch_hidden = hidden;
+            let changed = (s.notch_height - height).abs() > 0.4;
+            if changed {
+                s.notch_height = height;
+            }
             changed
         });
         if changed {

@@ -111,6 +111,11 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: Helm auto-hide, animated notch and Helm
+
+- Helm slides away over web pages like the notch; both animate visibly because their holes in the page windows follow them frame by frame. Details in PHASES. New bridge message `set-notch-height` (replaces `set-notch-hidden`). `screen_helm.py` now hovers each strip before capturing (the bars are hidden by default after a few seconds).
+- Not verified: how it feels with a real mouse (synthetic pointer events were used) and on other pages than my test pages. The timings are tokens: `--dur-slow` (slide), the show time (notch 2.5 s, Helm 4.5 s) and hide delay (0.7 s / 1.2 s) are constants in `ui/shell.js` (`HIDERS`).
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: search engine, scrolling, Windows check for Reveal
 
 - Fixed: the Helm ignored the search-engine setting (hardcoded DuckDuckGo); the Passwords page could not scroll (the settings content was clipped).

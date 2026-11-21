@@ -31,7 +31,16 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   border-radius: var(--r-helm); background: var(--surface); box-shadow: var(--shadow-helm);
   display: flex; align-items: center; padding: 0 8px; gap: 2px;
   z-index: 100;
+  transition: transform var(--dur-slow) var(--ease-in-out);
 }
+/* Over a web page the Helm slides down out of the way too; .helm-grip is the strip that brings it back. */
+#app[data-helm='hidden'] .helm { transform: translateY(calc(var(--helm-h) + var(--helm-bottom) + 14px)); }
+.helm-grip {
+  position: absolute; bottom: 0; width: var(--helm-w); height: 4px; z-index: 100;
+  left: calc(var(--rail) + (100% - var(--rail) - var(--helm-w)) / 2);
+  display: flex; justify-content: center; align-items: flex-end; background: var(--bg);
+}
+.helm-grip span { width: 40px; height: 2px; margin-bottom: 1px; border-radius: 1px; background: var(--white); opacity: .25; }
 .helm-address {
   flex: 1; min-width: 0; padding: 0 12px; display: flex; gap: 10px; align-items: center;
   font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -45,7 +54,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   border-radius: var(--r-notch); padding-left: 6px; display: flex; align-items: center;
   -webkit-app-region: drag;
   z-index: 100;
-  transition: transform var(--dur-base) var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-in-out);
 }
 /* Over a web page the notch slides away so it never covers the page's own top-right controls;
    the grip is the strip that brings it back (see shell.js, AUDIT-28). */

@@ -292,7 +292,8 @@ Design these yourself in the same language, keep them quieter rather than louder
 
 - Window sizes other than 1280×800, and maximised and snapped layouts.
 - Hover, pressed and disabled states (the sketch only shows hovered rows and the selected state).
-- Motion. Rules carried over from Odyssey: one calm transition per user action; no staggered entrance animations; never animate children that get re-rendered (that caused flicker in Odyssey).
+- Motion (owner-approved, D-024): shared timing tokens, opacity and transform only, one calm transition per user action, stars that link to the cursor as in Odyssey, and reduced-motion respected. Still no staggered entrance animations, and never animate children that get re-rendered.
+  - ~~Superseded by D-024: "Rules carried over from Odyssey: one calm transition per user action; no staggered entrance animations; never animate children that get re-rendered (that caused flicker in Odyssey)."~~
 - Tab sleeping (PHASES.md, phase 5). Suggested, not in the sketch: a sleeping tab's star or dot is dimmer. Ask first.
 - Extensions: toolbar or popup placement, the install prompt and the management page.
 - AI provider setup (Ollama/LM Studio, API key, Odysseus), first-run, and the answer card for providers other than Odysseus.
