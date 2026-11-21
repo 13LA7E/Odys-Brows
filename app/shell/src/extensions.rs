@@ -37,6 +37,8 @@ struct ManifestV3 {
     pub optional_permissions: Vec<String>,
     #[serde(default)]
     pub action: Option<ActionManifest>,
+    #[serde(default)]
+    pub default_locale: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -130,8 +132,9 @@ impl ExtensionsStore {
         let content = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
 
-        let manifest: ManifestV3 =
-            serde_json::from_str(&content).map_err(|e| format!("Invalid manifest.json: {e}"))?;
+        // Store extensions often start with a byte order mark.
+        let manifest: ManifestV3 = serde_json::from_str(content.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Invalid manifest.json: {e}"))?;
 
         if let Some(mv) = manifest.manifest_version.filter(|&v| v < 3) {
             return Err(format!(
@@ -139,11 +142,20 @@ impl ExtensionsStore {
             ));
         }
 
-        let name = manifest
-            .name
-            .unwrap_or_else(|| "Unnamed Extension".to_string());
+        let locale = manifest.default_locale.clone();
+        let name = localized(
+            path,
+            locale.as_deref(),
+            manifest
+                .name
+                .unwrap_or_else(|| "Unnamed Extension".to_string()),
+        );
         let version = manifest.version.unwrap_or_else(|| "1.0.0".to_string());
-        let description = manifest.description.unwrap_or_default();
+        let description = localized(
+            path,
+            locale.as_deref(),
+            manifest.description.unwrap_or_default(),
+        );
         let permissions = manifest.permissions;
         let manifest_popup = manifest.action.and_then(|a| a.default_popup);
 
@@ -169,6 +181,55 @@ impl ExtensionsStore {
         self.extensions.insert(id, info.clone());
         Ok(info)
     }
+}
+
+/// True for a link that hands out a Chrome extension: the store's update service or a plain `.crx`.
+pub fn is_crx_url(url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let (host_path, _query) = rest.split_once('?').unwrap_or((rest, ""));
+    let host = host_path.split('/').next().unwrap_or("").to_lowercase();
+    let lower = host_path.to_lowercase();
+    ((host == "clients2.google.com" || host == "clients2.googleusercontent.com")
+        && lower.contains("/service/update2/crx"))
+        || lower.ends_with(".crx")
+}
+
+/// Fetch an extension file ourselves (Chromium would throw a store download away) into `dest`.
+pub async fn fetch_crx(url: &str, dest: &Path) -> Result<(), String> {
+    const MAX: usize = 100 * 1024 * 1024;
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(120))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Could not download it: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("The server answered {}.", resp.status()));
+    }
+    let mut data: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if data.len() + chunk.len() > MAX {
+            return Err("That extension file is too big.".into());
+        }
+        data.extend_from_slice(&chunk);
+    }
+    if data.get(0..4) != Some(b"Cr24") {
+        return Err("The address did not give an extension file.".into());
+    }
+    if let Some(parent) = dest.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(dest, data).map_err(|e| format!("Could not save it: {e}"))
 }
 
 /// Unpack a downloaded Chrome extension (`.crx`, format 2 or 3) into `dest_root/<file name>` and
@@ -247,6 +308,37 @@ pub fn unpack_crx(crx: &Path, dest_root: &Path) -> Result<std::path::PathBuf, St
     Ok(dir)
 }
 
+/// `__MSG_key__` names come from `_locales/<default_locale>/messages.json` (or `en`).
+fn localized(dir: &Path, locale: Option<&str>, text: String) -> String {
+    let Some(key) = text
+        .strip_prefix("__MSG_")
+        .and_then(|t| t.strip_suffix("__"))
+    else {
+        return text;
+    };
+    for loc in locale.into_iter().chain(["en", "en_US"]) {
+        if loc.is_empty() || loc.contains(['/', '\\', '.']) {
+            continue;
+        }
+        let file = dir.join("_locales").join(loc).join("messages.json");
+        if let Ok(raw) = std::fs::read_to_string(file)
+            && let Ok(v) =
+                serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
+            && let Some(obj) = v.as_object()
+        {
+            // keys are case-insensitive in Chrome
+            for (k, val) in obj {
+                if k.eq_ignore_ascii_case(key)
+                    && let Some(m) = val.get("message").and_then(|m| m.as_str())
+                {
+                    return m.to_string();
+                }
+            }
+        }
+    }
+    text
+}
+
 /// A relative path inside the extension: no scheme, no `..`, no leading slash.
 fn valid_popup_path(p: &str) -> bool {
     !p.is_empty()
@@ -306,7 +398,11 @@ mod tests {
         let manifest = r#"{"manifest_version":3,"name":"Demo","version":"1.0"}"#;
         for v in [3u32, 2] {
             let f = tmp.join(format!("abcdef{v}.CRX"));
-            std::fs::write(&f, make_crx(&[("manifest.json", manifest), ("a/b.js", "x")], v)).unwrap();
+            std::fs::write(
+                &f,
+                make_crx(&[("manifest.json", manifest), ("a/b.js", "x")], v),
+            )
+            .unwrap();
             let dir = unpack_crx(&f, &tmp.join("out")).unwrap();
             assert!(dir.join("manifest.json").exists() && dir.join("a").join("b.js").exists());
             let mut reg = ExtensionsStore::default();
@@ -314,7 +410,11 @@ mod tests {
         }
         // a name that climbs out of the folder is skipped, not written
         let f = tmp.join("evil.crx");
-        std::fs::write(&f, make_crx(&[("manifest.json", manifest), ("../escape.txt", "x")], 3)).unwrap();
+        std::fs::write(
+            &f,
+            make_crx(&[("manifest.json", manifest), ("../escape.txt", "x")], 3),
+        )
+        .unwrap();
         unpack_crx(&f, &tmp.join("out")).unwrap();
         assert!(!tmp.join("escape.txt").exists() && !tmp.join("out").join("escape.txt").exists());
         // no manifest, not a crx, truncated
@@ -326,6 +426,37 @@ mod tests {
         std::fs::write(tmp.join("y.crx"), b"Cr24\x03\0\0\0\xff\xff\xff\x7f").unwrap();
         assert!(unpack_crx(&tmp.join("y.crx"), &tmp.join("out")).is_err());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn store_names_are_translated() {
+        let tmp = std::env::temp_dir().join(format!("loc-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("_locales").join("en")).unwrap();
+        std::fs::write(
+            tmp.join("manifest.json"),
+            "\u{feff}{\"manifest_version\":3,\"name\":\"__MSG_Title__\",\"version\":\"1\",\"default_locale\":\"en\"}",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("_locales").join("en").join("messages.json"),
+            "{\"title\":{\"message\":\"Nice Ext\"}}",
+        )
+        .unwrap();
+        let mut reg = ExtensionsStore::default();
+        assert_eq!(reg.load_unpacked(&tmp).unwrap().name, "Nice Ext");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn recognises_extension_links() {
+        assert!(is_crx_url(
+            "https://clients2.google.com/service/update2/crx?response=redirect&x=id%3Dabc"
+        ));
+        assert!(is_crx_url("https://example.com/files/thing.CRX?x=1"));
+        assert!(!is_crx_url("https://example.com/thing.zip"));
+        assert!(!is_crx_url("https://evil.com/service/update2/crx"));
+        assert!(!is_crx_url("file:///c:/a.crx"));
     }
 
     #[test]

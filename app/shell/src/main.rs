@@ -49,7 +49,9 @@ fn edge_poll(last: &'static str) {
     if !EDGE_WATCH.load(Ordering::Relaxed) {
         EDGE_LOOP.store(false, Ordering::Relaxed);
         if !last.is_empty() {
-            CefEngine.send_to_ui(&bridge::to_json(&ToUi::EdgeHover { zone: String::new() }));
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::EdgeHover {
+                zone: String::new(),
+            }));
         }
         return;
     }
@@ -248,6 +250,8 @@ struct Shell {
     ai_cancel: Arc<AtomicBool>,
     zoom_index: HashMap<ViewId, usize>,
     download_paths: HashMap<u32, String>,
+    /// Extension downloads we already took over (see fetch_and_install_extension).
+    crx_ids: std::collections::HashSet<u32>,
     /// Downloads in progress and the tab that started them (those tabs don't sleep).
     active_downloads: HashMap<u32, Option<ViewId>>,
     /// The URL last written to history per tab, so one navigation isn't recorded twice.
@@ -335,6 +339,7 @@ impl Default for Shell {
             ai_cancel: Arc::new(AtomicBool::new(false)),
             zoom_index: HashMap::new(),
             download_paths: HashMap::new(),
+            crx_ids: std::collections::HashSet::new(),
             active_downloads: HashMap::new(),
             last_recorded: HashMap::new(),
             quitting: false,
@@ -809,6 +814,73 @@ impl Shell {
             }
             Err(e) => note(format!("Not installed: {e}")),
         }
+    }
+
+    fn fetch_and_install_extension(&mut self, id: u32, url: String) {
+        let note = move |text: String| {
+            CefEngine.send_to_ui(&bridge::to_json(&ToUi::DownloadNote {
+                id: id.to_string(),
+                text,
+            }));
+        };
+        if self.is_private {
+            note("Not installed: extensions are not added from a private window.".into());
+            return;
+        }
+        note("Installing the extension...".into());
+        // Named after the store id when the link has one, so installing it again replaces it.
+        let ext_name = url
+            .split("id%3D")
+            .nth(1)
+            .map(|r| r.chars().take(32).collect::<String>())
+            .filter(|n| n.len() == 32 && n.chars().all(|c| c.is_ascii_lowercase()))
+            .unwrap_or_else(|| {
+                let tail = url
+                    .split('?')
+                    .next()
+                    .unwrap_or("")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("");
+                let t: String = tail
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric())
+                    .take(40)
+                    .collect();
+                if t.is_empty() { format!("ext{id}") } else { t }
+            });
+        let dest = std::env::temp_dir()
+            .join("Constellations-Extensions")
+            .join(format!("{ext_name}.crx.zip"));
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let res = rt.block_on(extensions::fetch_crx(&url, &dest));
+            CefEngine.post_ui(move || {
+                SHELL_REF.with(|r| {
+                    if let Some(sh) = r.borrow().as_ref()
+                        && let Ok(mut s) = sh.try_borrow_mut()
+                    {
+                        match res {
+                            Ok(()) => {
+                                s.install_downloaded_extension_try(
+                                    id.to_string(),
+                                    dest.to_string_lossy().to_string(),
+                                    0,
+                                );
+                                let _ = std::fs::remove_file(&dest);
+                            }
+                            Err(e) => CefEngine.send_to_ui(&bridge::to_json(&ToUi::DownloadNote {
+                                id: id.to_string(),
+                                text: format!("Not installed: {e}"),
+                            })),
+                        }
+                    }
+                });
+            });
+        });
     }
 
     fn watch_capture(&mut self, engine: &mut CefEngine, view: ViewId, id: u64, full: bool) {
@@ -2996,7 +3068,12 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 if !info.path.is_empty() {
                     s.download_paths.insert(info.id, info.path.clone());
                 }
-                if info.complete && info.path.to_lowercase().ends_with(".crx.zip") {
+                if extensions::is_crx_url(&info.url) {
+                    // An extension link: fetch it ourselves, once (Chromium drops such downloads).
+                    if s.crx_ids.insert(info.id) {
+                        s.fetch_and_install_extension(info.id, info.url.clone());
+                    }
+                } else if info.complete && info.path.to_lowercase().ends_with(".crx.zip") {
                     s.install_downloaded_extension(info.id, &info.path);
                 }
                 if info.complete || info.cancelled || info.interrupted {

@@ -48,6 +48,12 @@ try:
     check('clicking the button opens the card again', ui("!!document.querySelector('.downloads-popover')") is True)
     ui("document.querySelector('.downloads-popover .dl-clear').click(); 1"); time.sleep(0.5)
     check('Clear empties the list and the button goes', ui("!document.querySelector('.helm-dl-btn') && !document.querySelector('.downloads-popover')") is True)
+    # the extensions button in the pill opens a real tab
+    n0 = V('window.__uiState.tabs.length')
+    ui("document.querySelector('.notch-extensions').click(); 1"); time.sleep(1.5)
+    check('the Extensions button in the pill opens the Extensions page in a new tab', V('window.__uiState.tabs.length') == n0 + 1 and V('window.__uiState.pageName') == 'extensions', (n0, V('window.__uiState.tabs.length'), V('window.__uiState.pageName')))
+    ui("document.querySelector('.notch-extensions').click(); 1"); time.sleep(1)
+    check('...and pressing it again does not open another', V('window.__uiState.tabs.length') == n0 + 1)
 finally:
     kill(p)
     for f in set(os.listdir(dl_dir)) - before:

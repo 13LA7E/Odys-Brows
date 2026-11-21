@@ -553,7 +553,7 @@ export function renderDownloadsPopover(downloads = [], handlers = {}) {
       openBtn.addEventListener('click', () => {
         onOpen?.(item.path || item.id);
       });
-      if (live && item.installed) row.append(info, xBtn('Remove from the list', () => onDismiss?.(item.id)));
+      if (live && (item.installed || /\.crx(\.zip)?$/i.test(item.name || ''))) row.append(info, xBtn('Remove from the list', () => onDismiss?.(item.id)));
       else if (live) row.append(info, openBtn, xBtn('Remove from the list', () => onDismiss?.(item.id)));
       else row.append(info, openBtn);
     }

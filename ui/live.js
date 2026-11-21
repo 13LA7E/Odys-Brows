@@ -100,6 +100,7 @@ export async function startLive() {
       if (seg) parts.push(`${connections} connections`);
       d.detail = parts.join(', ');
     }
+    if (d.note) d.detail = d.note; // what we said about it (installed, or why not) stays
     if (state.downloads.length > 20) state.downloads.length = 20;
     if (state.downloads.some((x) => x.active)) state.downloadsOpen = state.downloadsOpen ?? true;
   };
@@ -216,7 +217,7 @@ export async function startLive() {
       toggleAsk(app, state);
     } else if (msg.type === 'download-note') {
       const d = state.downloads.find((x) => x.id === String(msg.id));
-      if (d) { d.detail = msg.text; d.installed = true; state.downloadsOpen = true; renderShellLive(); }
+      if (d) { d.note = msg.text; d.detail = msg.text; d.installed = true; state.downloadsOpen = true; renderShellLive(); }
     } else if (msg.type === 'edge-hover') {
       edgeHover(msg.zone);
     } else if (msg.type === 'suggestions') {

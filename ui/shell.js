@@ -955,6 +955,11 @@ export function renderShell(root, state) {
         renderShell(root, state);
       },
       () => {
+        if (state.live) {
+          // A real tab: the Extensions page opens in a new tab (or switches to the one that is open).
+          window.odysseyBridge?.(JSON.stringify({ type: 'open', url: 'odyssey://extensions' }));
+          return;
+        }
         state.page = 'internal';
         state.pageName = 'extensions';
         state.helm = { kind: 'address', address: { kind: 'internal', name: 'extensions' } };
