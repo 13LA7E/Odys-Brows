@@ -1633,6 +1633,24 @@ impl CefEngine {
         }
     }
 
+    /// The main window's native handle (0 when not known), for dialogs shown over it.
+    pub fn main_window_handle(&self) -> isize {
+        #[cfg(windows)]
+        {
+            STATE.with(|s| {
+                s.borrow()
+                    .main
+                    .as_ref()
+                    .map(|m| m.window_handle().0 as isize)
+                    .unwrap_or(0)
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            0
+        }
+    }
+
     /// Move keyboard focus from a page window to our UI (Ctrl+L, F6). Pages are separate
     /// top-level windows, so the UI's own `focus()` can't take OS focus by itself (AUDIT-08).
     pub fn focus_ui(&self) {

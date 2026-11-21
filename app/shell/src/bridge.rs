@@ -428,6 +428,11 @@ pub enum ToUi {
         host: String,
         logins: Vec<FillChoice>,
     },
+    /// Windows verification failed or was cancelled, so the password was not sent.
+    VaultRevealDenied {
+        id: String,
+        message: String,
+    },
     VaultExported {
         ok: bool,
         message: String,

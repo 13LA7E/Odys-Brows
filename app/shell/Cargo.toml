@@ -28,3 +28,21 @@ workspace = true
 # search show it.
 [build-dependencies]
 embed-resource = "3"
+
+# Reason: Windows Hello / Windows password check before passwords are revealed or exported.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+  "Foundation",
+  "Security_Credentials_UI",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Credentials",
+  "Win32_System_Com",
+  "Win32_System_WinRT",
+]
+
+# Reason: the async result type of the Windows Hello call (.join() waits for the answer).
+[target.'cfg(windows)'.dependencies.windows-future]
+version = "0.3"

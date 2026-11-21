@@ -1,6 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scenario import *
+os.environ['CONSTELLATIONS_TEST_AUTH'] = 'allow'  # Export waits for Windows verification; debug builds only
 
 open(os.path.join(site, 'login.html'), 'w').write('<!doctype html><title>Login</title><form method=post action=/done.html><input id=u type=text name=u><br><input id=p type=password name=p><br><button id=go type=submit>Go</button></form><div style="height:600px"></div>')
 open(os.path.join(site, 'done.html'), 'w').write('<!doctype html><title>Done</title><p>ok</p>')

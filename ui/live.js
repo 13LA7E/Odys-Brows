@@ -341,7 +341,20 @@ export async function startLive() {
       state.vaultNotice = msg.notice || '';
       renderShellLive();
     } else if (msg.type === 'vault-credentials') {
+      state.vaultAuth = null;
       state.revealedPassword = { id: msg.id, username: msg.username, password: msg.password };
+      renderShellLive();
+      // Hide it again after 30 seconds.
+      const shownId = msg.id;
+      setTimeout(() => {
+        if (state.revealedPassword && state.revealedPassword.id === shownId) {
+          state.revealedPassword = null;
+          renderShellLive();
+        }
+      }, 30000);
+    } else if (msg.type === 'vault-reveal-denied') {
+      state.revealedPassword = null;
+      state.vaultAuth = { message: msg.message };
       renderShellLive();
     }
   });

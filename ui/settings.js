@@ -187,7 +187,8 @@ export function renderSettings(container, state, onUpdate) {
   const content = el('div', 'settings-content');
   if (lastSection !== null && lastSection !== currentSection) content.classList.add('section-in');
   lastSection = currentSection;
-  content.style.cssText = 'position:absolute;left:300px;top:64px;width:560px;padding-bottom:120px;';
+  // Its own scroll area, so a long page (Passwords) scrolls while the left menu stays put.
+  content.style.cssText = 'position:absolute;left:300px;top:0;bottom:0;width:590px;padding:64px 30px 120px 0;box-sizing:border-box;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--w-trail) transparent;';
 
   if (currentSection === 'General') {
     const title = el('h1', null, 'General');
@@ -612,6 +613,11 @@ export function renderSettings(container, state, onUpdate) {
       if (state.vaultExport.ok) st.append(makeButton('Show in folder', false, () => send({ type: 'show-in-folder', path: state.vaultExport.path })));
       rows.append(st);
     }
+    if (state.vaultAuth) {
+      const st = el('div', null, state.vaultAuth.message);
+      st.style.cssText = 'font-size:13.5px;color:var(--text-soft);margin-bottom:16px;';
+      rows.append(st);
+    }
     if (state.vaultImport) {
       const st = el('div', null, state.vaultImport.error
         ? state.vaultImport.error
@@ -658,7 +664,15 @@ export function renderSettings(container, state, onUpdate) {
       const actions = el('div');
       actions.style.cssText = 'display:flex;gap:8px;align-items:center;';
       actions.append(
-        makeButton('Reveal', false, () => send({ type: 'vault-reveal', id: e.id })),
+        makeButton(state.revealedPassword && state.revealedPassword.id === e.id ? 'Hide' : 'Reveal', false, () => {
+          if (state.revealedPassword && state.revealedPassword.id === e.id) {
+            state.revealedPassword = null;
+            rerender();
+          } else {
+            state.vaultAuth = null;
+            send({ type: 'vault-reveal', id: e.id }); // Windows asks for verification first
+          }
+        }),
         makeButton('Delete', false, () => send({ type: 'vault-delete', id: e.id })),
       );
       itemRow.append(info, actions);

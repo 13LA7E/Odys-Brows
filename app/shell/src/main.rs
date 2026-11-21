@@ -6,6 +6,7 @@
     windows_subsystem = "windows"
 )]
 
+mod auth;
 mod brand;
 mod bridge;
 mod extensions;
@@ -1062,26 +1063,51 @@ impl Shell {
                 self.send_vault();
             }
             FromUi::VaultExport => {
-                let result = self.vault.export_csv().and_then(|csv| {
-                    let dir = segdl::default_download_dir();
-                    let name = format!("constellations-passwords-{}.csv", unix_now());
-                    let path = segdl::unique_path(&dir, &name);
-                    std::fs::write(&path, csv).map_err(|e| e.to_string())?;
-                    Ok(path)
-                });
-                let msg = match result {
-                    Ok(path) => ToUi::VaultExported {
-                        ok: true,
-                        message: String::new(),
-                        path: path.to_string_lossy().to_string(),
-                    },
-                    Err(e) => ToUi::VaultExported {
-                        ok: false,
-                        message: e,
-                        path: String::new(),
-                    },
+                let csv = match self.vault.export_csv() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        engine.send_to_ui(&bridge::to_json(&ToUi::VaultExported {
+                            ok: false,
+                            message: e,
+                            path: String::new(),
+                        }));
+                        return;
+                    }
                 };
-                engine.send_to_ui(&bridge::to_json(&msg));
+                let hwnd = engine.main_window_handle();
+                std::thread::spawn(move || {
+                    let result = auth::verify(hwnd, "Export saved passwords");
+                    let msg = match result {
+                        auth::Auth::Verified => {
+                            let dir = segdl::default_download_dir();
+                            let name = format!("constellations-passwords-{}.csv", unix_now());
+                            let path = segdl::unique_path(&dir, &name);
+                            match std::fs::write(&path, csv) {
+                                Ok(()) => ToUi::VaultExported {
+                                    ok: true,
+                                    message: String::new(),
+                                    path: path.to_string_lossy().to_string(),
+                                },
+                                Err(e) => ToUi::VaultExported {
+                                    ok: false,
+                                    message: e.to_string(),
+                                    path: String::new(),
+                                },
+                            }
+                        }
+                        auth::Auth::Cancelled => ToUi::VaultExported {
+                            ok: false,
+                            message: "Not verified".to_string(),
+                            path: String::new(),
+                        },
+                        auth::Auth::Unavailable(m) => ToUi::VaultExported {
+                            ok: false,
+                            message: m,
+                            path: String::new(),
+                        },
+                    };
+                    CefEngine.post_ui(move || CefEngine.send_to_ui(&bridge::to_json(&msg)));
+                });
             }
             FromUi::VaultImport { csv } => {
                 let msg = match self.vault.import_csv(&csv) {
@@ -1527,13 +1553,31 @@ impl Shell {
                 }
             }
             FromUi::VaultReveal { id } => {
-                if let Ok((username, password)) = self.vault.get_credentials(&id) {
-                    engine.send_to_ui(&bridge::to_json(&ToUi::VaultCredentials {
-                        id,
-                        username,
-                        password,
-                    }));
-                }
+                // Decrypt here, but only send it to the UI after Windows has verified the user.
+                let Ok((username, password)) = self.vault.get_credentials(&id) else {
+                    return;
+                };
+                let hwnd = engine.main_window_handle();
+                std::thread::spawn(move || {
+                    let result = auth::verify(hwnd, "Show a saved password");
+                    CefEngine.post_ui(move || {
+                        let msg = match result {
+                            auth::Auth::Verified => ToUi::VaultCredentials {
+                                id,
+                                username,
+                                password,
+                            },
+                            auth::Auth::Cancelled => ToUi::VaultRevealDenied {
+                                id,
+                                message: "Not verified".to_string(),
+                            },
+                            auth::Auth::Unavailable(m) => {
+                                ToUi::VaultRevealDenied { id, message: m }
+                            }
+                        };
+                        CefEngine.send_to_ui(&bridge::to_json(&msg));
+                    });
+                });
             }
             FromUi::SelftestResult { ok, log } => selftest::ipc_result(ok, &log),
             other => eprintln!("bridge: ignored {other:?} (unknown view)"),

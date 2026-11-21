@@ -111,6 +111,13 @@ Copy this template for each session:
 
 ```
 
+### 2026-11-21: Claude Code / Sonnet 5.5: search engine, scrolling, Windows check for Reveal
+
+- Fixed: the Helm ignored the search-engine setting (hardcoded DuckDuckGo); the Passwords page could not scroll (the settings content was clipped).
+- Added: Reveal and Export wait for Windows verification (`app/shell/src/auth.rs`: Windows Hello, with the Windows password prompt as fallback). New dependencies `windows 0.62` and `windows-future 0.3` (Windows only).
+- Verified live: `tools/live_check/settings_fixes.py` (11): engine used for Google, Bing and DuckDuckGo; page scrolls with the wheel; denied verification shows no password and writes no file; allowed verification works. **Not verified:** the real Windows Hello / password dialogs (cannot be scripted) and the password fallback; please try Reveal once by hand. Needs testing on: Linux (no OS verification there yet).
+- Found, not changed: On startup, Downloads location and several other General settings are not connected to anything.
+
 ### 2026-11-21: Claude Code / Sonnet 5.5: passwords like Brave (owner request)
 
 - Added save prompts, autofill, a "Never" list, import/export (CSV) and a clean Passwords page. Details and limits in PHASES ("Passwords like Brave"). New message types: `answer-save-login`, `answer-fill`, `vault-export`, `vault-import`, `vault-remove-never`; events `LoginSubmitted` and `LoginFieldClicked`.

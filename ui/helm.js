@@ -32,6 +32,18 @@ function ico(d, size = 18, extra = null) {
 }
 
 /** Classify typed input into a URL or search query (EDGE_CASES.md §3). */
+// The search engine from Settings > General (set by the shell on every render).
+const SEARCH_URLS = {
+  DuckDuckGo: 'https://duckduckgo.com/?q=',
+  Google: 'https://www.google.com/search?q=',
+  Bing: 'https://www.bing.com/search?q=',
+  Ecosia: 'https://www.ecosia.org/search?q=',
+};
+let searchEngine = 'DuckDuckGo';
+export function setSearchEngine(name) {
+  searchEngine = SEARCH_URLS[name] ? name : 'DuckDuckGo';
+}
+
 export function classifyInput(raw) {
   const trimmed = (raw || '').trim().replace(/[\r\n]+/g, ' ');
   if (!trimmed) return null;
@@ -89,7 +101,7 @@ export function classifyInput(raw) {
   }
 
   // Search query fallback
-  return { kind: 'search', query: trimmed, url: `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}` };
+  return { kind: 'search', query: trimmed, url: `${SEARCH_URLS[searchEngine]}${encodeURIComponent(trimmed)}` };
 }
 
 /** Render the Helm toolbar. */

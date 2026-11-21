@@ -19,7 +19,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 }
 .page-web { background: var(--panel-web); }
 .page-web:not(:has(.page-site)) { background: var(--bg); }
-.page-internal { background: var(--panel-internal); }
+.page-internal { background: var(--panel-internal); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--w-trail) transparent; }
 .page-site { position: absolute; inset: 0; }
 .page-dim { position: absolute; left: var(--rail); top: 0; right: 0; bottom: 0; border-radius: var(--r-page); background: var(--page-dim); }
 

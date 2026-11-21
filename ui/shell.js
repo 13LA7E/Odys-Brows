@@ -5,7 +5,7 @@
 
 import { createSky } from './sky.js';
 import { renderCollapsedRail, renderExpandedRail } from './rail.js';
-import { renderHelm, renderDownloadsPopover, renderAnswerCard } from './helm.js';
+import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine } from './helm.js';
 import { renderSettings, applyAccent } from './settings.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab } from './newtab.js';
@@ -329,6 +329,7 @@ export function renderShell(root, state) {
   root.classList.toggle('private', !!state.private);
   root.dataset.overPage = state.page === 'web' ? '1' : '0';
   syncNotch(root, state);
+  setSearchEngine(state.settings?.searchEngine);
   if (state.settings?.accent) {
     applyAccent(state.settings.accent);
   }

@@ -1,6 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scenario import *
+os.environ['CONSTELLATIONS_TEST_AUTH'] = 'allow'  # Reveal waits for Windows verification; debug builds only
 
 prof = tempfile.mkdtemp(prefix='cons-prof-')
 open(os.path.join(prof, 'urls.txt'), 'w').write(f'http://127.0.0.1:{SRV}/a.html\n')
