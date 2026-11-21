@@ -1,7 +1,8 @@
 // Live browser UI: connects shell chrome to engine events (P2-01+).
 import { renderShell, requestRender, revealHelm } from './shell.js';
 import { onMessage } from './bridge.js';
-import { initPageBasicsShortcuts, focusHelm } from './pagebasics.js';
+import { focusHelm } from './pagebasics.js';
+import { initShortcuts, setShortcutTable } from './shortcuts.js';
 import { generateSky } from './sky.js';
 
 export async function startLive() {
@@ -25,7 +26,7 @@ export async function startLive() {
     helm: { kind: 'empty' },
   };
 
-  initPageBasicsShortcuts(() => app, () => state.activeTab);
+  initShortcuts();
   // Read-only handle for automated live checks (tools/live-check); the UI page is ours alone.
   window.__uiState = state;
 
@@ -246,6 +247,14 @@ export async function startLive() {
         state.canGoBack = msg.can_go_back;
         state.canGoForward = msg.can_go_forward;
       }
+    } else if (msg.type === 'shortcuts') {
+      setShortcutTable(msg.commands);
+      state.shortcutList = msg.commands;
+      renderShellLive();
+    } else if (msg.type === 'shortcut-result') {
+      state.shortcutResult = { ok: msg.ok, message: msg.message, at: Date.now() };
+      if (state.settings) state.settings.shortcuts = msg.shortcuts;
+      renderShellLive();
     } else if (msg.type === 'settings-loaded') {
       state.settings = msg.settings;
       renderShellLive();

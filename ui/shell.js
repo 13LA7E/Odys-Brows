@@ -9,7 +9,7 @@ import { renderHelm, renderDownloadsPopover, renderAnswerCard, setSearchEngine }
 import { renderSettings, applyAccent } from './settings.js';
 import { renderHistory, formatDayGroups } from './history.js';
 import { renderNewTab } from './newtab.js';
-import { initPageBasicsShortcuts, renderErrorPage, renderPromptCard } from './pagebasics.js';
+import { renderErrorPage, renderPromptCard } from './pagebasics.js';
 import { renderExtensionsPage } from './extensions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -325,10 +325,6 @@ export function openLink(state, url) {
 }
 
 export function renderShell(root, state) {
-  if (!window.__pageBasicsInit) {
-    window.__pageBasicsInit = true;
-    initPageBasicsShortcuts(() => document.getElementById('app'), () => state.activeTab);
-  }
   window.__renderCount += 1;
   lastSignature = signature(state);
   const focused = captureFocus(root);

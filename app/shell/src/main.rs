@@ -13,6 +13,7 @@ mod extensions;
 mod privacy;
 mod selftest;
 mod settings;
+mod shortcuts;
 
 use bridge::{FromUi, ToUi};
 use engine_api::{Engine, Rect, ViewId};
@@ -439,6 +440,166 @@ impl Shell {
         {
             CefEngine.fill_login(view, &c.username, &c.password);
         }
+    }
+
+    /// Runs a shortcut's command. The same code serves a key pressed in a page window (the
+    /// engine's key hook) and in our own window (the UI sends `run-command`).
+    fn run_command(&mut self, id: &str, view: Option<ViewId>) {
+        let engine = &mut CefEngine;
+        let v = view.or(self.shown);
+        let open = |url: &str| FromUi::Open {
+            url: url.into(),
+            opener: None,
+        };
+        match id {
+            "newTab" => self.handle(engine, open("")),
+            "privateWindow" => open_private_window(),
+            "closeTab" => {
+                if let Some(v) = v {
+                    self.handle(engine, FromUi::Close { view: Some(v) });
+                }
+            }
+            "reopenTab" => self.handle(engine, FromUi::RelightClosedTab { id: None }),
+            "nextTab" => self.handle(engine, FromUi::NextTab),
+            "prevTab" => self.handle(engine, FromUi::PrevTab),
+            "address" => {
+                engine.focus_ui();
+                engine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
+            }
+            "find" => {
+                if let Some(v) = v {
+                    engine.send_to_ui(&bridge::to_json(&ToUi::FindInPagePrompt { view: v }));
+                }
+            }
+            "history" => self.handle(engine, open("odyssey://history")),
+            "settings" => self.handle(engine, open("odyssey://settings")),
+            "reload" => {
+                if let Some(v) = v {
+                    engine.reload(v);
+                }
+            }
+            "back" => {
+                if let Some(v) = v {
+                    engine.go_back(v);
+                }
+            }
+            "forward" => {
+                if let Some(v) = v {
+                    engine.go_forward(v);
+                }
+            }
+            "zoomIn" | "zoomOut" | "zoomReset" => {
+                if let Some(v) = v {
+                    let dir = match id {
+                        "zoomIn" => 1,
+                        "zoomOut" => -1,
+                        _ => 0,
+                    };
+                    let f = self.zoom_step(v, dir);
+                    engine.set_zoom(v, f);
+                }
+            }
+            "print" => {
+                if let Some(v) = v {
+                    engine.print(v);
+                }
+            }
+            "devtools" => {
+                if let Some(v) = v {
+                    engine.open_devtools(v);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn shortcuts_now(&self) -> serde_json::Value {
+        if self.is_private {
+            return serde_json::json!({});
+        }
+        load_settings_or_default(&profile_dir())
+            .get("shortcuts")
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Saves a changed shortcut list (or reports why it can't be), then tells everyone.
+    fn finish_shortcut_change(
+        &mut self,
+        engine: &mut CefEngine,
+        result: Result<serde_json::Value, String>,
+    ) {
+        let shortcuts_value = match result {
+            Ok(v) if self.is_private => {
+                let _ = v;
+                Err("Shortcuts can't be changed in a private window.".to_string())
+            }
+            other => other,
+        };
+        let msg = match shortcuts_value {
+            Ok(new) => {
+                let dir = profile_dir();
+                let mut settings = load_settings_or_default(&dir);
+                settings["shortcuts"] = new.clone();
+                match save_settings_atomic(&dir, &settings) {
+                    Ok(()) => {
+                        self.publish_shortcuts(&settings, engine);
+                        ToUi::ShortcutResult {
+                            ok: true,
+                            message: String::new(),
+                            shortcuts: new,
+                        }
+                    }
+                    Err(e) => ToUi::ShortcutResult {
+                        ok: false,
+                        message: format!("Couldn't save: {e}"),
+                        shortcuts: self.shortcuts_now(),
+                    },
+                }
+            }
+            Err(message) => ToUi::ShortcutResult {
+                ok: false,
+                message,
+                shortcuts: self.shortcuts_now(),
+            },
+        };
+        engine.send_to_ui(&bridge::to_json(&msg));
+    }
+
+    /// Tell the engine (page windows) and the UI (our window) the current shortcuts.
+    fn publish_shortcuts(&self, settings: &serde_json::Value, engine: &mut CefEngine) {
+        let custom = settings.get("shortcuts").cloned().unwrap_or_default();
+        engine.set_key_bindings(
+            shortcuts::bindings(&custom)
+                .into_iter()
+                .filter_map(|(command, c)| {
+                    Some(engine_cef::KeyBinding {
+                        ctrl: c.ctrl,
+                        shift: c.shift,
+                        alt: c.alt,
+                        vk: shortcuts::vk_of(&c.key)?,
+                        command,
+                    })
+                })
+                .chain(
+                    shortcuts::unbound_defaults(&custom)
+                        .into_iter()
+                        .filter_map(|c| {
+                            Some(engine_cef::KeyBinding {
+                                ctrl: c.ctrl,
+                                shift: c.shift,
+                                alt: c.alt,
+                                vk: shortcuts::vk_of(&c.key)?,
+                                // no command: the key does nothing (Chromium's own reload etc. is blocked)
+                                command: String::new(),
+                            })
+                        }),
+                )
+                .collect(),
+        );
+        engine.send_to_ui(&bridge::to_json(&ToUi::Shortcuts {
+            commands: shortcuts::table(&custom),
+        }));
     }
 
     fn is_restore_pending(&self, view: ViewId) -> bool {
@@ -1064,6 +1225,17 @@ impl Shell {
             }
             FromUi::OpenPrivateWindow => open_private_window(),
             FromUi::FocusWindow => engine.focus_ui(),
+            FromUi::RunCommand { id } => self.run_command(&id, None),
+            FromUi::SetShortcut { id, combo } => {
+                let current = self.shortcuts_now();
+                let result = shortcuts::set_binding(&current, &id, &combo);
+                self.finish_shortcut_change(engine, result);
+            }
+            FromUi::ResetShortcuts { id } => {
+                let current = self.shortcuts_now();
+                let result = Ok(shortcuts::reset(&current, id.as_deref()));
+                self.finish_shortcut_change(engine, result);
+            }
             FromUi::AnswerSaveLogin { request, action } => self.answer_save_login(request, &action),
             FromUi::AnswerFill { request, id } => self.answer_fill(request, id.as_deref()),
             FromUi::VaultRemoveNever { host } => {
@@ -1181,6 +1353,7 @@ impl Shell {
             FromUi::SaveSettings { settings } => {
                 let settings = settings::normalize(&settings);
                 engine.set_global_privacy_control(settings["globalPrivacyControl"] != false);
+                self.publish_shortcuts(&settings, engine);
                 if let Some(c) = settings.get("connections").and_then(|v| v.as_u64()) {
                     segdl::set_connections(c as usize);
                 }
@@ -1202,6 +1375,7 @@ impl Shell {
                     segdl::set_connections(c as usize);
                 }
                 engine.set_global_privacy_control(settings["globalPrivacyControl"] != false);
+                self.publish_shortcuts(&settings, engine);
                 engine.send_to_ui(&bridge::to_json(&ToUi::SettingsLoaded { settings }));
                 for t in &self.tabs {
                     engine.send_to_ui(&bridge::to_json(&ToUi::ViewOpened {
@@ -1626,6 +1800,10 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
     }));
 
     shell.borrow_mut().restore_closed(&saved_session.closed);
+    // Page windows get the shortcuts straight away (the UI asks for them a moment later).
+    shell
+        .borrow()
+        .publish_shortcuts(&load_settings_or_default(&profile_dir()), &mut CefEngine);
 
     if let Some(path) = urls_file {
         if let Ok(content) = std::fs::read_to_string(path) {
@@ -1722,33 +1900,6 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                     t.has_audio = *playing;
                 }
             }
-            engine_api::Event::ShortcutNewTab => {
-                s.handle(
-                    &mut CefEngine,
-                    FromUi::Open {
-                        url: "".into(),
-                        opener: None,
-                    },
-                );
-            }
-            engine_api::Event::ShortcutCloseTab { view } => {
-                s.handle(&mut CefEngine, FromUi::Close { view: Some(*view) });
-            }
-            engine_api::Event::ShortcutReload { view } => {
-                CefEngine.reload(*view);
-            }
-            engine_api::Event::ShortcutBack { view } => {
-                CefEngine.go_back(*view);
-            }
-            engine_api::Event::ShortcutForward { view } => {
-                CefEngine.go_forward(*view);
-            }
-            engine_api::Event::ShortcutNextTab => {
-                s.handle(&mut CefEngine, FromUi::NextTab);
-            }
-            engine_api::Event::ShortcutPrevTab => {
-                s.handle(&mut CefEngine, FromUi::PrevTab);
-            }
             engine_api::Event::AppClosing => {
                 if !s.quitting {
                     // Save the session as it is now, then ignore the pages closing after it.
@@ -1765,54 +1916,8 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                     }
                 }
             }
-            engine_api::Event::ShortcutNewPrivateWindow => open_private_window(),
             engine_api::Event::ShortcutQuit => CefEngine.quit(),
-            engine_api::Event::ShortcutFocusAddress => {
-                CefEngine.focus_ui();
-                CefEngine.send_to_ui(&bridge::to_json(&ToUi::HelmFocus));
-            }
-            engine_api::Event::ShortcutOpenHistory => {
-                s.handle(
-                    &mut CefEngine,
-                    FromUi::Open {
-                        url: "odyssey://history".into(),
-                        opener: None,
-                    },
-                );
-            }
-            engine_api::Event::ShortcutOpenSettings => {
-                s.handle(
-                    &mut CefEngine,
-                    FromUi::Open {
-                        url: "odyssey://settings".into(),
-                        opener: None,
-                    },
-                );
-            }
-            engine_api::Event::ShortcutFindInPage { view } => {
-                CefEngine.send_to_ui(&bridge::to_json(&ToUi::FindInPagePrompt { view: *view }));
-            }
-            engine_api::Event::ShortcutDevTools { view } => {
-                CefEngine.open_devtools(*view);
-            }
-            engine_api::Event::ShortcutRelightClosedTab => {
-                s.handle(&mut CefEngine, FromUi::RelightClosedTab { id: None });
-            }
-            engine_api::Event::ShortcutPrint { view } => {
-                CefEngine.print(*view);
-            }
-            engine_api::Event::ShortcutZoomIn { view } => {
-                let f = s.zoom_step(*view, 1);
-                CefEngine.set_zoom(*view, f);
-            }
-            engine_api::Event::ShortcutZoomOut { view } => {
-                let f = s.zoom_step(*view, -1);
-                CefEngine.set_zoom(*view, f);
-            }
-            engine_api::Event::ShortcutZoomReset { view } => {
-                let f = s.zoom_step(*view, 0);
-                CefEngine.set_zoom(*view, f);
-            }
+            engine_api::Event::Command { view, id } => s.run_command(id, Some(*view)),
             engine_api::Event::NewWindowRequested {
                 opener,
                 url,
@@ -1841,26 +1946,8 @@ fn connect(engine: CefEngine, is_private: bool, any_selftest: bool, urls_file: O
                 | engine_api::Event::FormInputChanged { .. }
                 | engine_api::Event::LoginSubmitted { .. }
                 | engine_api::Event::LoginFieldClicked { .. }
-                | engine_api::Event::ShortcutNewTab
-                | engine_api::Event::ShortcutNewPrivateWindow
                 | engine_api::Event::ShortcutQuit
-                | engine_api::Event::AppClosing
-                | engine_api::Event::ShortcutCloseTab { .. }
-                | engine_api::Event::ShortcutReload { .. }
-                | engine_api::Event::ShortcutBack { .. }
-                | engine_api::Event::ShortcutForward { .. }
-                | engine_api::Event::ShortcutNextTab
-                | engine_api::Event::ShortcutPrevTab
-                | engine_api::Event::ShortcutFocusAddress
-                | engine_api::Event::ShortcutOpenHistory
-                | engine_api::Event::ShortcutOpenSettings
-                | engine_api::Event::ShortcutFindInPage { .. }
-                | engine_api::Event::ShortcutDevTools { .. }
-                | engine_api::Event::ShortcutRelightClosedTab
-                | engine_api::Event::ShortcutPrint { .. }
-                | engine_api::Event::ShortcutZoomIn { .. }
-                | engine_api::Event::ShortcutZoomOut { .. }
-                | engine_api::Event::ShortcutZoomReset { .. }
+                | engine_api::Event::Command { .. }
                 | engine_api::Event::NewWindowRequested { .. }
         )
     };

@@ -130,6 +130,12 @@ fn fields() -> Vec<Field> {
             kind: Kind::IntRange(0, 1440),
             default: || json!(10),
         },
+        // --- Keyboard shortcuts (AUDIT-41): { command id: [combo, ...] }, only the ones you changed
+        Field {
+            key: "shortcuts",
+            kind: Kind::Custom(crate::shortcuts::sanitize_custom),
+            default: || json!({}),
+        },
         // --- Privacy (AUDIT-40)
         Field {
             key: "globalPrivacyControl",
@@ -245,7 +251,7 @@ mod tests {
             "customEngine": { "name": "Mine", "url": "https://example.com/?q=%s" },
             "startup": "New tab", "linkTarget": "Same tab", "connections": 16,
             "sleepMinutes": 0, "globalPrivacyControl": false, "clearHistoryOnExit": true,
-            "clearSiteDataOnExit": true, "offerSavePasswords": false, "autofillPasswords": false
+            "clearSiteDataOnExit": true, "shortcuts": { "reload": ["Ctrl+K"] }, "offerSavePasswords": false, "autofillPasswords": false
         });
         let once = normalize(&custom);
         assert_eq!(once, custom);

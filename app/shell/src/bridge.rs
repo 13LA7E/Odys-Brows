@@ -112,6 +112,20 @@ pub enum FromUi {
         #[serde(default)]
         id: Option<String>,
     },
+    /// Bind a shortcut: `combo` like `Ctrl+Shift+K` to command `id` (checked in Rust).
+    SetShortcut {
+        id: String,
+        combo: String,
+    },
+    /// Put one command, or every command (no id), back to its default keys.
+    ResetShortcuts {
+        #[serde(default)]
+        id: Option<String>,
+    },
+    /// A keyboard shortcut was pressed in our own window: run this command (see `shortcuts.rs`).
+    RunCommand {
+        id: String,
+    },
     /// Bring our window forward and give it keyboard focus (a click while another app is on top).
     FocusWindow,
     /// How much of the notch is showing, in DIP from the top (it slides away over web pages).
@@ -415,6 +429,16 @@ pub enum ToUi {
         message: String,
     },
     /// Vault entries loaded (P8-02).
+    /// The commands with their current keys (after the user's changes).
+    Shortcuts {
+        commands: serde_json::Value,
+    },
+    /// The answer to `set-shortcut` / `reset-shortcuts`; `shortcuts` is what is now saved.
+    ShortcutResult {
+        ok: bool,
+        message: String,
+        shortcuts: serde_json::Value,
+    },
     SaveLoginPrompt {
         view: ViewId,
         request: u64,

@@ -1,6 +1,8 @@
 // Settings page shell (DESIGN.md §9, PHASES.md P2-07, P7-02, P8-01, P8-02).
 // Manages settings state, navigation, appearance, AI, passwords, privacy, shortcuts, and about.
 
+import { captureShortcut, cancelCapture } from './shortcuts.js';
+
 const SVG = 'http://www.w3.org/2000/svg';
 
 export const DEFAULT_SETTINGS = {
@@ -20,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   clearSiteDataOnExit: false,
   offerSavePasswords: true,
   autofillPasswords: true,
+  shortcuts: {},
 };
 // The schema (allowed values and defaults) lives in app/shell/src/settings.rs; a test checks that
 // this list matches it. Values here are only used before the shell has sent the real settings.
@@ -836,33 +839,86 @@ export function renderSettings(container, state, onUpdate) {
   } else if (currentSection === 'Shortcuts') {
     const title = el('h1', null, 'Shortcuts');
     title.style.cssText = 'margin:0;font-size:32px;font-weight:600;letter-spacing:-.5px;color:var(--text-strong);';
-    const sub = el('div', null, 'Essential keyboard shortcuts for navigation and commands.');
+    const sub = el('div', null, 'Click Change, then press the keys you want. Esc cancels.');
     sub.style.cssText = 'margin-top:8px;font-size:15px;color:var(--text-muted);';
     content.append(title, sub);
 
     const rows = el('div');
     rows.style.cssText = 'margin-top:28px;';
+    const rerender = () => renderSettings(container, state, onUpdate);
+    const send = (m) => window.odysseyBridge?.(JSON.stringify(m));
+    const list = state.shortcutList || [];
+    const note = (text, bad) => {
+      const n = el('div', 'shortcut-note', text);
+      n.style.cssText = 'font-size:13px;margin-top:6px;color:' + (bad ? 'var(--danger, #e08a8a)' : 'var(--text-soft)') + ';';
+      return n;
+    };
 
-    const shortcutsList = [
-      ['Ctrl + T', 'Open a new tab in the sky'],
-      ['Ctrl + W', 'Close current tab'],
-      ['Ctrl + L', 'Focus Helm address / command bar'],
-      ['Ctrl + Tab', 'Switch to next open tab'],
-      ['Ctrl + Shift + Tab', 'Switch to previous tab'],
-      ['Ctrl + Shift + T', 'Reopen last closed tab'],
-      ['Ctrl + H', 'Open browsing history day groups'],
-      ['Ctrl + ,', 'Open settings'],
-      ['Ctrl + F', 'Find text in page'],
-      ['Ctrl + P', 'Print active page'],
-      ['Ctrl + Plus / Minus', 'Zoom in / out'],
-    ];
-
-    shortcutsList.forEach(([key, desc]) => {
-      const badge = el('kbd', null, key);
-      badge.style.cssText = 'padding:4px 10px;border-radius:6px;background:var(--w-field);border:1px solid var(--w-field);font-size:12.5px;font-family:inherit;color:var(--text-strong);';
-      rows.append(makeRow(key, desc, badge));
+    list.forEach((cmd) => {
+      const badges = el('span');
+      badges.style.cssText = 'display:inline-flex;gap:6px;align-items:center;';
+      const recording = state.shortcutCapture === cmd.id;
+      if (recording) {
+        const k = el('kbd', null, 'Press the new keys…');
+        k.style.cssText = 'padding:4px 10px;border-radius:6px;background:var(--w-field);border:1px solid var(--accent);font-size:12.5px;font-family:inherit;color:var(--text-strong);';
+        badges.append(k);
+      } else {
+        cmd.keys.forEach((key) => {
+          const k = el('kbd', null, key.replace(/\+(?=.)/g, ' + '));
+          k.style.cssText = 'padding:4px 10px;border-radius:6px;background:var(--w-field);border:1px solid var(--w-field);font-size:12.5px;font-family:inherit;color:var(--text-strong);';
+          badges.append(k);
+        });
+      }
+      const controls = el('div');
+      controls.style.cssText = 'display:flex;align-items:center;gap:10px;';
+      controls.append(badges);
+      const change = makeButton(recording ? 'Cancel' : 'Change', false, () => {
+        if (recording) { cancelCapture(); return; }
+        state.shortcutResult = null;
+        state.shortcutCapture = cmd.id;
+        state.shortcutError = null;
+        captureShortcut((combo) => {
+          state.shortcutCapture = null;
+          if (combo === null) { rerender(); return; }
+          if (combo === '?') {
+            state.shortcutError = { id: cmd.id, message: "That key can't be used. Try a letter, number or F-key with Ctrl or Alt." };
+            rerender();
+            return;
+          }
+          state.shortcutAsked = cmd.id;
+          send({ type: 'set-shortcut', id: cmd.id, combo });
+          rerender();
+        });
+        rerender();
+      });
+      controls.append(change);
+      if (cmd.custom) {
+        controls.append(makeButton('Reset', false, () => {
+          state.shortcutError = null;
+          send({ type: 'reset-shortcuts', id: cmd.id });
+        }));
+      }
+      const row = makeRow(cmd.label, '', controls);
+      rows.append(row);
+      const err = state.shortcutError && state.shortcutError.id === cmd.id ? state.shortcutError.message : '';
+      const res = state.shortcutResult && !state.shortcutResult.ok && state.shortcutAsked === cmd.id ? state.shortcutResult.message : '';
+      if (err || res) {
+        const info = row.firstChild;
+        info.append(note(err || res, true));
+      }
     });
 
+    const anyCustom = list.some((c) => c.custom);
+    if (anyCustom) {
+      const resetAll = el('div');
+      resetAll.style.cssText = 'margin-top:18px;';
+      resetAll.append(makeButton('Reset all shortcuts', false, () => {
+        state.shortcutError = null;
+        state.shortcutResult = null;
+        send({ type: 'reset-shortcuts' });
+      }));
+      rows.append(resetAll);
+    }
     content.append(rows);
   } else if (currentSection === 'About') {
     const title = el('h1', null, 'About Constellations');

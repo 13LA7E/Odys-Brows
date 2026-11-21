@@ -37,6 +37,17 @@ pub struct StartOptions {
     pub extension_paths: Vec<String>,
 }
 
+/// One keyboard shortcut for the key hook of page windows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyBinding {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    /// Windows virtual-key code (CEF reports the same codes on every platform).
+    pub vk: i32,
+    pub command: String,
+}
+
 /// Send `Sec-GPC: 1` (Global Privacy Control) with web requests (Settings > Privacy).
 static GPC_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -109,6 +120,8 @@ struct State {
     /// follows the animation and the page shows through as the notch moves away.
     #[cfg_attr(not(windows), allow(dead_code))]
     notch_height: f32,
+    /// Keyboard shortcuts for page windows: modifiers + key code -> command id.
+    key_bindings: Vec<KeyBinding>,
 }
 
 type Sink = Box<dyn FnMut(Event)>;
@@ -1390,122 +1403,32 @@ wrap_keyboard_handler! {
                 return 0;
             }
 
-            let modifiers = ev.modifiers;
             // SHIFT = 2, CONTROL = 4, ALT = 8, COMMAND = 128
-            let is_ctrl = (modifiers & 4) != 0 || (modifiers & 128) != 0;
-            let is_shift = (modifiers & 2) != 0;
-            let is_alt = (modifiers & 8) != 0;
+            let ctrl = (ev.modifiers & 4) != 0 || (ev.modifiers & 128) != 0;
+            let shift = (ev.modifiers & 2) != 0;
+            let alt = (ev.modifiers & 8) != 0;
             let key = ev.windows_key_code;
 
-            if is_ctrl && !is_alt {
-                if key == 0x54 {
-                    // Ctrl+T / Ctrl+Shift+T
-                    if is_shift {
-                        emit(Event::ShortcutRelightClosedTab);
-                    } else {
-                        emit(Event::ShortcutNewTab);
-                    }
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x4E && is_shift {
-                    // Ctrl+Shift+N
-                    emit(Event::ShortcutNewPrivateWindow);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x57 || key == 0x73 {
-                    // Ctrl+W / Ctrl+F4
-                    emit(Event::ShortcutCloseTab { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x4C || key == 0x75 {
-                    // Ctrl+L / F6
-                    emit(Event::ShortcutFocusAddress);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x52 {
-                    // Ctrl+R
-                    emit(Event::ShortcutReload { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x48 {
-                    // Ctrl+H
-                    emit(Event::ShortcutOpenHistory);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 188 {
-                    // Ctrl+,
-                    emit(Event::ShortcutOpenSettings);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x09 {
-                    // Ctrl+Tab / Ctrl+Shift+Tab
-                    if is_shift {
-                        emit(Event::ShortcutPrevTab);
-                    } else {
-                        emit(Event::ShortcutNextTab);
-                    }
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x46 {
-                    // Ctrl+F
-                    emit(Event::ShortcutFindInPage { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 187 || key == 0x6B {
-                    // Ctrl+= / Ctrl++
-                    emit(Event::ShortcutZoomIn { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 189 || key == 0x6D {
-                    // Ctrl+-
-                    emit(Event::ShortcutZoomOut { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x30 || key == 0x60 {
-                    // Ctrl+0
-                    emit(Event::ShortcutZoomReset { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x50 {
-                    // Ctrl+P
-                    emit(Event::ShortcutPrint { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
+            // Alt+F4 closes the whole browser, not just this page's window (not rebindable).
+            if alt && !ctrl && key == 0x73 {
+                emit(Event::ShortcutQuit);
+                if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                return 1;
+            }
+            // Everything else comes from the shell's table of commands (user-changeable).
+            let command = STATE.with(|s| {
+                s.borrow()
+                    .key_bindings
+                    .iter()
+                    .find(|b| b.ctrl == ctrl && b.shift == shift && b.alt == alt && b.vk == key)
+                    .map(|b| b.command.clone())
+            });
+            if let Some(id) = command {
+                if !id.is_empty() {
+                    emit(Event::Command { view: self.id, id });
                 }
-            } else if is_alt && !is_ctrl {
-                if key == 0x73 {
-                    // Alt+F4 closes the whole browser, not just this page's window
-                    emit(Event::ShortcutQuit);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x25 {
-                    // Alt+Left
-                    emit(Event::ShortcutBack { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x27 {
-                    // Alt+Right
-                    emit(Event::ShortcutForward { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                }
-            } else if !is_ctrl && !is_alt {
-                if key == 0x75 {
-                    // F6 focuses the address bar without Ctrl too
-                    emit(Event::ShortcutFocusAddress);
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x74 {
-                    // F5
-                    emit(Event::ShortcutReload { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                } else if key == 0x7B {
-                    // F12
-                    emit(Event::ShortcutDevTools { view: self.id });
-                    if let Some(s) = is_keyboard_shortcut { *s = 1; }
-                    return 1;
-                }
+                if let Some(s) = is_keyboard_shortcut { *s = 1; }
+                return 1;
             }
             0
         }
@@ -1634,6 +1557,11 @@ impl CefEngine {
             #[cfg(windows)]
             refresh_holes();
         }
+    }
+
+    /// Replace the keyboard shortcuts handled in page windows.
+    pub fn set_key_bindings(&self, bindings: Vec<KeyBinding>) {
+        STATE.with(|s| s.borrow_mut().key_bindings = bindings);
     }
 
     /// Turn the Global Privacy Control header on or off.

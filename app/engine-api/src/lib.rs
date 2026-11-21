@@ -68,20 +68,11 @@ pub struct DownloadInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The main frame's URL changed (navigation, history, fragment).
-    UrlChanged {
-        view: ViewId,
-        url: String,
-    },
+    UrlChanged { view: ViewId, url: String },
     /// The page title changed. Empty when the page has none (show the host instead).
-    TitleChanged {
-        view: ViewId,
-        title: String,
-    },
+    TitleChanged { view: ViewId, title: String },
     /// The page's favicon URL changed (`None`: no favicon).
-    FaviconChanged {
-        view: ViewId,
-        url: Option<String>,
-    },
+    FaviconChanged { view: ViewId, url: Option<String> },
     /// Loading started or stopped; also whether back/forward are possible now.
     LoadingChanged {
         view: ViewId,
@@ -97,10 +88,7 @@ pub enum Event {
         text: String,
     },
     /// The page started or stopped playing audio.
-    AudioChanged {
-        view: ViewId,
-        playing: bool,
-    },
+    AudioChanged { view: ViewId, playing: bool },
     /// A login form was submitted (the page's own script reported what was typed). The site is
     /// NOT part of the event: the browser uses its own record of the tab's URL.
     LoginSubmitted {
@@ -109,14 +97,9 @@ pub enum Event {
         password: String,
     },
     /// The user clicked (a real, trusted click) a login field: time to offer or do autofill.
-    LoginFieldClicked {
-        view: ViewId,
-    },
+    LoginFieldClicked { view: ViewId },
     /// A page has text typed into a form field that hasn't been submitted (blocks tab sleeping).
-    FormInputChanged {
-        view: ViewId,
-        has_input: bool,
-    },
+    FormInputChanged { view: ViewId, has_input: bool },
     /// The page wants a new window or tab. The engine did *not* open it: the browser decides
     /// (and keeps `opener` to draw the Trail's branch). `user_gesture` is false for pop-ups the
     /// user didn't ask for (EDGE_CASES §2).
@@ -143,62 +126,19 @@ pub enum Event {
         error: String,
     },
     /// The page's renderer process crashed or was killed.
-    Crashed {
-        view: ViewId,
-        reason: String,
-    },
+    Crashed { view: ViewId, reason: String },
     /// The view finished closing; its id is now invalid.
-    Closed {
-        view: ViewId,
-    },
+    Closed { view: ViewId },
     /// Count of ads and trackers blocked for this view changed (P5-01).
-    ShieldsCountChanged {
-        view: ViewId,
-        count: u64,
-    },
-    /// Browser keyboard shortcuts intercepted from a page view or native window.
-    ShortcutNewTab,
-    ShortcutCloseTab {
-        view: ViewId,
-    },
-    ShortcutReload {
-        view: ViewId,
-    },
-    ShortcutBack {
-        view: ViewId,
-    },
-    ShortcutForward {
-        view: ViewId,
-    },
-    ShortcutNextTab,
-    ShortcutPrevTab,
-    ShortcutFocusAddress,
-    ShortcutOpenHistory,
-    ShortcutOpenSettings,
-    ShortcutFindInPage {
-        view: ViewId,
-    },
-    ShortcutDevTools {
-        view: ViewId,
-    },
-    ShortcutRelightClosedTab,
+    ShieldsCountChanged { view: ViewId, count: u64 },
+    /// A keyboard shortcut the user pressed in a page window: the id of the command it is bound
+    /// to (see the shell's `shortcuts.rs`). The bindings come from `set_key_bindings`.
+    Command { view: ViewId, id: String },
+    /// Alt+F4: close the whole browser (not rebindable).
     ShortcutQuit,
     /// The browser is closing (every route: the close button, Alt+F4, the taskbar). Sent once,
     /// before the pages close, so the shell can save the session first.
     AppClosing,
-    ShortcutNewPrivateWindow,
-    ShortcutPrint {
-        view: ViewId,
-    },
-    ShortcutZoomIn {
-        view: ViewId,
-    },
-    ShortcutZoomOut {
-        view: ViewId,
-    },
-    ShortcutZoomReset {
-        view: ViewId,
-    },
 }
 
 /// The web engine, as the browser sees it. All methods are called on the UI thread.
